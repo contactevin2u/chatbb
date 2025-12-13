@@ -11,7 +11,7 @@ services:
     region: singapore
     plan: starter # starter, standard, pro
     rootDir: backend
-    buildCommand: npm ci --include=dev && npm run build && npx prisma generate && npx prisma migrate deploy
+    buildCommand: npm ci --include=dev && npm run build && npx prisma generate && npx prisma migrate resolve --rolled-back 0001_init || true && npx prisma migrate deploy
     startCommand: npm run start
     healthCheckPath: /health
     autoDeploy: true
