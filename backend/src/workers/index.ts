@@ -20,23 +20,154 @@ const QUEUES = {
   BROADCAST: 'broadcast-queue',
   WEBHOOK: 'webhook-queue',
   ANALYTICS: 'analytics-queue',
+  HISTORY_SYNC: 'history-sync-queue',
 };
 
-// Message queue processor
+// Message queue processor - handles incoming messages and status updates
 async function processMessage(job: Job) {
-  const { type, data } = job.data;
-  logger.info({ jobId: job.id, type }, 'Processing message job');
+  const jobName = job.name;
+  logger.info({ jobId: job.id, jobName }, 'Processing message job');
 
-  switch (type) {
-    case 'send':
-      // Message sending is handled by the API server
-      // This queue is for retry handling
-      break;
-    case 'status_update':
-      // Update message status in database
-      break;
-    default:
-      logger.warn({ type }, 'Unknown message job type');
+  const { prisma } = await import('../core/database/prisma.js');
+  const { ChannelType, MessageDirection, MessageStatus, MessageType } = await import('@prisma/client');
+
+  if (jobName === 'incoming') {
+    // Process incoming WhatsApp message
+    const { channelId, waMessage } = job.data;
+
+    const channel = await prisma.channel.findUnique({ where: { id: channelId } });
+    if (!channel) return;
+
+    const remoteJid = waMessage.key?.remoteJid;
+    if (!remoteJid) return;
+
+    const contactIdentifier = remoteJid.split('@')[0];
+
+    // Get or create contact
+    let contact = await prisma.contact.findFirst({
+      where: {
+        organizationId: channel.organizationId,
+        channelType: ChannelType.WHATSAPP,
+        identifier: contactIdentifier,
+      },
+    });
+
+    if (!contact) {
+      contact = await prisma.contact.create({
+        data: {
+          organizationId: channel.organizationId,
+          channelType: ChannelType.WHATSAPP,
+          identifier: contactIdentifier,
+          displayName: waMessage.pushName || null,
+        },
+      });
+    }
+
+    // Get or create conversation
+    let conversation = await prisma.conversation.findFirst({
+      where: { channelId, contactId: contact.id },
+    });
+
+    if (!conversation) {
+      conversation = await prisma.conversation.create({
+        data: {
+          organizationId: channel.organizationId,
+          channelId,
+          contactId: contact.id,
+          status: 'OPEN',
+          lastMessageAt: new Date(),
+          unreadCount: 1,
+        },
+      });
+    } else {
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          lastMessageAt: new Date(),
+          unreadCount: { increment: 1 },
+          status: conversation.status === 'CLOSED' ? 'OPEN' : conversation.status,
+        },
+      });
+    }
+
+    // Parse message content
+    const msgContent = waMessage.message || {};
+    let type: typeof MessageType[keyof typeof MessageType] = MessageType.TEXT;
+    let content: any = {};
+
+    if (msgContent.conversation) {
+      content = { text: msgContent.conversation };
+    } else if (msgContent.extendedTextMessage) {
+      content = { text: msgContent.extendedTextMessage.text };
+    } else if (msgContent.imageMessage) {
+      type = MessageType.IMAGE;
+      content = { caption: msgContent.imageMessage.caption };
+    } else if (msgContent.videoMessage) {
+      type = MessageType.VIDEO;
+      content = { caption: msgContent.videoMessage.caption };
+    } else if (msgContent.audioMessage) {
+      type = MessageType.AUDIO;
+      content = {};
+    } else if (msgContent.documentMessage) {
+      type = MessageType.DOCUMENT;
+      content = { filename: msgContent.documentMessage.fileName };
+    }
+
+    // Create message
+    await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        channelId,
+        externalId: waMessage.key?.id,
+        direction: MessageDirection.INBOUND,
+        type,
+        content,
+        status: MessageStatus.DELIVERED,
+        deliveredAt: new Date(),
+        metadata: {
+          timestamp: Number(waMessage.messageTimestamp) || Date.now(),
+          pushName: waMessage.pushName || null,
+        },
+      },
+    });
+
+    // Publish to Redis for real-time WebSocket updates
+    const { redisClient } = await import('../core/cache/redis.client.js');
+    await redisClient.publish(`org:${channel.organizationId}:message`, JSON.stringify({
+      type: 'new',
+      conversationId: conversation.id,
+      channelId,
+    }));
+
+    logger.info({ channelId, messageId: waMessage.key?.id }, 'Processed incoming message');
+
+  } else if (jobName === 'status_update') {
+    // Process message status update
+    const { channelId, update } = job.data;
+    const externalId = update.key?.id;
+    if (!externalId) return;
+
+    const message = await prisma.message.findFirst({
+      where: { externalId, channelId },
+    });
+
+    if (!message) return;
+
+    const statusUpdate: any = {};
+    if (update.update?.status === 2) {
+      statusUpdate.status = MessageStatus.DELIVERED;
+      statusUpdate.deliveredAt = new Date();
+    } else if (update.update?.status === 3 || update.update?.status === 4) {
+      statusUpdate.status = MessageStatus.READ;
+      statusUpdate.readAt = new Date();
+    }
+
+    if (Object.keys(statusUpdate).length > 0) {
+      await prisma.message.update({
+        where: { id: message.id },
+        data: statusUpdate,
+      });
+    }
   }
 }
 
@@ -168,6 +299,166 @@ async function processAnalytics(job: Job) {
   // This is called by the cron job
 }
 
+// History sync processor - processes historical WhatsApp data in background
+// This runs with LOW priority so live messages are processed FIRST
+async function processHistorySync(job: Job) {
+  const { channelId, chats, contacts, messages } = job.data;
+  logger.info({ jobId: job.id, channelId, chats: chats?.length, contacts: contacts?.length }, 'Processing history sync');
+
+  const { prisma } = await import('../core/database/prisma.js');
+  const { ChannelType, MessageDirection, MessageStatus, MessageType } = await import('@prisma/client');
+
+  const channel = await prisma.channel.findUnique({ where: { id: channelId } });
+  if (!channel) return;
+
+  const orgId = channel.organizationId;
+
+  // Process contacts (batch upsert)
+  for (const contact of contacts || []) {
+    try {
+      const identifier = contact.id?.split('@')[0];
+      if (!identifier) continue;
+
+      await prisma.contact.upsert({
+        where: {
+          organizationId_channelType_identifier: {
+            organizationId: orgId,
+            channelType: ChannelType.WHATSAPP,
+            identifier,
+          },
+        },
+        create: {
+          organizationId: orgId,
+          channelType: ChannelType.WHATSAPP,
+          identifier,
+          displayName: contact.name || contact.notify || null,
+        },
+        update: {
+          displayName: contact.name || contact.notify || undefined,
+        },
+      });
+    } catch (error) {
+      // Skip errors, continue with next contact
+    }
+  }
+
+  // Process chats and create conversations
+  for (const chat of chats || []) {
+    try {
+      const remoteJid = chat.id;
+      if (!remoteJid || remoteJid.endsWith('@g.us')) continue; // Skip groups
+
+      const identifier = remoteJid.split('@')[0];
+
+      let contact = await prisma.contact.findFirst({
+        where: { organizationId: orgId, channelType: ChannelType.WHATSAPP, identifier },
+      });
+
+      if (!contact) {
+        contact = await prisma.contact.create({
+          data: {
+            organizationId: orgId,
+            channelType: ChannelType.WHATSAPP,
+            identifier,
+            displayName: chat.name || null,
+          },
+        });
+      }
+
+      const existingConvo = await prisma.conversation.findFirst({
+        where: { channelId, contactId: contact.id },
+      });
+
+      if (!existingConvo) {
+        await prisma.conversation.create({
+          data: {
+            organizationId: orgId,
+            channelId,
+            contactId: contact.id,
+            status: 'OPEN',
+            unreadCount: chat.unreadCount || 0,
+            lastMessageAt: chat.conversationTimestamp
+              ? new Date(Number(chat.conversationTimestamp) * 1000)
+              : new Date(),
+          },
+        });
+      }
+    } catch (error) {
+      // Skip errors
+    }
+  }
+
+  // Process messages
+  for (const [jid, msgs] of Object.entries(messages || {})) {
+    if (!Array.isArray(msgs)) continue;
+
+    const identifier = jid.split('@')[0];
+
+    const contact = await prisma.contact.findFirst({
+      where: { organizationId: orgId, channelType: ChannelType.WHATSAPP, identifier },
+    });
+    if (!contact) continue;
+
+    const conversation = await prisma.conversation.findFirst({
+      where: { channelId, contactId: contact.id },
+    });
+    if (!conversation) continue;
+
+    for (const msg of msgs as any[]) {
+      try {
+        const externalId = msg.key?.id;
+        if (!externalId) continue;
+
+        // Skip if exists
+        const exists = await prisma.message.findFirst({ where: { externalId, channelId } });
+        if (exists) continue;
+
+        // Parse content
+        const msgContent = msg.message || {};
+        let type: typeof MessageType[keyof typeof MessageType] = MessageType.TEXT;
+        let content: any = {};
+
+        if (msgContent.conversation) {
+          content = { text: msgContent.conversation };
+        } else if (msgContent.extendedTextMessage) {
+          content = { text: msgContent.extendedTextMessage.text };
+        } else if (msgContent.imageMessage) {
+          type = MessageType.IMAGE;
+          content = { caption: msgContent.imageMessage.caption };
+        } else if (msgContent.videoMessage) {
+          type = MessageType.VIDEO;
+        } else if (msgContent.audioMessage) {
+          type = MessageType.AUDIO;
+        } else if (msgContent.documentMessage) {
+          type = MessageType.DOCUMENT;
+          content = { filename: msgContent.documentMessage.fileName };
+        }
+
+        const isFromMe = msg.key?.fromMe || false;
+
+        await prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            channelId,
+            externalId,
+            direction: isFromMe ? MessageDirection.OUTBOUND : MessageDirection.INBOUND,
+            type,
+            content,
+            status: isFromMe ? MessageStatus.SENT : MessageStatus.DELIVERED,
+            sentAt: isFromMe ? new Date(Number(msg.messageTimestamp) * 1000) : null,
+            deliveredAt: !isFromMe ? new Date(Number(msg.messageTimestamp) * 1000) : null,
+            metadata: { timestamp: Number(msg.messageTimestamp), isHistorical: true },
+          },
+        });
+      } catch (error) {
+        // Skip duplicate or invalid messages
+      }
+    }
+  }
+
+  logger.info({ channelId }, 'History sync completed');
+}
+
 async function main() {
   logger.info('Starting Background Worker...');
 
@@ -225,6 +516,15 @@ async function main() {
     });
     workers.push(analyticsWorker);
     logger.info('Analytics worker started');
+
+    // History sync worker - LOW concurrency, runs in background
+    // Does NOT block live message processing
+    const historySyncWorker = new Worker(QUEUES.HISTORY_SYNC, processHistorySync, {
+      connection,
+      concurrency: 2, // Low concurrency for background sync
+    });
+    workers.push(historySyncWorker);
+    logger.info('History sync worker started (non-blocking)');
 
     // Error handlers
     workers.forEach((worker) => {
