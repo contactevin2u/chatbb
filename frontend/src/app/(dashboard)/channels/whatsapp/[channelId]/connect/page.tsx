@@ -114,6 +114,11 @@ export default function ConnectWhatsAppPage() {
     // Listen for disconnection
     const handleDisconnected = (data: { channelId: string; reason: string }) => {
       if (data.channelId === channelId) {
+        // Code 515 "restartRequired" is expected after QR scan - ignore it
+        if (data.reason === 'restartRequired' || data.reason === '515') {
+          console.log('Connection restarting after pairing (expected)');
+          return;
+        }
         setConnectionStatus('error');
         toast.error(`Disconnected: ${data.reason}`);
       }

@@ -54,26 +54,39 @@ function setupEventHandlers() {
 
   // Historical sync - queue with LOW priority (non-blocking)
   sessionManager.on('history:sync', async (channelId, data) => {
-    // Queue historical sync with LOW priority so live messages process first
-    await historySyncQueue.add(
-      'sync',
-      {
-        channelId,
-        chats: data.chats,
-        contacts: data.contacts,
-        messages: data.messages,
-        syncType: data.syncType,
-      },
-      {
-        priority: 10, // Low priority - live messages first
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 5000 },
+    try {
+      // Queue historical sync with LOW priority so live messages process first
+      await historySyncQueue.add(
+        'sync',
+        {
+          channelId,
+          chats: data.chats,
+          contacts: data.contacts,
+          messages: data.messages,
+          syncType: data.syncType,
+        },
+        {
+          priority: 10, // Low priority - live messages first
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 5000 },
+        }
+      );
+      logger.info(
+        { channelId, chats: data.chats.length, contacts: data.contacts.length },
+        'Queued historical sync (non-blocking)'
+      );
+    } catch (error) {
+      // If Redis is down, process directly (fallback)
+      logger.warn(
+        { channelId, error: (error as Error).message },
+        'Failed to queue history sync, processing directly'
+      );
+      try {
+        await processHistorySyncDirect(channelId, data);
+      } catch (processError) {
+        logger.error({ channelId, error: (processError as Error).message }, 'Direct history sync failed');
       }
-    );
-    logger.info(
-      { channelId, chats: data.chats.length, contacts: data.contacts.length },
-      'Queued historical sync (non-blocking)'
-    );
+    }
   });
 
   // Connection events - publish to Redis for API server
@@ -348,6 +361,178 @@ async function main() {
     logger.error({ error }, 'Failed to start WhatsApp Worker');
     process.exit(1);
   }
+}
+
+/**
+ * Process history sync directly (fallback when Redis/BullMQ is unavailable)
+ */
+async function processHistorySyncDirect(channelId: string, data: { chats: any[]; contacts: any[]; messages: any; syncType: any }) {
+  const { ChannelType, MessageDirection, MessageStatus, MessageType } = await import('@prisma/client');
+
+  const channel = await prisma.channel.findUnique({ where: { id: channelId } });
+  if (!channel) return;
+
+  const orgId = channel.organizationId;
+  let contactsProcessed = 0;
+  let chatsProcessed = 0;
+  let messagesProcessed = 0;
+
+  // Process contacts
+  for (const contact of data.contacts || []) {
+    try {
+      const identifier = contact.id?.split('@')[0];
+      if (!identifier) continue;
+
+      await prisma.contact.upsert({
+        where: {
+          organizationId_channelType_identifier: {
+            organizationId: orgId,
+            channelType: ChannelType.WHATSAPP,
+            identifier,
+          },
+        },
+        create: {
+          organizationId: orgId,
+          channelType: ChannelType.WHATSAPP,
+          identifier,
+          displayName: contact.name || contact.notify || null,
+        },
+        update: {
+          displayName: contact.name || contact.notify || undefined,
+        },
+      });
+      contactsProcessed++;
+    } catch {
+      // Skip errors
+    }
+  }
+
+  // Process chats and create conversations
+  for (const chat of data.chats || []) {
+    try {
+      const remoteJid = chat.id;
+      if (!remoteJid || remoteJid.endsWith('@g.us')) continue; // Skip groups
+
+      const identifier = remoteJid.split('@')[0];
+
+      let contact = await prisma.contact.findFirst({
+        where: { organizationId: orgId, channelType: ChannelType.WHATSAPP, identifier },
+      });
+
+      if (!contact) {
+        contact = await prisma.contact.create({
+          data: {
+            organizationId: orgId,
+            channelType: ChannelType.WHATSAPP,
+            identifier,
+            displayName: chat.name || null,
+          },
+        });
+      }
+
+      const existingConvo = await prisma.conversation.findFirst({
+        where: { channelId, contactId: contact.id },
+      });
+
+      if (!existingConvo) {
+        await prisma.conversation.create({
+          data: {
+            organizationId: orgId,
+            channelId,
+            contactId: contact.id,
+            status: 'OPEN',
+            unreadCount: chat.unreadCount || 0,
+            lastMessageAt: chat.conversationTimestamp
+              ? new Date(Number(chat.conversationTimestamp) * 1000)
+              : new Date(),
+          },
+        });
+      }
+      chatsProcessed++;
+    } catch {
+      // Skip errors
+    }
+  }
+
+  // Process messages (limit to avoid timeout)
+  const messageLimit = 100; // Process max 100 messages per sync to avoid timeout
+  let messageCount = 0;
+
+  for (const [jid, msgs] of Object.entries(data.messages || {})) {
+    if (!Array.isArray(msgs) || messageCount >= messageLimit) continue;
+
+    const identifier = jid.split('@')[0];
+
+    const contact = await prisma.contact.findFirst({
+      where: { organizationId: orgId, channelType: ChannelType.WHATSAPP, identifier },
+    });
+    if (!contact) continue;
+
+    const conversation = await prisma.conversation.findFirst({
+      where: { channelId, contactId: contact.id },
+    });
+    if (!conversation) continue;
+
+    for (const msg of msgs as any[]) {
+      if (messageCount >= messageLimit) break;
+
+      try {
+        const externalId = msg.key?.id;
+        if (!externalId) continue;
+
+        // Skip if exists
+        const exists = await prisma.message.findFirst({ where: { externalId, channelId } });
+        if (exists) continue;
+
+        // Parse content
+        const msgContent = msg.message || {};
+        let type: typeof MessageType[keyof typeof MessageType] = MessageType.TEXT;
+        let content: any = {};
+
+        if (msgContent.conversation) {
+          content = { text: msgContent.conversation };
+        } else if (msgContent.extendedTextMessage) {
+          content = { text: msgContent.extendedTextMessage.text };
+        } else if (msgContent.imageMessage) {
+          type = MessageType.IMAGE;
+          content = { caption: msgContent.imageMessage.caption };
+        } else if (msgContent.videoMessage) {
+          type = MessageType.VIDEO;
+        } else if (msgContent.audioMessage) {
+          type = MessageType.AUDIO;
+        } else if (msgContent.documentMessage) {
+          type = MessageType.DOCUMENT;
+          content = { filename: msgContent.documentMessage.fileName };
+        }
+
+        const isFromMe = msg.key?.fromMe || false;
+
+        await prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            channelId,
+            externalId,
+            direction: isFromMe ? MessageDirection.OUTBOUND : MessageDirection.INBOUND,
+            type,
+            content,
+            status: isFromMe ? MessageStatus.SENT : MessageStatus.DELIVERED,
+            sentAt: isFromMe ? new Date(Number(msg.messageTimestamp) * 1000) : null,
+            deliveredAt: !isFromMe ? new Date(Number(msg.messageTimestamp) * 1000) : null,
+            metadata: { timestamp: Number(msg.messageTimestamp), isHistorical: true },
+          },
+        });
+        messagesProcessed++;
+        messageCount++;
+      } catch {
+        // Skip errors
+      }
+    }
+  }
+
+  logger.info(
+    { channelId, contactsProcessed, chatsProcessed, messagesProcessed },
+    'Direct history sync completed'
+  );
 }
 
 main();

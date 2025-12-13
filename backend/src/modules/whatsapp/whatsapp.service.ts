@@ -44,9 +44,12 @@ export interface SendMessageInput {
 
 export class WhatsAppService {
   private redisSubscriber: Redis | null = null;
+  private responseSubscriber: Redis | null = null;
+  private pendingRequests: Map<string, { resolve: (value: any) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout }> = new Map();
 
   constructor() {
     this.setupRedisSubscriber();
+    this.setupResponseSubscriber();
   }
 
   /**
@@ -127,48 +130,73 @@ export class WhatsAppService {
   }
 
   /**
+   * Set up a single Redis subscriber for command responses (reused for all commands)
+   */
+  private async setupResponseSubscriber() {
+    try {
+      this.responseSubscriber = new Redis(redisConfig.url);
+
+      // Subscribe to all response channels using pattern
+      await this.responseSubscriber.psubscribe('whatsapp:response:*');
+
+      this.responseSubscriber.on('pmessage', (pattern, channel, message) => {
+        try {
+          // Extract requestId from channel: whatsapp:response:{requestId}
+          const requestId = channel.split(':')[2];
+          const pending = this.pendingRequests.get(requestId);
+
+          if (pending) {
+            clearTimeout(pending.timeout);
+            this.pendingRequests.delete(requestId);
+
+            const response = JSON.parse(message);
+            if (response.success) {
+              pending.resolve(response);
+            } else {
+              pending.reject(new Error(response.error || 'Command failed'));
+            }
+          }
+        } catch (error) {
+          console.error('[WhatsAppService] Error processing response:', error);
+        }
+      });
+
+      this.responseSubscriber.on('error', (error) => {
+        console.error('[WhatsAppService] Response subscriber error:', error);
+      });
+
+      console.log('[WhatsAppService] Response subscriber initialized');
+    } catch (error) {
+      console.error('[WhatsAppService] Failed to setup response subscriber:', error);
+    }
+  }
+
+  /**
    * Send a command to WhatsApp Worker via Redis and wait for response
+   * Uses a shared subscriber connection instead of creating new ones
    */
   private async sendCommand<T>(command: string, channelId: string, data: any, timeoutMs = 30000): Promise<T> {
     const requestId = uuidv4();
-    const responseChannel = `whatsapp:response:${requestId}`;
 
     return new Promise(async (resolve, reject) => {
-      const subscriber = new Redis(redisConfig.url);
-      let timeout: NodeJS.Timeout;
+      // Set timeout
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(requestId);
+        reject(new Error('Command timeout - WhatsApp Worker may not be running'));
+      }, timeoutMs);
+
+      // Store pending request
+      this.pendingRequests.set(requestId, { resolve, reject, timeout });
 
       try {
-        // Subscribe to response channel
-        await subscriber.subscribe(responseChannel);
-
-        // Set up response handler
-        subscriber.on('message', (ch, message) => {
-          if (ch === responseChannel) {
-            clearTimeout(timeout);
-            subscriber.quit();
-            const response = JSON.parse(message);
-            if (response.success) {
-              resolve(response as T);
-            } else {
-              reject(new Error(response.error || 'Command failed'));
-            }
-          }
-        });
-
-        // Set timeout
-        timeout = setTimeout(() => {
-          subscriber.quit();
-          reject(new Error('Command timeout - WhatsApp Worker may not be running'));
-        }, timeoutMs);
-
         // Publish command to WhatsApp Worker
         await redisClient.publish(`whatsapp:cmd:${command}:${channelId}`, JSON.stringify({
           ...data,
           requestId,
         }));
       } catch (error) {
-        clearTimeout(timeout!);
-        subscriber.quit();
+        clearTimeout(timeout);
+        this.pendingRequests.delete(requestId);
         reject(error);
       }
     });
@@ -325,7 +353,34 @@ export class WhatsAppService {
   }
 
   /**
-   * Send a message
+   * Send a message via WhatsApp Worker (low-level - no DB operations)
+   * Used by messageService which handles its own DB records
+   */
+  async sendMessageRaw(channelId: string, to: string, text?: string, media?: any): Promise<{ externalId: string }> {
+    const channel = await prisma.channel.findUnique({
+      where: { id: channelId },
+    });
+
+    if (!channel) {
+      throw new Error('Channel not found');
+    }
+
+    if (channel.status !== ChannelStatus.CONNECTED) {
+      throw new Error('Channel not connected');
+    }
+
+    // Send command to WhatsApp Worker and wait for response
+    const response = await this.sendCommand<{ success: boolean; messageId: string }>(
+      'send',
+      channelId,
+      { to, text, media }
+    );
+
+    return { externalId: response.messageId };
+  }
+
+  /**
+   * Send a message (convenience method)
    * Creates DB record, then sends via Redis to WhatsApp Worker
    */
   async sendMessage(input: SendMessageInput) {
@@ -393,22 +448,14 @@ export class WhatsAppService {
     });
 
     try {
-      // Send command to WhatsApp Worker and wait for response
-      const response = await this.sendCommand<{ success: boolean; messageId: string }>(
-        'send',
-        input.channelId,
-        {
-          to: input.to,
-          text: input.text,
-          media: input.media,
-        }
-      );
+      // Send via low-level method
+      const result = await this.sendMessageRaw(input.channelId, input.to, input.text, input.media);
 
       // Update message with external ID and sent status
       await prisma.message.update({
         where: { id: message.id },
         data: {
-          externalId: response.messageId,
+          externalId: result.externalId,
           status: MessageStatus.SENT,
           sentAt: new Date(),
         },
@@ -422,7 +469,7 @@ export class WhatsAppService {
 
       return {
         messageId: message.id,
-        externalId: response.messageId,
+        externalId: result.externalId,
         status: 'SENT',
       };
     } catch (error) {

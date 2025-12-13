@@ -7,7 +7,7 @@
 import { MessageDirection, MessageStatus, MessageType, Prisma } from '@prisma/client';
 import { prisma } from '../../core/database/prisma';
 import { socketServer } from '../../core/websocket/server';
-import { sessionManager } from '../whatsapp/session/session.manager';
+import { whatsappService } from '../whatsapp/whatsapp.service';
 
 export interface GetMessagesInput {
   conversationId: string;
@@ -166,24 +166,17 @@ export class MessageService {
       let externalId: string | undefined;
 
       if (conversation.channel.type === 'WHATSAPP') {
-        // Send via WhatsApp
+        // Send via WhatsApp using whatsappService (sends command to WhatsApp Worker via Redis)
         const recipient = conversation.contact.identifier;
 
-        if (text) {
-          const result = await sessionManager.sendTextMessage(
-            conversation.channelId,
-            recipient,
-            text
-          );
-          externalId = result?.key?.id;
-        } else if (media) {
-          const result = await sessionManager.sendMediaMessage(
-            conversation.channelId,
-            recipient,
-            media
-          );
-          externalId = result?.key?.id;
-        }
+        // Use low-level method since we're already handling DB operations here
+        const result = await whatsappService.sendMessageRaw(
+          conversation.channelId,
+          recipient,
+          text,
+          media
+        );
+        externalId = result.externalId;
       }
 
       // Update message with external ID and sent status
