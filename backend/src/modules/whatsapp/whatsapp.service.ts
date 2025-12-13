@@ -1,16 +1,26 @@
 /**
  * WhatsApp Service
  *
- * Business logic for WhatsApp channel operations
+ * Business logic for WhatsApp channel operations.
+ *
+ * IMPORTANT: This service runs in the API server which does NOT have active
+ * WhatsApp sessions. All session operations are sent via Redis pub/sub to
+ * the WhatsApp Worker which has the active Baileys sessions.
+ *
+ * Architecture:
+ * - API Server (this service) -> Redis pub/sub -> WhatsApp Worker (sessionManager)
+ * - WhatsApp Worker -> Redis pub/sub -> API Server (WebSocket broadcast)
  */
 
 import { ChannelStatus, ChannelType, MessageDirection, MessageStatus, MessageType } from '@prisma/client';
-import { proto, WAMessage } from '@whiskeysockets/baileys';
+import { v4 as uuidv4 } from 'uuid';
+import Redis from 'ioredis';
 
 import { prisma } from '../../core/database/prisma';
-import { sessionManager } from './session/session.manager';
 import { hasAuthState } from './session/session.store';
 import { socketServer } from '../../core/websocket/server';
+import { redisClient } from '../../core/cache/redis.client';
+import { redisConfig } from '../../config/redis';
 
 export interface CreateChannelInput {
   organizationId: string;
@@ -33,246 +43,139 @@ export interface SendMessageInput {
 }
 
 export class WhatsAppService {
+  private redisSubscriber: Redis | null = null;
+
   constructor() {
-    this.setupEventHandlers();
+    this.setupRedisSubscriber();
   }
 
   /**
-   * Set up event handlers for session manager
+   * Set up Redis subscriber for events from WhatsApp Worker
    */
-  private setupEventHandlers() {
-    // QR code generated - emit to frontend
-    sessionManager.on('qr:generated', (channelId, qr) => {
-      socketServer.to(`channel:${channelId}`).emit('whatsapp:qr', { channelId, qr });
-    });
+  private async setupRedisSubscriber() {
+    try {
+      this.redisSubscriber = new Redis(redisConfig.url);
 
-    // Pairing code generated
-    sessionManager.on('pairing-code:generated', (channelId, code) => {
-      socketServer.to(`channel:${channelId}`).emit('whatsapp:pairing-code', { channelId, code });
-    });
+      // Subscribe to WhatsApp events from Worker
+      await this.redisSubscriber.psubscribe(
+        'whatsapp:*:qr',
+        'whatsapp:*:connected',
+        'whatsapp:*:disconnected',
+        'whatsapp:*:status',
+        'org:*:message'
+      );
 
-    // Connected
-    sessionManager.on('connected', async (channelId, phoneNumber) => {
-      socketServer.to(`channel:${channelId}`).emit('whatsapp:connected', { channelId, phoneNumber });
-
-      // Notify organization
-      const channel = await prisma.channel.findUnique({
-        where: { id: channelId },
-        select: { organizationId: true },
-      });
-
-      if (channel) {
-        socketServer.to(`org:${channel.organizationId}`).emit('channel:connected', {
-          channelId,
-          type: 'WHATSAPP',
-          phoneNumber,
-        });
-      }
-    });
-
-    // Disconnected
-    sessionManager.on('disconnected', async (channelId, reason) => {
-      socketServer.to(`channel:${channelId}`).emit('whatsapp:disconnected', { channelId, reason });
-
-      const channel = await prisma.channel.findUnique({
-        where: { id: channelId },
-        select: { organizationId: true },
-      });
-
-      if (channel) {
-        socketServer.to(`org:${channel.organizationId}`).emit('channel:disconnected', {
-          channelId,
-          type: 'WHATSAPP',
-          reason,
-        });
-      }
-    });
-
-    // Message received
-    sessionManager.on('message:received', async (channelId, waMessage) => {
-      await this.handleIncomingMessage(channelId, waMessage);
-    });
-
-    // Message status update
-    sessionManager.on('message:update', async (channelId, update) => {
-      await this.handleMessageUpdate(channelId, update);
-    });
-
-    // Historical sync - process chats, contacts, messages in background
-    sessionManager.on('history:sync', async (channelId, data) => {
-      await this.handleHistoricalSync(channelId, data);
-    });
-  }
-
-  /**
-   * Handle historical message sync from WhatsApp
-   * Processes chats, contacts, and messages received during initial sync
-   */
-  private async handleHistoricalSync(
-    channelId: string,
-    data: { chats: any[]; contacts: any[]; messages: any; syncType: any }
-  ) {
-    const channel = await prisma.channel.findUnique({
-      where: { id: channelId },
-    });
-
-    if (!channel) return;
-
-    const { chats, contacts, messages } = data;
-    const orgId = channel.organizationId;
-
-    console.log(`[HistorySync] Processing: ${chats.length} chats, ${contacts.length} contacts, ${Object.keys(messages).length} message groups`);
-
-    // Process contacts first
-    for (const contact of contacts) {
-      try {
-        const identifier = contact.id?.split('@')[0];
-        if (!identifier) continue;
-
-        await prisma.contact.upsert({
-          where: {
-            organizationId_channelType_identifier: {
-              organizationId: orgId,
-              channelType: ChannelType.WHATSAPP,
-              identifier,
-            },
-          },
-          create: {
-            organizationId: orgId,
-            channelType: ChannelType.WHATSAPP,
-            identifier,
-            displayName: contact.name || contact.notify || null,
-          },
-          update: {
-            displayName: contact.name || contact.notify || undefined,
-          },
-        });
-      } catch (error) {
-        console.error('[HistorySync] Error processing contact:', error);
-      }
-    }
-
-    // Process chats and create conversations
-    for (const chat of chats) {
-      try {
-        const remoteJid = chat.id;
-        if (!remoteJid || remoteJid.endsWith('@g.us')) continue; // Skip groups for now
-
-        const identifier = remoteJid.split('@')[0];
-
-        // Get or create contact
-        let contact = await prisma.contact.findFirst({
-          where: {
-            organizationId: orgId,
-            channelType: ChannelType.WHATSAPP,
-            identifier,
-          },
-        });
-
-        if (!contact) {
-          contact = await prisma.contact.create({
-            data: {
-              organizationId: orgId,
-              channelType: ChannelType.WHATSAPP,
-              identifier,
-              displayName: chat.name || null,
-            },
-          });
-        }
-
-        // Get or create conversation
-        const existingConversation = await prisma.conversation.findFirst({
-          where: { channelId, contactId: contact.id },
-        });
-
-        if (!existingConversation) {
-          await prisma.conversation.create({
-            data: {
-              organizationId: orgId,
-              channelId,
-              contactId: contact.id,
-              status: 'OPEN',
-              unreadCount: chat.unreadCount || 0,
-              lastMessageAt: chat.conversationTimestamp
-                ? new Date(Number(chat.conversationTimestamp) * 1000)
-                : new Date(),
-            },
-          });
-        }
-      } catch (error) {
-        console.error('[HistorySync] Error processing chat:', error);
-      }
-    }
-
-    // Process messages
-    for (const [jid, msgs] of Object.entries(messages)) {
-      if (!Array.isArray(msgs)) continue;
-
-      const identifier = jid.split('@')[0];
-
-      // Get contact and conversation
-      const contact = await prisma.contact.findFirst({
-        where: {
-          organizationId: orgId,
-          channelType: ChannelType.WHATSAPP,
-          identifier,
-        },
-      });
-
-      if (!contact) continue;
-
-      const conversation = await prisma.conversation.findFirst({
-        where: { channelId, contactId: contact.id },
-      });
-
-      if (!conversation) continue;
-
-      // Process each message
-      for (const msg of msgs as any[]) {
+      this.redisSubscriber.on('pmessage', async (pattern, channel, message) => {
         try {
-          const externalId = msg.key?.id;
-          if (!externalId) continue;
+          const data = JSON.parse(message);
+          const parts = channel.split(':');
 
-          // Check if message already exists
-          const existingMsg = await prisma.message.findFirst({
-            where: { externalId, channelId },
-          });
+          if (channel.includes(':qr')) {
+            const channelId = parts[1];
+            socketServer.to(`channel:${channelId}`).emit('whatsapp:qr', { channelId, qr: data.qr });
+          } else if (channel.includes(':connected')) {
+            const channelId = parts[1];
+            socketServer.to(`channel:${channelId}`).emit('whatsapp:connected', { channelId, phoneNumber: data.phoneNumber });
 
-          if (existingMsg) continue;
+            // Update channel in DB
+            const channelRecord = await prisma.channel.findUnique({ where: { id: channelId } });
+            if (channelRecord) {
+              await prisma.channel.update({
+                where: { id: channelId },
+                data: {
+                  status: ChannelStatus.CONNECTED,
+                  identifier: data.phoneNumber,
+                  lastConnectedAt: new Date(),
+                },
+              });
+              socketServer.to(`org:${channelRecord.organizationId}`).emit('channel:connected', {
+                channelId,
+                type: 'WHATSAPP',
+                phoneNumber: data.phoneNumber,
+              });
+            }
+          } else if (channel.includes(':disconnected')) {
+            const channelId = parts[1];
+            socketServer.to(`channel:${channelId}`).emit('whatsapp:disconnected', { channelId, reason: data.reason });
 
-          // Parse message content
-          const { type, content } = this.parseMessageContent(msg.message || {});
-          const isFromMe = msg.key?.fromMe || false;
-
-          await prisma.message.create({
-            data: {
-              conversationId: conversation.id,
-              channelId,
-              externalId,
-              direction: isFromMe ? MessageDirection.OUTBOUND : MessageDirection.INBOUND,
-              type,
-              content,
-              status: isFromMe ? MessageStatus.SENT : MessageStatus.DELIVERED,
-              sentAt: isFromMe ? new Date(Number(msg.messageTimestamp) * 1000) : null,
-              deliveredAt: !isFromMe ? new Date(Number(msg.messageTimestamp) * 1000) : null,
-              metadata: {
-                timestamp: Number(msg.messageTimestamp) || Date.now(),
-                pushName: msg.pushName || null,
-                isHistorical: true,
-              },
-            },
-          });
+            const channelRecord = await prisma.channel.findUnique({ where: { id: channelId } });
+            if (channelRecord) {
+              await prisma.channel.update({
+                where: { id: channelId },
+                data: { status: ChannelStatus.DISCONNECTED },
+              });
+              socketServer.to(`org:${channelRecord.organizationId}`).emit('channel:disconnected', {
+                channelId,
+                type: 'WHATSAPP',
+                reason: data.reason,
+              });
+            }
+          } else if (channel.includes(':message')) {
+            // New message notification from Background Worker
+            const orgId = parts[1];
+            socketServer.to(`org:${orgId}`).emit('message:new', data);
+          }
         } catch (error) {
-          // Skip duplicate or invalid messages
+          console.error('[WhatsAppService] Error processing Redis message:', error);
         }
-      }
-    }
+      });
 
-    console.log(`[HistorySync] Completed for channel ${channelId}`);
+      console.log('[WhatsAppService] Redis subscriber connected - listening for WhatsApp Worker events');
+    } catch (error) {
+      console.error('[WhatsAppService] Failed to setup Redis subscriber:', error);
+    }
   }
 
   /**
-   * Create a new WhatsApp channel
+   * Send a command to WhatsApp Worker via Redis and wait for response
+   */
+  private async sendCommand<T>(command: string, channelId: string, data: any, timeoutMs = 30000): Promise<T> {
+    const requestId = uuidv4();
+    const responseChannel = `whatsapp:response:${requestId}`;
+
+    return new Promise(async (resolve, reject) => {
+      const subscriber = new Redis(redisConfig.url);
+      let timeout: NodeJS.Timeout;
+
+      try {
+        // Subscribe to response channel
+        await subscriber.subscribe(responseChannel);
+
+        // Set up response handler
+        subscriber.on('message', (ch, message) => {
+          if (ch === responseChannel) {
+            clearTimeout(timeout);
+            subscriber.quit();
+            const response = JSON.parse(message);
+            if (response.success) {
+              resolve(response as T);
+            } else {
+              reject(new Error(response.error || 'Command failed'));
+            }
+          }
+        });
+
+        // Set timeout
+        timeout = setTimeout(() => {
+          subscriber.quit();
+          reject(new Error('Command timeout - WhatsApp Worker may not be running'));
+        }, timeoutMs);
+
+        // Publish command to WhatsApp Worker
+        await redisClient.publish(`whatsapp:cmd:${command}:${channelId}`, JSON.stringify({
+          ...data,
+          requestId,
+        }));
+      } catch (error) {
+        clearTimeout(timeout!);
+        subscriber.quit();
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * Create a new WhatsApp channel (DB only - no session yet)
    */
   async createChannel(input: CreateChannelInput) {
     const channel = await prisma.channel.create({
@@ -290,9 +193,9 @@ export class WhatsAppService {
 
   /**
    * Connect a WhatsApp channel (start QR code flow)
+   * Sends command to WhatsApp Worker via Redis
    */
   async connectChannel(channelId: string, organizationId: string) {
-    // Verify channel belongs to organization
     const channel = await prisma.channel.findFirst({
       where: {
         id: channelId,
@@ -305,21 +208,29 @@ export class WhatsAppService {
       throw new Error('Channel not found');
     }
 
-    // Create session
-    const session = await sessionManager.createSession(channelId, organizationId);
+    // Send connect command to WhatsApp Worker
+    await redisClient.publish(`whatsapp:cmd:connect:${channelId}`, JSON.stringify({
+      organizationId,
+    }));
+
+    // Update channel status
+    await prisma.channel.update({
+      where: { id: channelId },
+      data: { status: ChannelStatus.CONNECTING },
+    });
 
     return {
       channelId,
-      status: session.status,
-      qrCode: session.qrCode,
+      status: 'CONNECTING',
+      message: 'QR code will be sent via WebSocket',
     };
   }
 
   /**
    * Request pairing code instead of QR
+   * Sends command to WhatsApp Worker via Redis
    */
   async requestPairingCode(channelId: string, organizationId: string, phoneNumber: string) {
-    // Verify channel
     const channel = await prisma.channel.findFirst({
       where: {
         id: channelId,
@@ -332,13 +243,19 @@ export class WhatsAppService {
       throw new Error('Channel not found');
     }
 
-    const code = await sessionManager.requestPairingCode(channelId, phoneNumber);
+    // Send pairing command to WhatsApp Worker and wait for response
+    const response = await this.sendCommand<{ success: boolean; code: string }>(
+      'pairing',
+      channelId,
+      { phoneNumber }
+    );
 
-    return { channelId, pairingCode: code };
+    return { channelId, pairingCode: response.code };
   }
 
   /**
    * Disconnect a WhatsApp channel
+   * Sends command to WhatsApp Worker via Redis
    */
   async disconnectChannel(channelId: string, organizationId: string) {
     const channel = await prisma.channel.findFirst({
@@ -353,13 +270,20 @@ export class WhatsAppService {
       throw new Error('Channel not found');
     }
 
-    await sessionManager.disconnectSession(channelId);
+    // Send disconnect command to WhatsApp Worker
+    await redisClient.publish(`whatsapp:cmd:disconnect:${channelId}`, JSON.stringify({}));
+
+    // Update channel status
+    await prisma.channel.update({
+      where: { id: channelId },
+      data: { status: ChannelStatus.DISCONNECTED },
+    });
 
     return { channelId, status: 'DISCONNECTED' };
   }
 
   /**
-   * Get channel status
+   * Get channel status (from DB - no sessionManager access)
    */
   async getChannelStatus(channelId: string, organizationId: string) {
     const channel = await prisma.channel.findFirst({
@@ -374,21 +298,19 @@ export class WhatsAppService {
       throw new Error('Channel not found');
     }
 
-    const session = sessionManager.getSession(channelId);
     const hasState = await hasAuthState(channelId);
 
     return {
       channelId,
-      status: session?.status || channel.status,
+      status: channel.status,
       identifier: channel.identifier,
       lastConnectedAt: channel.lastConnectedAt,
       hasAuthState: hasState,
-      qrCode: session?.qrCode,
     };
   }
 
   /**
-   * List all WhatsApp channels for an organization
+   * List all WhatsApp channels for an organization (from DB)
    */
   async listChannels(organizationId: string) {
     const channels = await prisma.channel.findMany({
@@ -399,18 +321,12 @@ export class WhatsAppService {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Enrich with session status
-    return channels.map((channel) => {
-      const session = sessionManager.getSession(channel.id);
-      return {
-        ...channel,
-        liveStatus: session?.status || channel.status,
-      };
-    });
+    return channels;
   }
 
   /**
    * Send a message
+   * Creates DB record, then sends via Redis to WhatsApp Worker
    */
   async sendMessage(input: SendMessageInput) {
     const channel = await prisma.channel.findUnique({
@@ -419,6 +335,10 @@ export class WhatsAppService {
 
     if (!channel) {
       throw new Error('Channel not found');
+    }
+
+    if (channel.status !== ChannelStatus.CONNECTED) {
+      throw new Error('Channel not connected');
     }
 
     // Get or create contact
@@ -460,7 +380,7 @@ export class WhatsAppService {
       });
     }
 
-    // Create message record
+    // Create message record with PENDING status
     const message = await prisma.message.create({
       data: {
         conversationId: conversation.id,
@@ -473,20 +393,22 @@ export class WhatsAppService {
     });
 
     try {
-      // Send via WhatsApp
-      let result: WAMessage | undefined;
-
-      if (input.text) {
-        result = await sessionManager.sendTextMessage(input.channelId, input.to, input.text);
-      } else if (input.media) {
-        result = await sessionManager.sendMediaMessage(input.channelId, input.to, input.media);
-      }
+      // Send command to WhatsApp Worker and wait for response
+      const response = await this.sendCommand<{ success: boolean; messageId: string }>(
+        'send',
+        input.channelId,
+        {
+          to: input.to,
+          text: input.text,
+          media: input.media,
+        }
+      );
 
       // Update message with external ID and sent status
       await prisma.message.update({
         where: { id: message.id },
         data: {
-          externalId: result?.key?.id,
+          externalId: response.messageId,
           status: MessageStatus.SENT,
           sentAt: new Date(),
         },
@@ -500,7 +422,7 @@ export class WhatsAppService {
 
       return {
         messageId: message.id,
-        externalId: result?.key?.id,
+        externalId: response.messageId,
         status: 'SENT',
       };
     } catch (error) {
@@ -518,278 +440,7 @@ export class WhatsAppService {
   }
 
   /**
-   * Handle incoming WhatsApp message
-   */
-  private async handleIncomingMessage(channelId: string, waMessage: proto.IWebMessageInfo) {
-    const channel = await prisma.channel.findUnique({
-      where: { id: channelId },
-    });
-
-    if (!channel) return;
-
-    const remoteJid = waMessage.key?.remoteJid;
-    if (!remoteJid) return;
-
-    // Extract phone number from JID
-    const contactIdentifier = remoteJid.split('@')[0];
-
-    // Get or create contact
-    let contact = await prisma.contact.findFirst({
-      where: {
-        organizationId: channel.organizationId,
-        channelType: ChannelType.WHATSAPP,
-        identifier: contactIdentifier,
-      },
-    });
-
-    if (!contact) {
-      // Try to get push name from message
-      const pushName = waMessage.pushName;
-
-      contact = await prisma.contact.create({
-        data: {
-          organizationId: channel.organizationId,
-          channelType: ChannelType.WHATSAPP,
-          identifier: contactIdentifier,
-          displayName: pushName,
-        },
-      });
-    } else if (waMessage.pushName && !contact.displayName) {
-      // Update display name if we didn't have one
-      await prisma.contact.update({
-        where: { id: contact.id },
-        data: { displayName: waMessage.pushName },
-      });
-    }
-
-    // Get or create conversation
-    let conversation = await prisma.conversation.findFirst({
-      where: {
-        channelId,
-        contactId: contact.id,
-      },
-    });
-
-    if (!conversation) {
-      conversation = await prisma.conversation.create({
-        data: {
-          organizationId: channel.organizationId,
-          channelId,
-          contactId: contact.id,
-          status: 'OPEN',
-          lastMessageAt: new Date(),
-          unreadCount: 1,
-        },
-      });
-    } else {
-      // Update conversation
-      await prisma.conversation.update({
-        where: { id: conversation.id },
-        data: {
-          lastMessageAt: new Date(),
-          unreadCount: { increment: 1 },
-          status: conversation.status === 'CLOSED' ? 'OPEN' : conversation.status,
-        },
-      });
-    }
-
-    // Parse message content
-    const { type, content } = this.parseMessageContent(waMessage.message!);
-
-    // Create message
-    const message = await prisma.message.create({
-      data: {
-        conversationId: conversation.id,
-        channelId,
-        externalId: waMessage.key?.id,
-        direction: MessageDirection.INBOUND,
-        type,
-        content,
-        status: MessageStatus.DELIVERED,
-        deliveredAt: new Date(),
-        metadata: {
-          timestamp: Number(waMessage.messageTimestamp) || Date.now(),
-          pushName: waMessage.pushName || null,
-        },
-      },
-      include: {
-        conversation: {
-          include: { contact: true },
-        },
-      },
-    });
-
-    // Get the conversation for emitting
-    const messageWithConversation = message as typeof message & { conversation: typeof conversation };
-
-    // Emit to WebSocket for real-time updates
-    socketServer.to(`org:${channel.organizationId}`).emit('message:new', {
-      message,
-      conversation: messageWithConversation.conversation || conversation,
-    });
-
-    // Emit to conversation room
-    socketServer.to(`conversation:${conversation.id}`).emit('message:new', {
-      message,
-    });
-  }
-
-  /**
-   * Handle message status updates
-   */
-  private async handleMessageUpdate(
-    channelId: string,
-    update: { key: proto.IMessageKey; update: Partial<proto.IWebMessageInfo> }
-  ) {
-    const externalId = update.key.id;
-    if (!externalId) return;
-
-    const message = await prisma.message.findFirst({
-      where: { externalId, channelId },
-    });
-
-    if (!message) return;
-
-    const statusUpdate: any = {};
-
-    // Update based on status
-    if (update.update.status === 2) {
-      // DELIVERY_ACK
-      statusUpdate.status = MessageStatus.DELIVERED;
-      statusUpdate.deliveredAt = new Date();
-    } else if (update.update.status === 3 || update.update.status === 4) {
-      // READ
-      statusUpdate.status = MessageStatus.READ;
-      statusUpdate.readAt = new Date();
-    }
-
-    if (Object.keys(statusUpdate).length > 0) {
-      const updatedMessage = await prisma.message.update({
-        where: { id: message.id },
-        data: statusUpdate,
-      });
-
-      // Emit status update
-      socketServer.to(`conversation:${message.conversationId}`).emit('message:update', {
-        messageId: message.id,
-        ...statusUpdate,
-      });
-    }
-  }
-
-  /**
-   * Parse WhatsApp message content
-   */
-  private parseMessageContent(waMessage: proto.IMessage): { type: MessageType; content: any } {
-    if (waMessage.conversation || waMessage.extendedTextMessage) {
-      return {
-        type: MessageType.TEXT,
-        content: {
-          text: waMessage.conversation || waMessage.extendedTextMessage?.text,
-        },
-      };
-    }
-
-    if (waMessage.imageMessage) {
-      return {
-        type: MessageType.IMAGE,
-        content: {
-          url: waMessage.imageMessage.url,
-          mimetype: waMessage.imageMessage.mimetype,
-          caption: waMessage.imageMessage.caption,
-          fileLength: waMessage.imageMessage.fileLength,
-        },
-      };
-    }
-
-    if (waMessage.videoMessage) {
-      return {
-        type: MessageType.VIDEO,
-        content: {
-          url: waMessage.videoMessage.url,
-          mimetype: waMessage.videoMessage.mimetype,
-          caption: waMessage.videoMessage.caption,
-          fileLength: waMessage.videoMessage.fileLength,
-          seconds: waMessage.videoMessage.seconds,
-        },
-      };
-    }
-
-    if (waMessage.audioMessage) {
-      return {
-        type: MessageType.AUDIO,
-        content: {
-          url: waMessage.audioMessage.url,
-          mimetype: waMessage.audioMessage.mimetype,
-          seconds: waMessage.audioMessage.seconds,
-          ptt: waMessage.audioMessage.ptt,
-        },
-      };
-    }
-
-    if (waMessage.documentMessage) {
-      return {
-        type: MessageType.DOCUMENT,
-        content: {
-          url: waMessage.documentMessage.url,
-          mimetype: waMessage.documentMessage.mimetype,
-          fileName: waMessage.documentMessage.fileName,
-          fileLength: waMessage.documentMessage.fileLength,
-        },
-      };
-    }
-
-    if (waMessage.stickerMessage) {
-      return {
-        type: MessageType.STICKER,
-        content: {
-          url: waMessage.stickerMessage.url,
-          mimetype: waMessage.stickerMessage.mimetype,
-        },
-      };
-    }
-
-    if (waMessage.locationMessage) {
-      return {
-        type: MessageType.LOCATION,
-        content: {
-          latitude: waMessage.locationMessage.degreesLatitude,
-          longitude: waMessage.locationMessage.degreesLongitude,
-          name: waMessage.locationMessage.name,
-          address: waMessage.locationMessage.address,
-        },
-      };
-    }
-
-    if (waMessage.contactMessage) {
-      return {
-        type: MessageType.CONTACT,
-        content: {
-          displayName: waMessage.contactMessage.displayName,
-          vcard: waMessage.contactMessage.vcard,
-        },
-      };
-    }
-
-    if (waMessage.reactionMessage) {
-      return {
-        type: MessageType.REACTION,
-        content: {
-          emoji: waMessage.reactionMessage.text,
-          key: waMessage.reactionMessage.key,
-        },
-      };
-    }
-
-    // Default for unknown types
-    return {
-      type: MessageType.SYSTEM,
-      content: { raw: JSON.stringify(waMessage) },
-    };
-  }
-
-  /**
-   * Get message type from media type
+   * Get message type from media type string
    */
   private getMessageType(mediaType: string): MessageType {
     const typeMap: { [key: string]: MessageType } = {
