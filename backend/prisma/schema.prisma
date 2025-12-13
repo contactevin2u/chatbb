@@ -61,12 +61,13 @@ model User {
   updatedAt      DateTime   @updatedAt @map("updated_at")
 
   // Relations
-  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  teamMembers   TeamMember[]
-  refreshTokens RefreshToken[]
-  assignedChats Conversation[] @relation("AssignedAgent")
-  messages      Message[]      @relation("SentByUser")
-  auditLogs     AuditLog[]
+  organization        Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  teamMembers         TeamMember[]
+  refreshTokens       RefreshToken[]
+  assignedChats       Conversation[] @relation("AssignedAgent")
+  activeConversations Conversation[] @relation("ActiveAgent")
+  messages            Message[]      @relation("SentByUser")
+  auditLogs           AuditLog[]
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -323,28 +324,32 @@ model ContactCustomField {
 // ==================== CONVERSATIONS & MESSAGES ====================
 
 model Conversation {
-  id             String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId String             @map("organization_id") @db.Uuid
-  channelId      String             @map("channel_id") @db.Uuid
-  contactId      String             @map("contact_id") @db.Uuid
-  assignedUserId String?            @map("assigned_user_id") @db.Uuid
-  status         ConversationStatus @default(OPEN)
-  priority       Priority           @default(NORMAL)
-  lastMessageAt  DateTime?          @map("last_message_at")
-  unreadCount    Int                @default(0) @map("unread_count")
-  closedAt       DateTime?          @map("closed_at")
-  createdAt      DateTime           @default(now()) @map("created_at")
-  updatedAt      DateTime           @updatedAt @map("updated_at")
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   String             @map("organization_id") @db.Uuid
+  channelId        String             @map("channel_id") @db.Uuid
+  contactId        String             @map("contact_id") @db.Uuid
+  assignedUserId   String?            @map("assigned_user_id") @db.Uuid
+  activeAgentId    String?            @map("active_agent_id") @db.Uuid
+  activeAgentSince DateTime?          @map("active_agent_since")
+  status           ConversationStatus @default(OPEN)
+  priority         Priority           @default(NORMAL)
+  lastMessageAt    DateTime?          @map("last_message_at")
+  unreadCount      Int                @default(0) @map("unread_count")
+  closedAt         DateTime?          @map("closed_at")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   channel      Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
   contact      Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
   assignedUser User?        @relation("AssignedAgent", fields: [assignedUserId], references: [id])
+  activeAgent  User?        @relation("ActiveAgent", fields: [activeAgentId], references: [id])
   messages     Message[]
 
   @@unique([channelId, contactId])
   @@index([organizationId])
   @@index([assignedUserId])
+  @@index([activeAgentId])
   @@index([status])
   @@index([lastMessageAt(sort: Desc)])
   @@map("conversations")

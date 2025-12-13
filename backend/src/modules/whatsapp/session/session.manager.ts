@@ -270,9 +270,11 @@ export class SessionManager extends EventEmitter {
       this.logger.debug({ channelId }, 'Credentials updated and saved');
     });
 
-    // Incoming messages
+    // Incoming messages (both from contacts and sent from own phone)
     socket.ev.on('messages.upsert', async ({ messages, type }) => {
-      if (type !== 'notify') return;
+      // 'notify' = real-time messages from contacts
+      // 'append' = messages sent from your phone (need to sync to inbox)
+      if (type !== 'notify' && type !== 'append') return;
 
       for (const msg of messages) {
         if (!msg.message) continue;
@@ -281,7 +283,7 @@ export class SessionManager extends EventEmitter {
         if (msg.key.remoteJid === 'status@broadcast') continue;
 
         this.emit('message:received', channelId, msg);
-        this.logger.debug({ channelId, messageId: msg.key.id }, 'Message received');
+        this.logger.debug({ channelId, messageId: msg.key.id, fromMe: msg.key.fromMe, type }, 'Message received');
       }
     });
 

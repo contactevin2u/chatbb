@@ -235,6 +235,49 @@ export class ConversationController {
       next(error);
     }
   }
+
+  /**
+   * Set active agent for a conversation (collision prevention)
+   * POST /api/v1/conversations/:id/active
+   */
+  async setActiveAgent(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id: userId, organizationId } = req.user!;
+      const { id: conversationId } = req.params;
+
+      const result = await conversationService.setActiveAgent(
+        conversationId,
+        userId,
+        organizationId
+      );
+
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Clear active agent when leaving conversation
+   * DELETE /api/v1/conversations/:id/active
+   */
+  async clearActiveAgent(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id: userId } = req.user!;
+      const { id: conversationId } = req.params;
+
+      await conversationService.clearActiveAgent(conversationId, userId);
+
+      res.json({
+        success: true,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const conversationController = new ConversationController();

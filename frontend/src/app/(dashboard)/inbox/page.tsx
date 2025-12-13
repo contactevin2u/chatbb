@@ -16,6 +16,7 @@ import {
   CheckCheck,
   Clock,
   AlertCircle,
+  AlertTriangle,
   User,
   Phone,
   Mail,
@@ -48,6 +49,7 @@ import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils/cn';
 import { updateContact } from '@/lib/api/contacts';
 import { useWebSocket } from '@/providers/websocket-provider';
+import { useAuthStore } from '@/stores/auth-store';
 import {
   listConversations,
   getMessages,
@@ -55,6 +57,8 @@ import {
   markConversationAsRead,
   closeConversation,
   reopenConversation,
+  setActiveAgent,
+  clearActiveAgent,
   type Conversation,
   type Message,
   type ConversationStatus,
@@ -144,6 +148,7 @@ function getMessagePreview(message?: Message): string {
 export default function InboxPage() {
   const queryClient = useQueryClient();
   const { socket, joinConversation, leaveConversation, startTyping, stopTyping } = useWebSocket();
+  const { user } = useAuthStore();
 
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -153,9 +158,12 @@ export default function InboxPage() {
   const [typingUsers, setTypingUsers] = useState<Map<string, string>>(new Map());
   const [editContactOpen, setEditContactOpen] = useState(false);
   const [editContactName, setEditContactName] = useState('');
+  const [activeAgentWarning, setActiveAgentWarning] = useState<string | null>(null);
+  const [otherActiveAgent, setOtherActiveAgent] = useState<{ id: string; name: string } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const previousConversationRef = useRef<string | null>(null);
 
   // Fetch conversations
   const { data: conversationsData, isLoading: isLoadingConversations } = useQuery({
@@ -245,20 +253,33 @@ export default function InboxPage() {
   };
 
   // Handle selecting a conversation
-  const handleSelectConversation = useCallback((conversationId: string) => {
-    // Leave previous conversation room
-    if (selectedConversationId) {
-      leaveConversation(selectedConversationId);
+  const handleSelectConversation = useCallback(async (conversationId: string) => {
+    // Clear active agent on previous conversation
+    if (previousConversationRef.current) {
+      clearActiveAgent(previousConversationRef.current).catch(() => {});
+      leaveConversation(previousConversationRef.current);
     }
 
     setSelectedConversationId(conversationId);
+    setActiveAgentWarning(null);
+    setOtherActiveAgent(null);
+    previousConversationRef.current = conversationId;
     joinConversation(conversationId);
 
-    // Mark as read
-    markConversationAsRead(conversationId).catch(() => {
+    // Set this agent as active and check for collision
+    try {
+      const result = await setActiveAgent(conversationId);
+      if (result.warning) {
+        setActiveAgentWarning(result.warning);
+        setOtherActiveAgent(result.activeAgent || null);
+      }
+    } catch {
       // Ignore errors
-    });
-  }, [selectedConversationId, joinConversation, leaveConversation]);
+    }
+
+    // Mark as read
+    markConversationAsRead(conversationId).catch(() => {});
+  }, [joinConversation, leaveConversation]);
 
   // Handle sending a message
   const handleSendMessage = useCallback(() => {
@@ -296,8 +317,14 @@ export default function InboxPage() {
   useEffect(() => {
     if (!socket) return;
 
-    // New message
+    // New message - skip if we sent it (already shown via optimistic UI)
     const handleNewMessage = (data: { message: Message; conversationId: string }) => {
+      // Deduplicate: skip if current user sent this message
+      // The message is already in UI from mutation's onSuccess
+      if (data.message.sentByUserId === user?.id) {
+        return;
+      }
+
       queryClient.invalidateQueries({ queryKey: ['messages', data.conversationId] });
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
     };
@@ -324,18 +351,46 @@ export default function InboxPage() {
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
     };
 
+    // Agent collision handlers
+    const handleAgentActive = (data: { conversationId: string; agentId: string; agentName: string }) => {
+      if (data.conversationId === selectedConversationId && data.agentId !== user?.id) {
+        setActiveAgentWarning(`${data.agentName} is now viewing this conversation`);
+        setOtherActiveAgent({ id: data.agentId, name: data.agentName });
+      }
+    };
+
+    const handleAgentLeft = (data: { conversationId: string; agentId: string }) => {
+      if (data.conversationId === selectedConversationId && data.agentId === otherActiveAgent?.id) {
+        setActiveAgentWarning(null);
+        setOtherActiveAgent(null);
+      }
+    };
+
     socket.on('message:new', handleNewMessage);
     socket.on('typing:start', handleTypingStart);
     socket.on('typing:stop', handleTypingStop);
     socket.on('conversation:updated', handleConversationUpdated);
+    socket.on('agent:active', handleAgentActive);
+    socket.on('agent:left', handleAgentLeft);
 
     return () => {
       socket.off('message:new', handleNewMessage);
       socket.off('typing:start', handleTypingStart);
       socket.off('typing:stop', handleTypingStop);
       socket.off('conversation:updated', handleConversationUpdated);
+      socket.off('agent:active', handleAgentActive);
+      socket.off('agent:left', handleAgentLeft);
     };
-  }, [socket, selectedConversationId, queryClient]);
+  }, [socket, selectedConversationId, queryClient, user?.id, otherActiveAgent?.id]);
+
+  // Cleanup active agent on unmount
+  useEffect(() => {
+    return () => {
+      if (previousConversationRef.current) {
+        clearActiveAgent(previousConversationRef.current).catch(() => {});
+      }
+    };
+  }, []);
 
   return (
     <div className="flex h-full">
@@ -496,6 +551,16 @@ export default function InboxPage() {
                 </DropdownMenu>
               </div>
             </div>
+
+            {/* Agent Collision Warning */}
+            {activeAgentWarning && (
+              <div className="bg-yellow-100 dark:bg-yellow-900/20 border-l-4 border-yellow-500 text-yellow-800 dark:text-yellow-200 px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 flex-shrink-0" />
+                  <span className="text-sm font-medium">{activeAgentWarning}</span>
+                </div>
+              </div>
+            )}
 
             {/* Messages */}
             <ScrollArea className="flex-1 p-4">

@@ -215,3 +215,24 @@ export async function sendMessage(data: {
 export async function deleteMessage(messageId: string): Promise<void> {
   await apiClient.delete(`/messages/${messageId}`);
 }
+
+// Agent collision prevention
+
+export interface SetActiveAgentResponse {
+  warning?: string;
+  activeAgent?: {
+    id: string;
+    name: string;
+  };
+}
+
+export async function setActiveAgent(conversationId: string): Promise<SetActiveAgentResponse> {
+  const response = await apiClient.post<{ success: boolean; data: SetActiveAgentResponse }>(
+    `/conversations/${conversationId}/active`
+  );
+  return response.data.data;
+}
+
+export async function clearActiveAgent(conversationId: string): Promise<void> {
+  await apiClient.delete(`/conversations/${conversationId}/active`);
+}

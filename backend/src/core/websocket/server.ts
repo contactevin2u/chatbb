@@ -85,9 +85,12 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
     logger.info({ socketId: socket.id, userId, organizationId }, 'Client connected');
 
+    // Join user-specific room for targeted notifications and sender exclusion
+    await socket.join(`user:${userId}`);
+
     // Auto-join organization room
     await socket.join(`org:${organizationId}`);
-    logger.debug({ socketId: socket.id, room: `org:${organizationId}` }, 'Joined organization room');
+    logger.debug({ socketId: socket.id, rooms: [`user:${userId}`, `org:${organizationId}`] }, 'Joined rooms');
 
     // Update user online status
     await prisma.user.update({
@@ -253,5 +256,24 @@ export function emitToConversation(conversationId: string, event: string, data: 
 export function emitToChannel(channelId: string, event: string, data: unknown): void {
   if (io) {
     io.to(`channel:${channelId}`).emit(event, data);
+  }
+}
+
+// Emit to specific user
+export function emitToUser(userId: string, event: string, data: unknown): void {
+  if (io) {
+    io.to(`user:${userId}`).emit(event, data);
+  }
+}
+
+// Emit to organization excluding a specific user (for sender deduplication)
+export function emitToOrgExceptUser(
+  organizationId: string,
+  excludeUserId: string,
+  event: string,
+  data: unknown
+): void {
+  if (io) {
+    io.to(`org:${organizationId}`).except(`user:${excludeUserId}`).emit(event, data);
   }
 }

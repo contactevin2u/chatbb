@@ -99,6 +99,10 @@ async function processMessage(job: Job) {
       logger.info({ contactId: contact.id, displayName, isGroup }, 'Updated contact displayName');
     }
 
+    // Determine if this message is from us (sent from phone/other device)
+    // Need this early to decide whether to increment unread count
+    const isFromMe = waMessage.key?.fromMe === true;
+
     // Get or create conversation
     let conversation = await prisma.conversation.findFirst({
       where: { channelId, contactId: contact.id },
@@ -112,7 +116,8 @@ async function processMessage(job: Job) {
           contactId: contact.id,
           status: 'OPEN',
           lastMessageAt: new Date(),
-          unreadCount: 1,
+          // Don't set unread count for our own messages
+          unreadCount: isFromMe ? 0 : 1,
         },
       });
     } else {
@@ -120,7 +125,8 @@ async function processMessage(job: Job) {
         where: { id: conversation.id },
         data: {
           lastMessageAt: new Date(),
-          unreadCount: { increment: 1 },
+          // Only increment unread count for incoming messages, not our own
+          ...(isFromMe ? {} : { unreadCount: { increment: 1 } }),
           status: conversation.status === 'CLOSED' ? 'OPEN' : conversation.status,
         },
       });
@@ -170,33 +176,78 @@ async function processMessage(job: Job) {
       logger.info({ channelId, mediaType: mediaInfo.type, hasUrl: !!mediaUrl }, 'Media message processed');
     }
 
-    // Create message
-    await prisma.message.create({
-      data: {
-        conversationId: conversation.id,
-        channelId,
-        externalId: waMessage.key?.id,
-        direction: MessageDirection.INBOUND,
-        type,
-        content,
-        status: MessageStatus.DELIVERED,
-        deliveredAt: new Date(),
-        metadata: {
-          timestamp: Number(waMessage.messageTimestamp) || Date.now(),
-          pushName: waMessage.pushName || null,
+    // Determine message direction based on fromMe flag (isFromMe defined earlier for unread count logic)
+    const direction = isFromMe ? MessageDirection.OUTBOUND : MessageDirection.INBOUND;
+
+    // Idempotency check: skip if message already exists (prevents duplicates on retry/reconnect)
+    const externalId = waMessage.key?.id;
+    if (externalId) {
+      const existingMessage = await prisma.message.findFirst({
+        where: { externalId, channelId },
+        select: { id: true },
+      });
+
+      if (existingMessage) {
+        logger.debug({ channelId, externalId }, 'Message already exists, skipping (idempotency)');
+        return;
+      }
+    }
+
+    // Create message with error handling for race conditions
+    try {
+      await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          channelId,
+          externalId,
+          direction,
+          type,
+          content,
+          status: isFromMe ? MessageStatus.SENT : MessageStatus.DELIVERED,
+          sentAt: isFromMe ? new Date() : null,
+          deliveredAt: isFromMe ? null : new Date(),
+          metadata: {
+            timestamp: Number(waMessage.messageTimestamp) || Date.now(),
+            pushName: waMessage.pushName || null,
+            fromMe: isFromMe,
+          },
         },
-      },
+      });
+
+      logger.info({ channelId, messageId: externalId, direction, isFromMe }, 'Message saved');
+    } catch (error: any) {
+      // Handle unique constraint violation (race condition between check and create)
+      if (error.code === 'P2002') {
+        logger.debug({ channelId, externalId }, 'Message already exists (race condition), skipping');
+        return;
+      }
+      throw error;
+    }
+
+    // Get conversation with assignment info for smart routing
+    const conversationWithAssignment = await prisma.conversation.findUnique({
+      where: { id: conversation.id },
+      select: { assignedUserId: true },
     });
+    const assignedUserId = conversationWithAssignment?.assignedUserId;
 
     // Publish to Redis for real-time WebSocket updates
     const { redisClient } = await import('../core/cache/redis.client.js');
-    await redisClient.publish(`org:${channel.organizationId}:message`, JSON.stringify({
+    const messagePayload = JSON.stringify({
       type: 'new',
       conversationId: conversation.id,
       channelId,
-    }));
+      assignedUserId, // Include for frontend filtering / smart routing
+    });
 
-    logger.info({ channelId, messageId: waMessage.key?.id }, 'Processed incoming message');
+    // Smart routing: if assigned, also publish to user-specific channel
+    if (assignedUserId) {
+      await redisClient.publish(`user:${assignedUserId}:message`, messagePayload);
+    }
+    // Always publish to org for admins/supervisors and unassigned conversations
+    await redisClient.publish(`org:${channel.organizationId}:message`, messagePayload);
+
+    logger.info({ channelId, messageId: externalId, assignedUserId }, 'Processed incoming message');
 
   } else if (jobName === 'status_update') {
     // Process message status update

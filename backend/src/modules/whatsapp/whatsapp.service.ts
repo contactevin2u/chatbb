@@ -86,7 +86,8 @@ export class WhatsAppService {
         'whatsapp:*:connected',
         'whatsapp:*:disconnected',
         'whatsapp:*:status',
-        'org:*:message'
+        'org:*:message',
+        'user:*:message' // User-specific message routing for assigned conversations
       );
 
       this.redisSubscriber.on('pmessage', async (pattern, channel, message) => {
@@ -134,8 +135,12 @@ export class WhatsAppService {
                 reason: data.reason,
               });
             }
-          } else if (channel.includes(':message')) {
-            // New message notification from Background Worker
+          } else if (channel.startsWith('user:') && channel.endsWith(':message')) {
+            // User-specific message notification (for assigned conversations)
+            const userId = parts[1];
+            socketServer.to(`user:${userId}`).emit('message:new', data);
+          } else if (channel.startsWith('org:') && channel.endsWith(':message')) {
+            // Org-wide message notification from Background Worker
             const orgId = parts[1];
             socketServer.to(`org:${orgId}`).emit('message:new', data);
           }

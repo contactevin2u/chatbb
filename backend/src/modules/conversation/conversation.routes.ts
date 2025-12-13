@@ -147,4 +147,26 @@ router.get(
   conversationController.getMessages.bind(conversationController)
 );
 
+/**
+ * @route   POST /api/v1/conversations/:id/active
+ * @desc    Set active agent for conversation (collision prevention)
+ * @access  Private (conversations:view)
+ */
+router.post(
+  '/:id/active',
+  requirePermission('conversations:view'),
+  conversationController.setActiveAgent.bind(conversationController)
+);
+
+/**
+ * @route   DELETE /api/v1/conversations/:id/active
+ * @desc    Clear active agent when leaving conversation
+ * @access  Private (conversations:view)
+ */
+router.delete(
+  '/:id/active',
+  requirePermission('conversations:view'),
+  conversationController.clearActiveAgent.bind(conversationController)
+);
+
 export const conversationRoutes = router;

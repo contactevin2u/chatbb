@@ -315,6 +315,103 @@ export class ConversationService {
   }
 
   /**
+   * Set active agent for a conversation (collision prevention)
+   * Returns warning if another agent is currently active
+   */
+  async setActiveAgent(
+    conversationId: string,
+    userId: string,
+    organizationId: string
+  ): Promise<{ warning?: string; activeAgent?: { id: string; name: string } }> {
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: conversationId, organizationId },
+      include: {
+        activeAgent: {
+          select: { id: true, firstName: true, lastName: true },
+        },
+      },
+    });
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    // Check if another agent is active (within last 60 seconds)
+    const ACTIVE_TIMEOUT_MS = 60000;
+
+    if (
+      conversation.activeAgentId &&
+      conversation.activeAgentId !== userId &&
+      conversation.activeAgentSince
+    ) {
+      const activeFor = Date.now() - conversation.activeAgentSince.getTime();
+
+      if (activeFor < ACTIVE_TIMEOUT_MS) {
+        const agentName = conversation.activeAgent
+          ? `${conversation.activeAgent.firstName} ${conversation.activeAgent.lastName}`.trim()
+          : 'Another agent';
+
+        return {
+          warning: `${agentName} is currently viewing this conversation`,
+          activeAgent: conversation.activeAgent
+            ? {
+                id: conversation.activeAgent.id,
+                name: agentName,
+              }
+            : undefined,
+        };
+      }
+    }
+
+    // Set this agent as active
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        activeAgentId: userId,
+        activeAgentSince: new Date(),
+      },
+    });
+
+    // Get user info for broadcast
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { firstName: true, lastName: true },
+    });
+
+    // Broadcast to conversation room
+    socketServer.to(`conversation:${conversationId}`).emit('agent:active', {
+      conversationId,
+      agentId: userId,
+      agentName: `${user?.firstName} ${user?.lastName}`.trim(),
+      timestamp: Date.now(),
+    });
+
+    return {};
+  }
+
+  /**
+   * Clear active agent when leaving conversation
+   */
+  async clearActiveAgent(conversationId: string, userId: string): Promise<void> {
+    await prisma.conversation.updateMany({
+      where: {
+        id: conversationId,
+        activeAgentId: userId,
+      },
+      data: {
+        activeAgentId: null,
+        activeAgentSince: null,
+      },
+    });
+
+    socketServer.to(`conversation:${conversationId}`).emit('agent:left', {
+      conversationId,
+      agentId: userId,
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
    * Get conversation statistics
    */
   async getStats(organizationId: string) {

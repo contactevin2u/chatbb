@@ -6,7 +6,7 @@
 
 import { MessageDirection, MessageStatus, MessageType, Prisma } from '@prisma/client';
 import { prisma } from '../../core/database/prisma';
-import { socketServer } from '../../core/websocket/server';
+import { socketServer, emitToOrgExceptUser, emitToConversation } from '../../core/websocket/server';
 import { whatsappService } from '../whatsapp/whatsapp.service';
 
 export interface GetMessagesInput {
@@ -205,12 +205,14 @@ export class MessageService {
         data: { lastMessageAt: new Date() },
       });
 
-      // Emit to WebSocket
-      socketServer.to(`org:${organizationId}`).emit('message:new', {
+      // Emit to WebSocket - exclude sender to prevent duplicate UI updates
+      // Sender already has the message from mutation's onSuccess
+      emitToOrgExceptUser(organizationId, userId, 'message:new', {
         message: updatedMessage,
         conversationId,
       });
-      socketServer.to(`conversation:${conversationId}`).emit('message:new', {
+      // Also emit to conversation room for users viewing it (sender excluded via their user room)
+      emitToConversation(conversationId, 'message:new', {
         message: updatedMessage,
       });
 
