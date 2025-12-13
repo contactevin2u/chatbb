@@ -89,6 +89,23 @@ function setupEventHandlers() {
     }
   });
 
+  // Contact events - process directly (no queue needed, fast operation)
+  sessionManager.on('contacts:upsert', async (channelId, contacts) => {
+    try {
+      await processContactsUpsert(channelId, contacts);
+    } catch (error) {
+      logger.error({ channelId, error: (error as Error).message }, 'Failed to process contacts upsert');
+    }
+  });
+
+  sessionManager.on('contacts:update', async (channelId, contacts) => {
+    try {
+      await processContactsUpdate(channelId, contacts);
+    } catch (error) {
+      logger.error({ channelId, error: (error as Error).message }, 'Failed to process contacts update');
+    }
+  });
+
   // Connection events - publish to Redis for API server
   sessionManager.on('qr:generated', async (channelId, qr) => {
     await redisClient.publish(`whatsapp:${channelId}:qr`, JSON.stringify({ qr }));
@@ -361,6 +378,96 @@ async function main() {
     logger.error({ error }, 'Failed to start WhatsApp Worker');
     process.exit(1);
   }
+}
+
+/**
+ * Process contacts upsert - bulk contact sync from WhatsApp
+ */
+async function processContactsUpsert(channelId: string, contacts: any[]) {
+  const { ChannelType } = await import('@prisma/client');
+
+  const channel = await prisma.channel.findUnique({ where: { id: channelId } });
+  if (!channel) return;
+
+  const orgId = channel.organizationId;
+  let processed = 0;
+
+  for (const contact of contacts) {
+    try {
+      // Extract identifier from JID (e.g., "1234567890@s.whatsapp.net" -> "1234567890")
+      const identifier = contact.id?.split('@')[0];
+      if (!identifier) continue;
+
+      // Get contact name from various fields
+      const displayName = contact.name || contact.notify || contact.verifiedName || contact.pushname || null;
+
+      await prisma.contact.upsert({
+        where: {
+          organizationId_channelType_identifier: {
+            organizationId: orgId,
+            channelType: ChannelType.WHATSAPP,
+            identifier,
+          },
+        },
+        create: {
+          organizationId: orgId,
+          channelType: ChannelType.WHATSAPP,
+          identifier,
+          displayName,
+        },
+        update: {
+          // Only update displayName if we have a new non-null value
+          ...(displayName ? { displayName } : {}),
+        },
+      });
+      processed++;
+    } catch {
+      // Skip errors, continue with next contact
+    }
+  }
+
+  logger.info({ channelId, total: contacts.length, processed }, 'Contacts upsert processed');
+}
+
+/**
+ * Process contacts update - individual contact info changes
+ */
+async function processContactsUpdate(channelId: string, contacts: any[]) {
+  const { ChannelType } = await import('@prisma/client');
+
+  const channel = await prisma.channel.findUnique({ where: { id: channelId } });
+  if (!channel) return;
+
+  const orgId = channel.organizationId;
+  let updated = 0;
+
+  for (const contact of contacts) {
+    try {
+      const identifier = contact.id?.split('@')[0];
+      if (!identifier) continue;
+
+      // Get contact name from various fields
+      const displayName = contact.name || contact.notify || contact.verifiedName || contact.pushname || null;
+      if (!displayName) continue; // Skip if no name to update
+
+      const result = await prisma.contact.updateMany({
+        where: {
+          organizationId: orgId,
+          channelType: ChannelType.WHATSAPP,
+          identifier,
+        },
+        data: {
+          displayName,
+        },
+      });
+
+      if (result.count > 0) updated++;
+    } catch {
+      // Skip errors
+    }
+  }
+
+  logger.debug({ channelId, total: contacts.length, updated }, 'Contacts update processed');
 }
 
 /**

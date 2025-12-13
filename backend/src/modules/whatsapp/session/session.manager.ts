@@ -51,6 +51,9 @@ interface SessionEvents {
   'lid-mapping:update': (channelId: string, mapping: { lid: string; pn: string }) => void;
   // Historical message sync event (macOS Desktop + syncFullHistory: true)
   'history:sync': (channelId: string, data: { chats: any[]; contacts: any[]; messages: any; syncType: any }) => void;
+  // Contact events
+  'contacts:upsert': (channelId: string, contacts: any[]) => void;
+  'contacts:update': (channelId: string, contacts: any[]) => void;
 }
 
 const MAX_RETRY_COUNT = 5;
@@ -336,6 +339,22 @@ export class SessionManager extends EventEmitter {
             await redisClient.setex(`group:${update.id}:metadata`, 3600, JSON.stringify(updated));
           }
         }
+      }
+    });
+
+    // Contact upsert - when contacts are synced from WhatsApp
+    socket.ev.on('contacts.upsert', async (contacts) => {
+      if (contacts.length > 0) {
+        this.logger.info({ channelId, count: contacts.length }, 'Contacts upsert received');
+        this.emit('contacts:upsert', channelId, contacts);
+      }
+    });
+
+    // Contact update - when contact info changes (name, profile pic, etc.)
+    socket.ev.on('contacts.update', async (contacts) => {
+      if (contacts.length > 0) {
+        this.logger.debug({ channelId, count: contacts.length }, 'Contacts update received');
+        this.emit('contacts:update', channelId, contacts);
       }
     });
   }

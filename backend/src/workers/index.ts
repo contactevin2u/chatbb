@@ -44,6 +44,8 @@ async function processMessage(job: Job) {
     const contactIdentifier = remoteJid.split('@')[0];
 
     // Get or create contact
+    const pushName = waMessage.pushName || null;
+
     let contact = await prisma.contact.findFirst({
       where: {
         organizationId: channel.organizationId,
@@ -53,13 +55,20 @@ async function processMessage(job: Job) {
     });
 
     if (!contact) {
+      // Create new contact with pushName
       contact = await prisma.contact.create({
         data: {
           organizationId: channel.organizationId,
           channelType: ChannelType.WHATSAPP,
           identifier: contactIdentifier,
-          displayName: waMessage.pushName || null,
+          displayName: pushName,
         },
+      });
+    } else if (pushName && (!contact.displayName || contact.displayName !== pushName)) {
+      // Update existing contact's displayName if pushName is available and different
+      contact = await prisma.contact.update({
+        where: { id: contact.id },
+        data: { displayName: pushName },
       });
     }
 
