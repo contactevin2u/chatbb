@@ -5,7 +5,7 @@
  */
 
 import { ChannelStatus, ChannelType, MessageDirection, MessageStatus, MessageType } from '@prisma/client';
-import { proto } from '@whiskeysockets/baileys';
+import { proto, WAMessage } from '@whiskeysockets/baileys';
 
 import { prisma } from '../../core/database/prisma';
 import { sessionManager } from './session/session.manager';
@@ -302,7 +302,7 @@ export class WhatsAppService {
 
     try {
       // Send via WhatsApp
-      let result: proto.WebMessageInfo | undefined;
+      let result: WAMessage | undefined;
 
       if (input.text) {
         result = await sessionManager.sendTextMessage(input.channelId, input.to, input.text);

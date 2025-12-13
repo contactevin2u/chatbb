@@ -16,6 +16,7 @@ import {
 import { prisma } from '../../../core/database/prisma';
 import { encrypt, decrypt } from '../../../shared/utils/encryption';
 
+// Baileys v7 requires additional keys for LID system
 const KEY_MAP: { [T in keyof SignalDataTypeMap]: string } = {
   'pre-key': 'pre-key',
   'session': 'session',
@@ -23,6 +24,10 @@ const KEY_MAP: { [T in keyof SignalDataTypeMap]: string } = {
   'sender-key-memory': 'sender-key-memory',
   'app-state-sync-key': 'app-state-sync-key',
   'app-state-sync-version': 'app-state-sync-version',
+  // Baileys v7 new keys for LID support
+  'lid-mapping': 'lid-mapping',
+  'device-list': 'device-list',
+  'tctoken': 'tctoken',
 };
 
 interface StoredAuthState {

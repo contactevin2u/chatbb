@@ -13,6 +13,7 @@ import makeWASocket, {
   makeCacheableSignalKeyStore,
   Browsers,
   WAMessageKey,
+  WAMessage,
   proto,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
@@ -46,6 +47,8 @@ interface SessionEvents {
   'connected': (channelId: string, phoneNumber: string) => void;
   'disconnected': (channelId: string, reason: string) => void;
   'error': (channelId: string, error: Error) => void;
+  // Baileys v7 LID mapping event
+  'lid-mapping:update': (channelId: string, mapping: { lid: string; pn: string }) => void;
 }
 
 const MAX_RETRY_COUNT = 5;
@@ -269,6 +272,14 @@ export class SessionManager extends EventEmitter {
         this.emit('message:update', channelId, update);
       }
     });
+
+    // Baileys v7 LID mapping updates
+    socket.ev.on('lid-mapping.update', async (mapping) => {
+      for (const [lid, pn] of Object.entries(mapping)) {
+        this.emit('lid-mapping:update', channelId, { lid, pn: pn as string });
+        this.logger.debug({ channelId, lid, pn }, 'LID mapping received');
+      }
+    });
   }
 
   /**
@@ -324,7 +335,7 @@ export class SessionManager extends EventEmitter {
   /**
    * Send a text message
    */
-  async sendTextMessage(channelId: string, to: string, text: string): Promise<proto.WebMessageInfo | undefined> {
+  async sendTextMessage(channelId: string, to: string, text: string): Promise<WAMessage | undefined> {
     const session = this.sessions.get(channelId);
     if (!session || session.status !== 'CONNECTED') {
       throw new Error('Channel not connected');
@@ -356,7 +367,7 @@ export class SessionManager extends EventEmitter {
       filename?: string;
       caption?: string;
     }
-  ): Promise<proto.WebMessageInfo | undefined> {
+  ): Promise<WAMessage | undefined> {
     const session = this.sessions.get(channelId);
     if (!session || session.status !== 'CONNECTED') {
       throw new Error('Channel not connected');
