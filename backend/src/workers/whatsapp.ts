@@ -36,10 +36,19 @@ let redisSubscriber: Redis;
  */
 function setupEventHandlers() {
   // Live messages - queue with HIGH priority
-  // NOTE: We deliberately do NOT fetch group metadata here to keep message queuing fast
-  // The background worker will fetch group names from Redis cache (fast) or fallback to "Group Chat"
   sessionManager.on('message:received', async (channelId, waMessage) => {
     let mediaUrl: string | undefined;
+
+    // For group messages, ensure group metadata is cached
+    const remoteJid = waMessage.key?.remoteJid;
+    if (remoteJid?.endsWith('@g.us')) {
+      try {
+        // This will fetch and cache if not already cached
+        await sessionManager.getGroupMetadata(channelId, remoteJid);
+      } catch (error) {
+        logger.debug({ channelId, groupJid: remoteJid }, 'Could not fetch group metadata');
+      }
+    }
 
     // Check if message has media and download/upload it
     if (waMessage.message && isMediaMessage(waMessage.message)) {
@@ -654,13 +663,28 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
     }
   }
 
-  // Process chats and create conversations
+  // Process chats and create conversations (including groups)
   for (const chat of data.chats || []) {
     try {
       const remoteJid = chat.id;
-      if (!remoteJid || remoteJid.endsWith('@g.us')) continue; // Skip groups
+      if (!remoteJid) continue;
 
+      const isGroup = remoteJid.endsWith('@g.us');
       const identifier = remoteJid.split('@')[0];
+
+      // Get display name - for groups, try to get from cache or chat.name
+      let displayName = chat.name || null;
+      if (isGroup && !displayName) {
+        try {
+          const cached = await redisClient.get(`group:${remoteJid}:metadata`);
+          if (cached) {
+            const metadata = JSON.parse(cached);
+            displayName = metadata.subject || null;
+          }
+        } catch {
+          // Ignore cache errors
+        }
+      }
 
       let contact = await prisma.contact.findFirst({
         where: { organizationId: orgId, channelType: ChannelType.WHATSAPP, identifier },
@@ -672,8 +696,14 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
             organizationId: orgId,
             channelType: ChannelType.WHATSAPP,
             identifier,
-            displayName: chat.name || null,
+            displayName,
           },
+        });
+      } else if (displayName && !contact.displayName) {
+        // Update contact if we have a name and it's currently empty
+        contact = await prisma.contact.update({
+          where: { id: contact.id },
+          data: { displayName },
         });
       }
 

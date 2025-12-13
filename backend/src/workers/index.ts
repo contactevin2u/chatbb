@@ -385,13 +385,29 @@ async function processHistorySync(job: Job) {
     }
   }
 
-  // Process chats and create conversations
+  // Process chats and create conversations (including groups)
   for (const chat of chats || []) {
     try {
       const remoteJid = chat.id;
-      if (!remoteJid || remoteJid.endsWith('@g.us')) continue; // Skip groups
+      if (!remoteJid) continue;
 
+      const isGroup = remoteJid.endsWith('@g.us');
       const identifier = remoteJid.split('@')[0];
+
+      // Get display name - for groups, try to get from cache or chat.name
+      let displayName = chat.name || null;
+      if (isGroup && !displayName) {
+        try {
+          const { redisClient } = await import('../core/cache/redis.client.js');
+          const cached = await redisClient.get(`group:${remoteJid}:metadata`);
+          if (cached) {
+            const metadata = JSON.parse(cached);
+            displayName = metadata.subject || null;
+          }
+        } catch {
+          // Ignore cache errors
+        }
+      }
 
       let contact = await prisma.contact.findFirst({
         where: { organizationId: orgId, channelType: ChannelType.WHATSAPP, identifier },
@@ -403,8 +419,14 @@ async function processHistorySync(job: Job) {
             organizationId: orgId,
             channelType: ChannelType.WHATSAPP,
             identifier,
-            displayName: chat.name || null,
+            displayName,
           },
+        });
+      } else if (displayName && !contact.displayName) {
+        // Update contact if we have a name and it's currently empty
+        contact = await prisma.contact.update({
+          where: { id: contact.id },
+          data: { displayName },
         });
       }
 
