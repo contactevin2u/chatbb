@@ -1,7 +1,9 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '@/stores/auth-store';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
+// Ensure API URL always has /api/v1 suffix
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+const API_URL = BASE_URL.endsWith('/api/v1') ? BASE_URL : `${BASE_URL.replace(/\/$/, '')}/api/v1`;
 
 export const apiClient = axios.create({
   baseURL: API_URL,
