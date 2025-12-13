@@ -164,11 +164,11 @@ services:
 databases:
   - name: chatbaby-db
     region: singapore
-    plan: starter # starter (1GB), standard (4GB), pro (16GB)
+    plan: free # free, basic, standard, pro
     databaseName: chatbaby
     user: chatbaby
-    ipAllowList: [] # Allow all IPs (use with caution, or specify IPs)
-    postgresMajorVersion: "18"
+    ipAllowList: []
+    postgresMajorVersion: "16"
 
 # ===========================================
 # Redis
