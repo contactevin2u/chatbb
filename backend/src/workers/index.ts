@@ -171,73 +171,8 @@ async function processMessage(job: Job) {
   }
 }
 
-// Broadcast queue processor
-async function processBroadcast(job: Job) {
-  const { broadcastId, recipientId, channelId, content } = job.data;
-  logger.info({ jobId: job.id, broadcastId, recipientId }, 'Processing broadcast job');
-
-  // Import here to avoid circular dependencies
-  const { prisma } = await import('../core/database/prisma.js');
-  const { sessionManager } = await import('../modules/whatsapp/session/session.manager.js');
-
-  try {
-    // Get recipient
-    const recipient = await prisma.broadcastRecipient.findUnique({
-      where: { id: recipientId },
-      include: { contact: true },
-    });
-
-    if (!recipient) {
-      throw new Error('Recipient not found');
-    }
-
-    // Send message
-    const result = await sessionManager.sendTextMessage(
-      channelId,
-      recipient.contact.identifier,
-      content.text
-    );
-
-    // Update recipient status
-    await prisma.broadcastRecipient.update({
-      where: { id: recipientId },
-      data: {
-        status: 'SENT',
-        messageId: result?.key?.id,
-        sentAt: new Date(),
-      },
-    });
-
-    // Update broadcast counters
-    await prisma.broadcast.update({
-      where: { id: broadcastId },
-      data: {
-        sentCount: { increment: 1 },
-      },
-    });
-
-    logger.info({ recipientId, messageId: result?.key?.id }, 'Broadcast message sent');
-  } catch (error) {
-    // Update recipient as failed
-    await prisma.broadcastRecipient.update({
-      where: { id: recipientId },
-      data: {
-        status: 'FAILED',
-        failedAt: new Date(),
-        errorReason: (error as Error).message,
-      },
-    });
-
-    await prisma.broadcast.update({
-      where: { id: broadcastId },
-      data: {
-        failedCount: { increment: 1 },
-      },
-    });
-
-    throw error;
-  }
-}
+// NOTE: Broadcast processing moved to WhatsApp Worker (whatsapp.ts)
+// because it needs sessionManager which only has active sessions there
 
 // Webhook queue processor
 async function processWebhook(job: Job) {
@@ -489,17 +424,8 @@ async function main() {
     workers.push(messageWorker);
     logger.info('Message worker started');
 
-    // Broadcast worker
-    const broadcastWorker = new Worker(QUEUES.BROADCAST, processBroadcast, {
-      connection,
-      concurrency: 5, // Lower concurrency for rate limiting
-      limiter: {
-        max: 30, // 30 messages per minute (WhatsApp rate limit)
-        duration: 60000,
-      },
-    });
-    workers.push(broadcastWorker);
-    logger.info('Broadcast worker started');
+    // NOTE: Broadcast worker runs in WhatsApp Worker (needs sessionManager)
+    logger.info('Broadcast worker runs in WhatsApp Worker');
 
     // Webhook worker
     const webhookWorker = new Worker(QUEUES.WEBHOOK, processWebhook, {
