@@ -164,7 +164,7 @@ services:
 databases:
   - name: chatbaby-db
     region: singapore
-    plan: free # free, basic, standard, pro
+    plan: basic # basic, standard, pro
     databaseName: chatbaby
     user: chatbaby
     ipAllowList: []
