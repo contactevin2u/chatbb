@@ -43,11 +43,34 @@ async function processMessage(job: Job) {
     const remoteJid = waMessage.key?.remoteJid;
     if (!remoteJid) return;
 
+    // Check if this is a group message
+    const isGroup = remoteJid.endsWith('@g.us');
     const contactIdentifier = remoteJid.split('@')[0];
 
-    // Get or create contact
+    // For individual contacts: use pushName from message
+    // For groups: check Redis cache (populated by historical sync/group updates)
     const pushName = waMessage.pushName || null;
+    let displayName: string | null = null;
 
+    if (isGroup) {
+      // Try to get group name from Redis cache (fast)
+      try {
+        const { redisClient } = await import('../core/cache/redis.client.js');
+        const cached = await redisClient.get(`group:${remoteJid}:metadata`);
+        if (cached) {
+          const metadata = JSON.parse(cached);
+          displayName = metadata.subject || 'Group Chat';
+        } else {
+          displayName = 'Group Chat'; // Fallback if not cached
+        }
+      } catch (error) {
+        displayName = 'Group Chat'; // Fallback on error
+      }
+    } else {
+      displayName = pushName;
+    }
+
+    // Get or create contact (for groups, this represents the group itself)
     let contact = await prisma.contact.findFirst({
       where: {
         organizationId: channel.organizationId,
@@ -57,21 +80,23 @@ async function processMessage(job: Job) {
     });
 
     if (!contact) {
-      // Create new contact with pushName
+      // Create new contact with displayName
       contact = await prisma.contact.create({
         data: {
           organizationId: channel.organizationId,
           channelType: ChannelType.WHATSAPP,
           identifier: contactIdentifier,
-          displayName: pushName,
+          displayName: displayName,
         },
       });
-    } else if (pushName && (!contact.displayName || contact.displayName !== pushName)) {
-      // Update existing contact's displayName if pushName is available and different
+      logger.info({ contactId: contact.id, identifier: contactIdentifier, displayName, isGroup }, 'Created new contact');
+    } else if (displayName && (!contact.displayName || contact.displayName !== displayName)) {
+      // Update existing contact's displayName if available and different
       contact = await prisma.contact.update({
         where: { id: contact.id },
-        data: { displayName: pushName },
+        data: { displayName: displayName },
       });
+      logger.info({ contactId: contact.id, displayName, isGroup }, 'Updated contact displayName');
     }
 
     // Get or create conversation

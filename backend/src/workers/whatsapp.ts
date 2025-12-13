@@ -36,6 +36,8 @@ let redisSubscriber: Redis;
  */
 function setupEventHandlers() {
   // Live messages - queue with HIGH priority
+  // NOTE: We deliberately do NOT fetch group metadata here to keep message queuing fast
+  // The background worker will fetch group names from Redis cache (fast) or fallback to "Group Chat"
   sessionManager.on('message:received', async (channelId, waMessage) => {
     let mediaUrl: string | undefined;
 

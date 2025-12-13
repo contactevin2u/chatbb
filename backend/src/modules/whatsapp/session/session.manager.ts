@@ -613,6 +613,40 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
+   * Get group metadata (name, participants, etc.)
+   * Checks Redis cache first, then fetches from WhatsApp if not cached
+   */
+  async getGroupMetadata(channelId: string, groupJid: string): Promise<{ subject: string; participants?: any[] } | null> {
+    // First check Redis cache
+    const cached = await redisClient.get(`group:${groupJid}:metadata`);
+    if (cached) {
+      try {
+        return JSON.parse(cached);
+      } catch {
+        // Invalid cache, continue to fetch
+      }
+    }
+
+    const session = this.sessions.get(channelId);
+    if (!session || session.status !== 'CONNECTED') {
+      return null;
+    }
+
+    try {
+      const metadata = await session.socket.groupMetadata(groupJid);
+      if (metadata) {
+        // Cache the metadata
+        await redisClient.setex(`group:${groupJid}:metadata`, 3600, JSON.stringify(metadata));
+        return metadata;
+      }
+    } catch (error) {
+      this.logger.debug({ channelId, groupJid, error }, 'Could not get group metadata');
+    }
+
+    return null;
+  }
+
+  /**
    * Send a voice note (PTT - Push To Talk)
    */
   async sendVoiceNote(
