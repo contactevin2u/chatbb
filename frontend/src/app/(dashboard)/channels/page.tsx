@@ -40,6 +40,7 @@ import {
   listWhatsAppChannels,
   createWhatsAppChannel,
   deleteWhatsAppChannel,
+  reconnectWhatsAppChannel,
   type Channel,
 } from '@/lib/api/channels';
 
@@ -76,7 +77,17 @@ const statusConfig = {
   },
 };
 
-function ChannelCard({ channel, onDelete }: { channel: Channel; onDelete: () => void }) {
+function ChannelCard({
+  channel,
+  onDelete,
+  onReconnect,
+  isReconnecting,
+}: {
+  channel: Channel;
+  onDelete: () => void;
+  onReconnect: () => void;
+  isReconnecting: boolean;
+}) {
   const status = statusConfig[channel.status] || statusConfig.DISCONNECTED;
   const StatusIcon = status.icon;
 
@@ -121,10 +132,31 @@ function ChannelCard({ channel, onDelete }: { channel: Channel; onDelete: () => 
             <StatusIcon className={`h-4 w-4 ${channel.status === 'CONNECTING' ? 'animate-spin' : ''}`} />
             {status.label}
           </div>
-          {channel.status === 'DISCONNECTED' && (
-            <Button asChild size="sm">
-              <Link href={`/channels/whatsapp/${channel.id}/connect`}>Connect</Link>
-            </Button>
+          {(channel.status === 'DISCONNECTED' || channel.status === 'ERROR') && (
+            <div className="flex gap-2">
+              <Button size="sm" onClick={onReconnect} disabled={isReconnecting}>
+                {isReconnecting ? (
+                  <>
+                    <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+                    Reconnecting
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="mr-1 h-3 w-3" />
+                    Reconnect
+                  </>
+                )}
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href={`/channels/whatsapp/${channel.id}/connect`}>
+                  <Wifi className="mr-1 h-3 w-3" />
+                  QR
+                </Link>
+              </Button>
+            </div>
+          )}
+          {channel.status === 'CONNECTING' && (
+            <span className="text-xs text-muted-foreground">Connecting...</span>
           )}
           {channel.status === 'CONNECTED' && (
             <span className="text-xs text-muted-foreground">
@@ -171,6 +203,21 @@ export default function ChannelsPage() {
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to delete channel');
+    },
+  });
+
+  const reconnectMutation = useMutation({
+    mutationFn: reconnectWhatsAppChannel,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['whatsapp-channels'] });
+      if (data.hasAuthState) {
+        toast.success('Reconnecting using saved session...');
+      } else {
+        toast.info('No saved session. Please scan QR code.');
+      }
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to reconnect');
     },
   });
 
@@ -268,6 +315,8 @@ export default function ChannelsPage() {
               key={channel.id}
               channel={channel}
               onDelete={() => deleteMutation.mutate(channel.id)}
+              onReconnect={() => reconnectMutation.mutate(channel.id)}
+              isReconnecting={reconnectMutation.isPending && reconnectMutation.variables === channel.id}
             />
           ))}
         </div>
