@@ -59,9 +59,11 @@ import {
   reopenConversation,
   setActiveAgent,
   clearActiveAgent,
+  uploadMedia,
   type Conversation,
   type Message,
   type ConversationStatus,
+  type UploadedMedia,
 } from '@/lib/api/conversations';
 
 // Status badge component
@@ -160,10 +162,13 @@ export default function InboxPage() {
   const [editContactName, setEditContactName] = useState('');
   const [activeAgentWarning, setActiveAgentWarning] = useState<string | null>(null);
   const [otherActiveAgent, setOtherActiveAgent] = useState<{ id: string; name: string } | null>(null);
+  const [selectedMedia, setSelectedMedia] = useState<{ file: File; preview: string; type: 'image' | 'video' | 'audio' | 'document' } | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const previousConversationRef = useRef<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch conversations
   const { data: conversationsData, isLoading: isLoadingConversations } = useQuery({
@@ -281,15 +286,80 @@ export default function InboxPage() {
     markConversationAsRead(conversationId).catch(() => {});
   }, [joinConversation, leaveConversation]);
 
-  // Handle sending a message
-  const handleSendMessage = useCallback(() => {
-    if (!messageText.trim() || !selectedConversationId) return;
+  // Handle file selection
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-    sendMessageMutation.mutate({
-      conversationId: selectedConversationId,
-      text: messageText.trim(),
-    });
-  }, [messageText, selectedConversationId, sendMessageMutation]);
+    // Determine media type
+    let type: 'image' | 'video' | 'audio' | 'document';
+    if (file.type.startsWith('image/')) {
+      type = 'image';
+    } else if (file.type.startsWith('video/')) {
+      type = 'video';
+    } else if (file.type.startsWith('audio/')) {
+      type = 'audio';
+    } else {
+      type = 'document';
+    }
+
+    // Create preview URL
+    const preview = URL.createObjectURL(file);
+    setSelectedMedia({ file, preview, type });
+
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }, []);
+
+  // Clear selected media
+  const clearSelectedMedia = useCallback(() => {
+    if (selectedMedia?.preview) {
+      URL.revokeObjectURL(selectedMedia.preview);
+    }
+    setSelectedMedia(null);
+  }, [selectedMedia]);
+
+  // Handle sending a message
+  const handleSendMessage = useCallback(async () => {
+    if ((!messageText.trim() && !selectedMedia) || !selectedConversationId) return;
+
+    try {
+      let mediaData: { type: 'image' | 'video' | 'audio' | 'document'; url: string; mimetype: string; filename: string } | undefined;
+
+      // Upload media if selected
+      if (selectedMedia) {
+        setIsUploading(true);
+        try {
+          const uploaded = await uploadMedia(selectedMedia.file);
+          mediaData = {
+            type: uploaded.type,
+            url: uploaded.url,
+            mimetype: uploaded.mimetype,
+            filename: uploaded.filename,
+          };
+        } catch (error) {
+          toast.error('Failed to upload media');
+          setIsUploading(false);
+          return;
+        }
+        setIsUploading(false);
+      }
+
+      // Send message
+      sendMessageMutation.mutate({
+        conversationId: selectedConversationId,
+        text: messageText.trim() || undefined,
+        media: mediaData,
+      });
+
+      // Clear media after sending
+      clearSelectedMedia();
+    } catch (error) {
+      toast.error('Failed to send message');
+    }
+  }, [messageText, selectedMedia, selectedConversationId, sendMessageMutation, clearSelectedMedia]);
 
   // Handle typing
   const handleTyping = useCallback(() => {
@@ -726,12 +796,67 @@ export default function InboxPage() {
 
             {/* Message Input */}
             <div className="p-4 border-t">
+              {/* Media Preview */}
+              {selectedMedia && (
+                <div className="mb-3 p-2 bg-muted rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1">
+                      {selectedMedia.type === 'image' && (
+                        <img
+                          src={selectedMedia.preview}
+                          alt="Preview"
+                          className="max-h-32 rounded object-contain"
+                        />
+                      )}
+                      {selectedMedia.type === 'video' && (
+                        <video
+                          src={selectedMedia.preview}
+                          className="max-h-32 rounded"
+                          controls
+                        />
+                      )}
+                      {selectedMedia.type === 'audio' && (
+                        <audio src={selectedMedia.preview} controls className="w-full" />
+                      )}
+                      {selectedMedia.type === 'document' && (
+                        <div className="flex items-center gap-2 p-2 bg-background rounded">
+                          <span className="text-2xl">📄</span>
+                          <span className="text-sm truncate">{selectedMedia.file.name}</span>
+                        </div>
+                      )}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      onClick={clearSelectedMedia}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar"
+                onChange={handleFileSelect}
+              />
+
               <div className="flex items-center gap-2">
-                <Button variant="ghost" size="icon">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={selectedConversation.status === 'CLOSED'}
+                >
                   <Paperclip className="h-5 w-5" />
                 </Button>
                 <Input
-                  placeholder="Type a message..."
+                  placeholder={selectedMedia ? "Add a caption..." : "Type a message..."}
                   value={messageText}
                   onChange={(e) => {
                     setMessageText(e.target.value);
@@ -750,9 +875,13 @@ export default function InboxPage() {
                 </Button>
                 <Button
                   onClick={handleSendMessage}
-                  disabled={!messageText.trim() || sendMessageMutation.isPending || selectedConversation.status === 'CLOSED'}
+                  disabled={(!messageText.trim() && !selectedMedia) || sendMessageMutation.isPending || isUploading || selectedConversation.status === 'CLOSED'}
                 >
-                  <Send className="h-5 w-5" />
+                  {isUploading ? (
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  ) : (
+                    <Send className="h-5 w-5" />
+                  )}
                 </Button>
               </div>
               {selectedConversation.status === 'CLOSED' && (

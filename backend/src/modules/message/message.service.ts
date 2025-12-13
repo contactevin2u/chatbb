@@ -138,6 +138,22 @@ export class MessageService {
       messageType = typeMap[media.type] || MessageType.TEXT;
     }
 
+    // Build message content
+    let messageContent: any = {};
+    if (text) {
+      messageContent.text = text;
+    }
+    if (media) {
+      messageContent.mediaType = media.type;
+      messageContent.mediaUrl = media.url;
+      messageContent.mimeType = media.mimetype;
+      messageContent.fileName = media.filename;
+      // For media with caption, text is stored as caption
+      if (text) {
+        messageContent.caption = text;
+      }
+    }
+
     // Create message record
     const message = await prisma.message.create({
       data: {
@@ -145,7 +161,7 @@ export class MessageService {
         channelId: conversation.channelId,
         direction: MessageDirection.OUTBOUND,
         type: messageType,
-        content: text ? { text } : { media },
+        content: messageContent,
         status: MessageStatus.PENDING,
         sentByUserId: userId,
       },

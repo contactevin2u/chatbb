@@ -292,8 +292,14 @@ async function handleSendCommand(channelId: string, data: {
   try {
     let result;
 
-    if (data.text) {
-      result = await sessionManager.sendTextMessage(channelId, data.to, data.text);
+    // Priority: media > sticker > gif > voiceNote > reaction > text
+    // If media is provided, send as media message (text becomes caption)
+    if (data.media) {
+      // If text is provided along with media, use it as caption
+      if (data.text && !data.media.caption) {
+        data.media.caption = data.text;
+      }
+      result = await sessionManager.sendMediaMessage(channelId, data.to, data.media);
     } else if (data.sticker) {
       result = await sessionManager.sendStickerMessage(channelId, data.to, data.sticker);
     } else if (data.gif) {
@@ -302,8 +308,8 @@ async function handleSendCommand(channelId: string, data: {
       result = await sessionManager.sendVoiceNote(channelId, data.to, data.voiceNote);
     } else if (data.reaction) {
       result = await sessionManager.sendReaction(channelId, data.reaction.messageKey, data.reaction.emoji);
-    } else if (data.media) {
-      result = await sessionManager.sendMediaMessage(channelId, data.to, data.media);
+    } else if (data.text) {
+      result = await sessionManager.sendTextMessage(channelId, data.to, data.text);
     }
 
     // Publish result back to API

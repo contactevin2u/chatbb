@@ -216,6 +216,36 @@ export async function deleteMessage(messageId: string): Promise<void> {
   await apiClient.delete(`/messages/${messageId}`);
 }
 
+// Media upload
+
+export interface UploadedMedia {
+  url: string;
+  publicId: string;
+  type: 'image' | 'video' | 'audio' | 'document';
+  mimetype: string;
+  filename: string;
+  size: number;
+  width?: number;
+  height?: number;
+  duration?: number;
+}
+
+export async function uploadMedia(file: File): Promise<UploadedMedia> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await apiClient.post<{ success: boolean; data: UploadedMedia }>(
+    '/media/upload',
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    }
+  );
+  return response.data.data;
+}
+
 // Agent collision prevention
 
 export interface SetActiveAgentResponse {
