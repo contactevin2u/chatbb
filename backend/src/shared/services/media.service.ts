@@ -10,16 +10,23 @@ import { Readable } from 'stream';
 import { env } from '../../config/env';
 import { logger } from '../utils/logger';
 
-// Configure Cloudinary if credentials are available
-if (env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SECRET) {
+// Configure Cloudinary if URL is available
+// Format: cloudinary://API_KEY:API_SECRET@CLOUD_NAME
+if (env.CLOUDINARY_URL) {
+  // Cloudinary SDK automatically parses CLOUDINARY_URL from environment
+  // But we set it explicitly to be safe
+  const url = new URL(env.CLOUDINARY_URL.replace('cloudinary://', 'https://'));
+  const [apiKey, apiSecret] = url.username ? `${url.username}:${url.password}`.split(':') : ['', ''];
+  const cloudName = url.hostname;
+
   cloudinary.config({
-    cloud_name: env.CLOUDINARY_CLOUD_NAME,
-    api_key: env.CLOUDINARY_API_KEY,
-    api_secret: env.CLOUDINARY_API_SECRET,
+    cloud_name: cloudName,
+    api_key: apiKey,
+    api_secret: apiSecret,
   });
-  logger.info('Cloudinary configured');
+  logger.info({ cloudName }, 'Cloudinary configured');
 } else {
-  logger.warn('Cloudinary not configured - media will not be uploaded');
+  logger.warn('Cloudinary not configured (CLOUDINARY_URL not set) - media will not be uploaded');
 }
 
 export interface MediaInfo {
@@ -173,7 +180,7 @@ export async function uploadToCloudinary(
     publicId?: string;
   }
 ): Promise<MediaInfo | null> {
-  if (!env.CLOUDINARY_CLOUD_NAME) {
+  if (!env.CLOUDINARY_URL) {
     logger.warn('Cloudinary not configured, skipping upload');
     return null;
   }
@@ -268,7 +275,7 @@ export async function processWhatsAppMedia(
  * Delete media from Cloudinary
  */
 export async function deleteFromCloudinary(publicId: string): Promise<boolean> {
-  if (!env.CLOUDINARY_CLOUD_NAME) return false;
+  if (!env.CLOUDINARY_URL) return false;
 
   try {
     await cloudinary.uploader.destroy(publicId);
