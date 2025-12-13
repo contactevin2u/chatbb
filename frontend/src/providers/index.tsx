@@ -6,6 +6,7 @@ import { ThemeProvider } from 'next-themes';
 import { useState } from 'react';
 import { Toaster } from 'sonner';
 import { WebSocketProvider } from './websocket-provider';
+import { AuthProvider } from './auth-provider';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -30,9 +31,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
         enableSystem
         disableTransitionOnChange
       >
-        <WebSocketProvider>
-          {children}
-        </WebSocketProvider>
+        <AuthProvider>
+          <WebSocketProvider>
+            {children}
+          </WebSocketProvider>
+        </AuthProvider>
         <Toaster position="top-right" richColors />
       </ThemeProvider>
       <ReactQueryDevtools initialIsOpen={false} />
