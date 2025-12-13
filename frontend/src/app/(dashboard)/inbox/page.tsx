@@ -321,7 +321,7 @@ export default function InboxPage() {
     const handleNewMessage = (data: { message: Message; conversationId: string }) => {
       // Deduplicate: skip if current user sent this message
       // The message is already in UI from mutation's onSuccess
-      if (data.message.sentByUserId === user?.id) {
+      if (data.message.sentByUser?.id === user?.id) {
         return;
       }
 
@@ -606,11 +606,82 @@ export default function InboxPage() {
                         )}
                         {message.type === 'IMAGE' && (
                           <div className="space-y-2">
-                            <div className="h-48 w-48 bg-black/10 rounded flex items-center justify-center">
-                              <ImageIcon className="h-8 w-8 opacity-50" />
-                            </div>
-                            {message.content.caption && (
-                              <p className="text-sm">{message.content.caption}</p>
+                            {message.content.mediaUrl ? (
+                              <img
+                                src={message.content.mediaUrl}
+                                alt="Image"
+                                className="max-w-[300px] max-h-[300px] rounded object-cover cursor-pointer"
+                                onClick={() => window.open(message.content.mediaUrl, '_blank')}
+                              />
+                            ) : (
+                              <div className="h-48 w-48 bg-black/10 rounded flex items-center justify-center">
+                                <ImageIcon className="h-8 w-8 opacity-50" />
+                              </div>
+                            )}
+                            {(message.content.caption || message.content.text) && (
+                              <p className="text-sm">{message.content.caption || message.content.text}</p>
+                            )}
+                          </div>
+                        )}
+                        {message.type === 'VIDEO' && (
+                          <div className="space-y-2">
+                            {message.content.mediaUrl ? (
+                              <video
+                                src={message.content.mediaUrl}
+                                controls
+                                className="max-w-[300px] max-h-[300px] rounded"
+                              />
+                            ) : (
+                              <div className="h-48 w-48 bg-black/10 rounded flex items-center justify-center">
+                                <span className="text-2xl">🎬</span>
+                              </div>
+                            )}
+                            {(message.content.caption || message.content.text) && (
+                              <p className="text-sm">{message.content.caption || message.content.text}</p>
+                            )}
+                          </div>
+                        )}
+                        {message.type === 'AUDIO' && (
+                          <div className="space-y-2">
+                            {message.content.mediaUrl ? (
+                              <audio
+                                src={message.content.mediaUrl}
+                                controls
+                                className="max-w-[250px]"
+                              />
+                            ) : (
+                              <div className="flex items-center gap-2 text-sm">
+                                <span>🎵</span>
+                                <span>Audio message</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {message.type === 'DOCUMENT' && (
+                          <div className="space-y-2">
+                            <a
+                              href={message.content.mediaUrl || '#'}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-2 p-2 bg-background/50 rounded hover:bg-background/80"
+                            >
+                              <span className="text-xl">📄</span>
+                              <span className="text-sm truncate max-w-[200px]">
+                                {message.content.fileName || 'Document'}
+                              </span>
+                            </a>
+                          </div>
+                        )}
+                        {message.type === 'STICKER' && (
+                          <div>
+                            {message.content.mediaUrl ? (
+                              <img
+                                src={message.content.mediaUrl}
+                                alt="Sticker"
+                                className="w-32 h-32 object-contain"
+                              />
+                            ) : (
+                              <span className="text-4xl">🎭</span>
                             )}
                           </div>
                         )}
