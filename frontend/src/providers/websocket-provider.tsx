@@ -53,8 +53,8 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
       return;
     }
 
-    // Create socket connection
-    const newSocket = io(env.NEXT_PUBLIC_API_URL, {
+    // Create socket connection (use WS_URL, not API_URL which has /api/v1 suffix)
+    const newSocket = io(env.NEXT_PUBLIC_WS_URL, {
       auth: {
         token: tokens.accessToken,
       },
