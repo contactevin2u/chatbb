@@ -168,7 +168,7 @@ databases:
     databaseName: chatbaby
     user: chatbaby
     ipAllowList: []
-    postgresMajorVersion: "16"
+    postgresMajorVersion: "18"
 
 # ===========================================
 # Redis
