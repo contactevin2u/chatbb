@@ -68,8 +68,9 @@ export function createApp(): Express {
   app.use(`${apiPrefix}/users`, userRoutes);
   app.use(`${apiPrefix}/organization`, organizationRoutes);
   app.use(`${apiPrefix}/teams`, teamRoutes);
-  app.use(`${apiPrefix}/channels`, channelRoutes);
+  // IMPORTANT: More specific routes must come first
   app.use(`${apiPrefix}/channels/whatsapp`, whatsappRoutes);
+  app.use(`${apiPrefix}/channels`, channelRoutes);
   app.use(`${apiPrefix}/conversations`, conversationRoutes);
   app.use(`${apiPrefix}/messages`, messageRoutes);
   app.use(`${apiPrefix}/contacts`, contactRoutes);

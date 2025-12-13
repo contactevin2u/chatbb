@@ -55,9 +55,9 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
       const payload = await verifyToken(token);
 
-      // Get user info
+      // Get user info (payload.sub contains the user ID)
       const user = await prisma.user.findUnique({
-        where: { id: payload.userId as string },
+        where: { id: payload.sub },
         select: { id: true, organizationId: true, role: true },
       });
 
