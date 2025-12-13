@@ -14,11 +14,13 @@
 
 import { Queue, Worker, Job } from 'bullmq';
 import Redis from 'ioredis';
+import { downloadMediaMessage } from '@whiskeysockets/baileys';
 import { sessionManager } from '../modules/whatsapp/session/session.manager';
 import { connectDatabase, disconnectDatabase, prisma } from '../core/database/prisma';
 import { connectRedis, disconnectRedis, redisClient } from '../core/cache/redis.client';
 import { logger } from '../shared/utils/logger';
 import { redisConfig } from '../config/redis';
+import { isMediaMessage, uploadToCloudinary } from '../shared/services/media.service';
 
 // BullMQ queues
 let messageQueue: Queue;
@@ -35,12 +37,65 @@ let redisSubscriber: Redis;
 function setupEventHandlers() {
   // Live messages - queue with HIGH priority
   sessionManager.on('message:received', async (channelId, waMessage) => {
+    let mediaUrl: string | undefined;
+
+    // Check if message has media and download/upload it
+    if (waMessage.message && isMediaMessage(waMessage.message)) {
+      try {
+        logger.info({ channelId, messageId: waMessage.key?.id }, 'Downloading media from WhatsApp...');
+
+        // Get reupload function from session
+        const reuploadRequest = sessionManager.getMediaDownloader(channelId);
+
+        // Download media buffer from WhatsApp
+        // Cast to any because IWebMessageInfo and WAMessage have slight type differences
+        const buffer = await downloadMediaMessage(
+          waMessage as any,
+          'buffer',
+          {},
+          {
+            logger: logger as any,
+            reuploadRequest,
+          }
+        ) as Buffer;
+
+        if (buffer && buffer.length > 0) {
+          logger.info({ channelId, size: buffer.length }, 'Media downloaded, uploading to Cloudinary...');
+
+          // Get channel for organization ID
+          const channel = await prisma.channel.findUnique({ where: { id: channelId } });
+          if (channel) {
+            // Upload to Cloudinary
+            const folder = `chatbaby/${channel.organizationId}/media`;
+            const uploaded = await uploadToCloudinary(buffer, {
+              folder,
+              resourceType: 'auto',
+              publicId: waMessage.key?.id || undefined,
+            });
+
+            if (uploaded) {
+              mediaUrl = uploaded.url;
+              logger.info({ channelId, mediaUrl }, 'Media uploaded to Cloudinary');
+            }
+          }
+        }
+      } catch (error) {
+        logger.error({ channelId, error: (error as Error).message }, 'Failed to download/upload media');
+        // Continue without media URL - message will still be saved
+      }
+    }
+
+    // Queue message for processing (with media URL if available)
     await messageQueue.add(
       'incoming',
-      { channelId, waMessage: JSON.parse(JSON.stringify(waMessage)) },
+      {
+        channelId,
+        waMessage: JSON.parse(JSON.stringify(waMessage)),
+        mediaUrl, // Include media URL if we uploaded it
+      },
       { priority: 1 } // High priority
     );
-    logger.debug({ channelId, messageId: waMessage.key?.id }, 'Queued incoming message');
+    logger.debug({ channelId, messageId: waMessage.key?.id, hasMedia: !!mediaUrl }, 'Queued incoming message');
   });
 
   // Message status updates - queue with HIGH priority

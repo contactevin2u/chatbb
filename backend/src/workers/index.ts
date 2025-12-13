@@ -35,7 +35,7 @@ async function processMessage(job: Job) {
 
   if (jobName === 'incoming') {
     // Process incoming WhatsApp message
-    const { channelId, waMessage } = job.data;
+    const { channelId, waMessage, mediaUrl } = job.data;
 
     const channel = await prisma.channel.findUnique({ where: { id: channelId } });
     if (!channel) return;
@@ -134,22 +134,15 @@ async function processMessage(job: Job) {
       return; // Don't create a separate message for reactions
     }
 
-    // Upload media to Cloudinary if this is a media message
+    // Add media info if this is a media message
     if (mediaInfo && isMediaMessage(msgContent)) {
-      try {
-        // Note: processWhatsAppMedia needs the full WAMessage, not just the content
-        // For now, we store the media type info and the frontend can request the media URL later
-        // TODO: Add media download in WhatsApp Worker and pass the URL here
-        content = {
-          ...content,
-          mediaType: mediaInfo.type,
-          mimeType: mediaInfo.mimeType,
-          // Media URL will be added when we implement the download flow
-        };
-        logger.debug({ channelId, mediaType: mediaInfo.type }, 'Media message detected');
-      } catch (error) {
-        logger.error({ channelId, error }, 'Failed to process media');
-      }
+      content = {
+        ...content,
+        mediaType: mediaInfo.type,
+        mimeType: mediaInfo.mimeType,
+        mediaUrl: mediaUrl || null, // Media URL from WhatsApp Worker (Cloudinary)
+      };
+      logger.info({ channelId, mediaType: mediaInfo.type, hasUrl: !!mediaUrl }, 'Media message processed');
     }
 
     // Create message
