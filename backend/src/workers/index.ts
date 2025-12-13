@@ -6,6 +6,7 @@
  * - Broadcast campaign execution
  * - Webhook deliveries
  * - Analytics aggregation
+ * - Media upload to Cloudinary
  */
 
 import { Worker, Job } from 'bullmq';
@@ -13,6 +14,7 @@ import { connectDatabase, disconnectDatabase } from '../core/database/prisma';
 import { connectRedis, disconnectRedis, redisClient } from '../core/cache/redis.client';
 import { logger } from '../shared/utils/logger';
 import { redisConfig } from '../config/redis';
+import { isMediaMessage, getMediaMessageInfo, processWhatsAppMedia } from '../shared/services/media.service';
 
 // Queue names
 const QUEUES = {
@@ -104,6 +106,9 @@ async function processMessage(job: Job) {
     let type: typeof MessageType[keyof typeof MessageType] = MessageType.TEXT;
     let content: any = {};
 
+    // Check if this is a media message
+    const mediaInfo = getMediaMessageInfo(msgContent);
+
     if (msgContent.conversation) {
       content = { text: msgContent.conversation };
     } else if (msgContent.extendedTextMessage) {
@@ -113,13 +118,38 @@ async function processMessage(job: Job) {
       content = { caption: msgContent.imageMessage.caption };
     } else if (msgContent.videoMessage) {
       type = MessageType.VIDEO;
-      content = { caption: msgContent.videoMessage.caption };
+      content = { caption: msgContent.videoMessage.caption, isGif: msgContent.videoMessage.gifPlayback };
     } else if (msgContent.audioMessage) {
       type = MessageType.AUDIO;
-      content = {};
+      content = { ptt: msgContent.audioMessage.ptt, seconds: msgContent.audioMessage.seconds };
     } else if (msgContent.documentMessage) {
       type = MessageType.DOCUMENT;
-      content = { filename: msgContent.documentMessage.fileName };
+      content = { filename: msgContent.documentMessage.fileName, caption: msgContent.documentMessage.caption };
+    } else if (msgContent.stickerMessage) {
+      type = MessageType.STICKER;
+      content = { isAnimated: msgContent.stickerMessage.isAnimated };
+    } else if (msgContent.reactionMessage) {
+      // Reactions are handled separately - they're updates to existing messages
+      logger.debug({ channelId, reaction: msgContent.reactionMessage }, 'Reaction received');
+      return; // Don't create a separate message for reactions
+    }
+
+    // Upload media to Cloudinary if this is a media message
+    if (mediaInfo && isMediaMessage(msgContent)) {
+      try {
+        // Note: processWhatsAppMedia needs the full WAMessage, not just the content
+        // For now, we store the media type info and the frontend can request the media URL later
+        // TODO: Add media download in WhatsApp Worker and pass the URL here
+        content = {
+          ...content,
+          mediaType: mediaInfo.type,
+          mimeType: mediaInfo.mimeType,
+          // Media URL will be added when we implement the download flow
+        };
+        logger.debug({ channelId, mediaType: mediaInfo.type }, 'Media message detected');
+      } catch (error) {
+        logger.error({ channelId, error }, 'Failed to process media');
+      }
     }
 
     // Create message

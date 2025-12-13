@@ -26,6 +26,11 @@ const envSchema = z.object({
   // Frontend
   FRONTEND_URL: z.string().url().default('http://localhost:3000'),
 
+  // Cloudinary (for media storage)
+  CLOUDINARY_CLOUD_NAME: z.string().optional(),
+  CLOUDINARY_API_KEY: z.string().optional(),
+  CLOUDINARY_API_SECRET: z.string().optional(),
+
   // File Upload
   MAX_FILE_SIZE: z.string().transform(Number).default('10485760'),
   UPLOAD_DIR: z.string().default('./uploads'),

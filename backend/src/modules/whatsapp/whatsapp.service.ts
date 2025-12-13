@@ -40,6 +40,27 @@ export interface SendMessageInput {
     filename?: string;
     caption?: string;
   };
+  sticker?: {
+    url?: string;
+    buffer?: Buffer;
+  };
+  gif?: {
+    url?: string;
+    buffer?: Buffer;
+    caption?: string;
+  };
+  voiceNote?: {
+    url?: string;
+    buffer?: Buffer;
+  };
+  reaction?: {
+    messageKey: {
+      remoteJid: string;
+      id: string;
+      fromMe?: boolean;
+    };
+    emoji: string;
+  };
 }
 
 export class WhatsAppService {
@@ -355,8 +376,22 @@ export class WhatsAppService {
   /**
    * Send a message via WhatsApp Worker (low-level - no DB operations)
    * Used by messageService which handles its own DB records
+   *
+   * NOTE: We don't check DB status here because it may be stale.
+   * The WhatsApp Worker is the source of truth for connection status.
    */
-  async sendMessageRaw(channelId: string, to: string, text?: string, media?: any): Promise<{ externalId: string }> {
+  async sendMessageRaw(
+    channelId: string,
+    to: string,
+    text?: string,
+    media?: any,
+    options?: {
+      sticker?: { url?: string; buffer?: Buffer };
+      gif?: { url?: string; buffer?: Buffer; caption?: string };
+      voiceNote?: { url?: string; buffer?: Buffer };
+      reaction?: { messageKey: any; emoji: string };
+    }
+  ): Promise<{ externalId: string }> {
     const channel = await prisma.channel.findUnique({
       where: { id: channelId },
     });
@@ -365,18 +400,53 @@ export class WhatsAppService {
       throw new Error('Channel not found');
     }
 
-    if (channel.status !== ChannelStatus.CONNECTED) {
-      throw new Error('Channel not connected');
+    // Note: We don't check channel.status here because the DB may be out of sync
+    // The WhatsApp Worker will return an error if the session is not connected
+
+    try {
+      // Send command to WhatsApp Worker and wait for response
+      const response = await this.sendCommand<{ success: boolean; messageId: string }>(
+        'send',
+        channelId,
+        {
+          to,
+          text,
+          media,
+          sticker: options?.sticker,
+          gif: options?.gif,
+          voiceNote: options?.voiceNote,
+          reaction: options?.reaction,
+        }
+      );
+
+      return { externalId: response.messageId };
+    } catch (error) {
+      const errorMessage = (error as Error).message;
+
+      // If it's a timeout, the worker might not be running or channel not connected
+      if (errorMessage.includes('timeout')) {
+        throw new Error('WhatsApp channel not connected or worker not responding. Please reconnect the channel.');
+      }
+
+      throw error;
     }
+  }
 
-    // Send command to WhatsApp Worker and wait for response
-    const response = await this.sendCommand<{ success: boolean; messageId: string }>(
-      'send',
-      channelId,
-      { to, text, media }
-    );
-
-    return { externalId: response.messageId };
+  /**
+   * Get profile picture URL for a contact
+   */
+  async getProfilePicture(channelId: string, jid: string): Promise<string | null> {
+    try {
+      const response = await this.sendCommand<{ success: boolean; url: string | null }>(
+        'profile-picture',
+        channelId,
+        { jid }
+      );
+      return response.url;
+    } catch (error) {
+      // Profile picture not available
+      return null;
+    }
   }
 
   /**
@@ -392,9 +462,8 @@ export class WhatsAppService {
       throw new Error('Channel not found');
     }
 
-    if (channel.status !== ChannelStatus.CONNECTED) {
-      throw new Error('Channel not connected');
-    }
+    // Note: We don't check channel.status here because the DB may be out of sync
+    // The WhatsApp Worker will return an error if the session is not connected
 
     // Get or create contact
     const contactIdentifier = input.to.replace(/\D/g, '');

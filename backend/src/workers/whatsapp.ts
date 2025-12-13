@@ -161,6 +161,11 @@ async function setupCommandSubscriber() {
           await handlePairingCommand(channelId, data);
           break;
 
+        case 'profile-picture':
+          // Get profile picture
+          await handleProfilePictureCommand(channelId, data);
+          break;
+
         default:
           logger.warn({ command }, 'Unknown command');
       }
@@ -198,11 +203,29 @@ async function handleDisconnectCommand(channelId: string) {
   }
 }
 
-async function handleSendCommand(channelId: string, data: { to: string; text?: string; media?: any; requestId: string }) {
+async function handleSendCommand(channelId: string, data: {
+  to: string;
+  text?: string;
+  media?: any;
+  sticker?: any;
+  gif?: any;
+  voiceNote?: any;
+  reaction?: { messageKey: any; emoji: string };
+  requestId: string
+}) {
   try {
     let result;
+
     if (data.text) {
       result = await sessionManager.sendTextMessage(channelId, data.to, data.text);
+    } else if (data.sticker) {
+      result = await sessionManager.sendStickerMessage(channelId, data.to, data.sticker);
+    } else if (data.gif) {
+      result = await sessionManager.sendGifMessage(channelId, data.to, data.gif);
+    } else if (data.voiceNote) {
+      result = await sessionManager.sendVoiceNote(channelId, data.to, data.voiceNote);
+    } else if (data.reaction) {
+      result = await sessionManager.sendReaction(channelId, data.reaction.messageKey, data.reaction.emoji);
     } else if (data.media) {
       result = await sessionManager.sendMediaMessage(channelId, data.to, data.media);
     }
@@ -226,6 +249,21 @@ async function handlePairingCommand(channelId: string, data: { phoneNumber: stri
     await redisClient.publish(`whatsapp:response:${data.requestId}`, JSON.stringify({
       success: true,
       code,
+    }));
+  } catch (error) {
+    await redisClient.publish(`whatsapp:response:${data.requestId}`, JSON.stringify({
+      success: false,
+      error: (error as Error).message,
+    }));
+  }
+}
+
+async function handleProfilePictureCommand(channelId: string, data: { jid: string; requestId: string }) {
+  try {
+    const url = await sessionManager.getProfilePicture(channelId, data.jid);
+    await redisClient.publish(`whatsapp:response:${data.requestId}`, JSON.stringify({
+      success: true,
+      url,
     }));
   } catch (error) {
     await redisClient.publish(`whatsapp:response:${data.requestId}`, JSON.stringify({

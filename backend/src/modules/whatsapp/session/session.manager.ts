@@ -508,6 +508,158 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
+   * Send a sticker message
+   */
+  async sendStickerMessage(
+    channelId: string,
+    to: string,
+    sticker: {
+      url?: string;
+      buffer?: Buffer;
+    }
+  ): Promise<WAMessage | undefined> {
+    const session = this.sessions.get(channelId);
+    if (!session || session.status !== 'CONNECTED') {
+      throw new Error('Channel not connected');
+    }
+
+    await this.checkRateLimit(channelId);
+    const jid = this.formatJid(to);
+
+    const content = {
+      sticker: sticker.url ? { url: sticker.url } : sticker.buffer,
+    };
+
+    const result = await session.socket.sendMessage(jid, content);
+    this.logger.info({ channelId, to: jid, messageId: result?.key?.id }, 'Sticker sent');
+
+    return result;
+  }
+
+  /**
+   * Send a GIF/video as GIF
+   */
+  async sendGifMessage(
+    channelId: string,
+    to: string,
+    gif: {
+      url?: string;
+      buffer?: Buffer;
+      caption?: string;
+    }
+  ): Promise<WAMessage | undefined> {
+    const session = this.sessions.get(channelId);
+    if (!session || session.status !== 'CONNECTED') {
+      throw new Error('Channel not connected');
+    }
+
+    await this.checkRateLimit(channelId);
+    const jid = this.formatJid(to);
+
+    const content = {
+      video: gif.url ? { url: gif.url } : gif.buffer,
+      gifPlayback: true, // This makes it play as a GIF
+      caption: gif.caption,
+    };
+
+    const result = await session.socket.sendMessage(jid, content);
+    this.logger.info({ channelId, to: jid, messageId: result?.key?.id }, 'GIF sent');
+
+    return result;
+  }
+
+  /**
+   * Send a reaction to a message
+   */
+  async sendReaction(
+    channelId: string,
+    messageKey: WAMessageKey,
+    emoji: string
+  ): Promise<WAMessage | undefined> {
+    const session = this.sessions.get(channelId);
+    if (!session || session.status !== 'CONNECTED') {
+      throw new Error('Channel not connected');
+    }
+
+    const result = await session.socket.sendMessage(messageKey.remoteJid!, {
+      react: {
+        text: emoji, // Use empty string '' to remove reaction
+        key: messageKey,
+      },
+    });
+
+    this.logger.info({ channelId, messageId: messageKey.id, emoji }, 'Reaction sent');
+    return result;
+  }
+
+  /**
+   * Get profile picture URL for a contact
+   */
+  async getProfilePicture(channelId: string, jid: string): Promise<string | null> {
+    const session = this.sessions.get(channelId);
+    if (!session || session.status !== 'CONNECTED') {
+      throw new Error('Channel not connected');
+    }
+
+    try {
+      const formattedJid = this.formatJid(jid);
+      const ppUrl = await session.socket.profilePictureUrl(formattedJid, 'image');
+      return ppUrl;
+    } catch (error) {
+      // Profile picture not available or private
+      this.logger.debug({ channelId, jid, error }, 'Could not get profile picture');
+      return null;
+    }
+  }
+
+  /**
+   * Send a voice note (PTT - Push To Talk)
+   */
+  async sendVoiceNote(
+    channelId: string,
+    to: string,
+    audio: {
+      url?: string;
+      buffer?: Buffer;
+    }
+  ): Promise<WAMessage | undefined> {
+    const session = this.sessions.get(channelId);
+    if (!session || session.status !== 'CONNECTED') {
+      throw new Error('Channel not connected');
+    }
+
+    await this.checkRateLimit(channelId);
+    const jid = this.formatJid(to);
+
+    const content = {
+      audio: audio.url ? { url: audio.url } : audio.buffer,
+      mimetype: 'audio/ogg; codecs=opus',
+      ptt: true, // Push-to-talk = voice note
+    };
+
+    const result = await session.socket.sendMessage(jid, content);
+    this.logger.info({ channelId, to: jid, messageId: result?.key?.id }, 'Voice note sent');
+
+    return result;
+  }
+
+  /**
+   * Download media from a message (returns reupload function for session)
+   */
+  getMediaDownloader(channelId: string): ((msg: WAMessage) => Promise<WAMessage>) | undefined {
+    const session = this.sessions.get(channelId);
+    if (!session || session.status !== 'CONNECTED') {
+      return undefined;
+    }
+
+    // Return the reupload function that can be used with downloadMediaMessage
+    return async (msg: WAMessage) => {
+      const result = await session.socket.updateMediaMessage(msg);
+      return result;
+    };
+  }
+
+  /**
    * Get session status
    */
   getSession(channelId: string): SessionInfo | undefined {
