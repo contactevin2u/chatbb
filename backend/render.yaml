@@ -1,0 +1,200 @@
+# Render Blueprint - ChatBaby Infrastructure
+# Documentation: https://render.com/docs/blueprint-spec
+
+services:
+  # ===========================================
+  # API Server (Horizontally Scalable)
+  # ===========================================
+  - type: web
+    name: chatbaby-api
+    runtime: node
+    region: singapore
+    plan: starter # starter, standard, pro
+    rootDir: backend
+    buildCommand: npm ci && npm run build && npx prisma generate
+    startCommand: npm run start
+    healthCheckPath: /health
+    autoDeploy: true
+    numInstances: 2 # Scale up to 10 for production
+    scaling:
+      minInstances: 2
+      maxInstances: 10
+      targetMemoryPercent: 80
+      targetCPUPercent: 80
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3001"
+      - key: API_VERSION
+        value: v1
+      - key: DATABASE_URL
+        fromDatabase:
+          name: chatbaby-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: chatbaby-redis
+          type: redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_ACCESS_EXPIRY
+        value: "15m"
+      - key: JWT_REFRESH_EXPIRY
+        value: "7d"
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      - key: FRONTEND_URL
+        sync: false # Set manually after frontend deploy
+      - key: RATE_LIMIT_WINDOW_MS
+        value: "60000"
+      - key: RATE_LIMIT_MAX_REQUESTS
+        value: "100"
+
+  # ===========================================
+  # WhatsApp Worker (Singleton - Session Manager)
+  # ===========================================
+  - type: worker
+    name: chatbaby-whatsapp
+    runtime: node
+    region: singapore
+    plan: starter
+    rootDir: backend
+    buildCommand: npm ci && npm run build && npx prisma generate
+    startCommand: npm run start:whatsapp
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: chatbaby-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: chatbaby-redis
+          type: redis
+          property: connectionString
+      - key: JWT_SECRET
+        fromService:
+          name: chatbaby-api
+          type: web
+          envVarKey: JWT_SECRET
+      - key: ENCRYPTION_KEY
+        fromService:
+          name: chatbaby-api
+          type: web
+          envVarKey: ENCRYPTION_KEY
+
+  # ===========================================
+  # Background Worker (Message/Broadcast Queue)
+  # ===========================================
+  - type: worker
+    name: chatbaby-worker
+    runtime: node
+    region: singapore
+    plan: starter
+    rootDir: backend
+    buildCommand: npm ci && npm run build && npx prisma generate
+    startCommand: npm run start:worker
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: chatbaby-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: chatbaby-redis
+          type: redis
+          property: connectionString
+      - key: JWT_SECRET
+        fromService:
+          name: chatbaby-api
+          type: web
+          envVarKey: JWT_SECRET
+      - key: ENCRYPTION_KEY
+        fromService:
+          name: chatbaby-api
+          type: web
+          envVarKey: ENCRYPTION_KEY
+
+  # ===========================================
+  # Cron Jobs
+  # ===========================================
+  - type: cron
+    name: chatbaby-analytics-aggregator
+    runtime: node
+    region: singapore
+    plan: starter
+    rootDir: backend
+    buildCommand: npm ci && npm run build && npx prisma generate
+    schedule: "0 1 * * *" # Daily at 1 AM
+    startCommand: npm run job:aggregate-analytics
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: chatbaby-db
+          property: connectionString
+
+  - type: cron
+    name: chatbaby-session-cleanup
+    runtime: node
+    region: singapore
+    plan: starter
+    rootDir: backend
+    buildCommand: npm ci && npm run build && npx prisma generate
+    schedule: "0 */6 * * *" # Every 6 hours
+    startCommand: npm run job:cleanup-sessions
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: chatbaby-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: chatbaby-redis
+          type: redis
+          property: connectionString
+
+# ===========================================
+# Databases
+# ===========================================
+databases:
+  - name: chatbaby-db
+    region: singapore
+    plan: starter # starter (1GB), standard (4GB), pro (16GB)
+    databaseName: chatbaby
+    user: chatbaby
+    ipAllowList: [] # Allow all IPs (use with caution, or specify IPs)
+    postgresMajorVersion: "18"
+
+# ===========================================
+# Redis
+# ===========================================
+  # Note: Redis is defined as a service, not in databases section
+  # Render auto-provisions Redis when referenced via fromService
+
+# ===========================================
+# Environment Groups (Shared Secrets)
+# ===========================================
+envVarGroups:
+  - name: chatbaby-shared
+    envVars:
+      - key: SENTRY_DSN
+        sync: false
+      - key: LOG_LEVEL
+        value: info
+      - key: WHATSAPP_RATE_LIMIT_PER_MINUTE
+        value: "30"
+      - key: WHATSAPP_RATE_LIMIT_PER_HOUR
+        value: "200"
+      - key: WHATSAPP_NEW_CONTACTS_PER_DAY
+        value: "50"
