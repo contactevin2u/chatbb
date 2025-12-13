@@ -49,6 +49,8 @@ interface SessionEvents {
   'error': (channelId: string, error: Error) => void;
   // Baileys v7 LID mapping event
   'lid-mapping:update': (channelId: string, mapping: { lid: string; pn: string }) => void;
+  // Historical message sync event (macOS Desktop + syncFullHistory: true)
+  'history:sync': (channelId: string, data: { chats: any[]; contacts: any[]; messages: any; syncType: any }) => void;
 }
 
 const MAX_RETRY_COUNT = 5;
@@ -120,6 +122,7 @@ export class SessionManager extends EventEmitter {
     this.logger.info({ version, isLatest }, 'Using Baileys version');
 
     // Create socket connection
+    // Use macOS Desktop browser for full historical message sync
     const socket = makeWASocket({
       version,
       logger: this.logger.child({ channelId }),
@@ -127,12 +130,25 @@ export class SessionManager extends EventEmitter {
         creds: state.creds,
         keys: makeCacheableSignalKeyStore(state.keys, this.logger),
       },
-      browser: Browsers.ubuntu('ChatBaby'),
+      // macOS Desktop browser enables full history sync
+      browser: Browsers.macOS('Desktop'),
       printQRInTerminal: false,
       generateHighQualityLinkPreview: true,
-      syncFullHistory: false,
-      markOnlineOnConnect: true,
+      // Enable full history sync from device
+      syncFullHistory: true,
+      // Set to false to receive phone notifications
+      markOnlineOnConnect: false,
       msgRetryCounterCache: this.msgRetryCache,
+      // Cache group metadata to prevent rate limiting
+      cachedGroupMetadata: async (jid) => {
+        const cached = await redisClient.get(`group:${jid}:metadata`);
+        if (cached) {
+          return JSON.parse(cached);
+        }
+        return undefined;
+      },
+      // Sync all historical messages (return true to sync)
+      shouldSyncHistoryMessage: () => true,
       getMessage: async (key) => {
         // Retrieve message from database for retry
         const message = await prisma.message.findFirst({
@@ -278,6 +294,48 @@ export class SessionManager extends EventEmitter {
       for (const [lid, pn] of Object.entries(mapping)) {
         this.emit('lid-mapping:update', channelId, { lid, pn: pn as string });
         this.logger.debug({ channelId, lid, pn }, 'LID mapping received');
+      }
+    });
+
+    // Historical message sync (requires macOS Desktop browser + syncFullHistory: true)
+    socket.ev.on('messaging-history.set', async ({ chats, contacts, messages, syncType }) => {
+      this.logger.info(
+        { channelId, chatsCount: chats.length, contactsCount: contacts.length, messagesCount: Object.keys(messages).length, syncType },
+        'Historical sync received'
+      );
+
+      // Emit event for processing by the application
+      this.emit('history:sync', channelId, { chats, contacts, messages, syncType });
+
+      // Cache group IDs for later metadata fetching
+      for (const chat of chats) {
+        if (chat.id?.endsWith('@g.us')) {
+          // Store group chat info for caching
+          const chatData = chat as any;
+          if (chatData.groupMetadata) {
+            await redisClient.setex(
+              `group:${chat.id}:metadata`,
+              3600, // 1 hour cache
+              JSON.stringify(chatData.groupMetadata)
+            );
+          }
+        }
+      }
+
+      this.logger.info({ channelId, syncType }, 'Historical sync processed');
+    });
+
+    // Group metadata updates - cache for performance
+    socket.ev.on('groups.update', async (updates) => {
+      for (const update of updates) {
+        if (update.id) {
+          const existing = await redisClient.get(`group:${update.id}:metadata`);
+          if (existing) {
+            const metadata = JSON.parse(existing);
+            const updated = { ...metadata, ...update };
+            await redisClient.setex(`group:${update.id}:metadata`, 3600, JSON.stringify(updated));
+          }
+        }
       }
     });
   }
