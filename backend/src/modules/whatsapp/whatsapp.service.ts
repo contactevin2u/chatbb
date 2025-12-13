@@ -97,6 +97,178 @@ export class WhatsAppService {
     sessionManager.on('message:update', async (channelId, update) => {
       await this.handleMessageUpdate(channelId, update);
     });
+
+    // Historical sync - process chats, contacts, messages in background
+    sessionManager.on('history:sync', async (channelId, data) => {
+      await this.handleHistoricalSync(channelId, data);
+    });
+  }
+
+  /**
+   * Handle historical message sync from WhatsApp
+   * Processes chats, contacts, and messages received during initial sync
+   */
+  private async handleHistoricalSync(
+    channelId: string,
+    data: { chats: any[]; contacts: any[]; messages: any; syncType: any }
+  ) {
+    const channel = await prisma.channel.findUnique({
+      where: { id: channelId },
+    });
+
+    if (!channel) return;
+
+    const { chats, contacts, messages } = data;
+    const orgId = channel.organizationId;
+
+    console.log(`[HistorySync] Processing: ${chats.length} chats, ${contacts.length} contacts, ${Object.keys(messages).length} message groups`);
+
+    // Process contacts first
+    for (const contact of contacts) {
+      try {
+        const identifier = contact.id?.split('@')[0];
+        if (!identifier) continue;
+
+        await prisma.contact.upsert({
+          where: {
+            organizationId_channelType_identifier: {
+              organizationId: orgId,
+              channelType: ChannelType.WHATSAPP,
+              identifier,
+            },
+          },
+          create: {
+            organizationId: orgId,
+            channelType: ChannelType.WHATSAPP,
+            identifier,
+            displayName: contact.name || contact.notify || null,
+          },
+          update: {
+            displayName: contact.name || contact.notify || undefined,
+          },
+        });
+      } catch (error) {
+        console.error('[HistorySync] Error processing contact:', error);
+      }
+    }
+
+    // Process chats and create conversations
+    for (const chat of chats) {
+      try {
+        const remoteJid = chat.id;
+        if (!remoteJid || remoteJid.endsWith('@g.us')) continue; // Skip groups for now
+
+        const identifier = remoteJid.split('@')[0];
+
+        // Get or create contact
+        let contact = await prisma.contact.findFirst({
+          where: {
+            organizationId: orgId,
+            channelType: ChannelType.WHATSAPP,
+            identifier,
+          },
+        });
+
+        if (!contact) {
+          contact = await prisma.contact.create({
+            data: {
+              organizationId: orgId,
+              channelType: ChannelType.WHATSAPP,
+              identifier,
+              displayName: chat.name || null,
+            },
+          });
+        }
+
+        // Get or create conversation
+        const existingConversation = await prisma.conversation.findFirst({
+          where: { channelId, contactId: contact.id },
+        });
+
+        if (!existingConversation) {
+          await prisma.conversation.create({
+            data: {
+              organizationId: orgId,
+              channelId,
+              contactId: contact.id,
+              status: 'OPEN',
+              unreadCount: chat.unreadCount || 0,
+              lastMessageAt: chat.conversationTimestamp
+                ? new Date(Number(chat.conversationTimestamp) * 1000)
+                : new Date(),
+            },
+          });
+        }
+      } catch (error) {
+        console.error('[HistorySync] Error processing chat:', error);
+      }
+    }
+
+    // Process messages
+    for (const [jid, msgs] of Object.entries(messages)) {
+      if (!Array.isArray(msgs)) continue;
+
+      const identifier = jid.split('@')[0];
+
+      // Get contact and conversation
+      const contact = await prisma.contact.findFirst({
+        where: {
+          organizationId: orgId,
+          channelType: ChannelType.WHATSAPP,
+          identifier,
+        },
+      });
+
+      if (!contact) continue;
+
+      const conversation = await prisma.conversation.findFirst({
+        where: { channelId, contactId: contact.id },
+      });
+
+      if (!conversation) continue;
+
+      // Process each message
+      for (const msg of msgs as any[]) {
+        try {
+          const externalId = msg.key?.id;
+          if (!externalId) continue;
+
+          // Check if message already exists
+          const existingMsg = await prisma.message.findFirst({
+            where: { externalId, channelId },
+          });
+
+          if (existingMsg) continue;
+
+          // Parse message content
+          const { type, content } = this.parseMessageContent(msg.message || {});
+          const isFromMe = msg.key?.fromMe || false;
+
+          await prisma.message.create({
+            data: {
+              conversationId: conversation.id,
+              channelId,
+              externalId,
+              direction: isFromMe ? MessageDirection.OUTBOUND : MessageDirection.INBOUND,
+              type,
+              content,
+              status: isFromMe ? MessageStatus.SENT : MessageStatus.DELIVERED,
+              sentAt: isFromMe ? new Date(Number(msg.messageTimestamp) * 1000) : null,
+              deliveredAt: !isFromMe ? new Date(Number(msg.messageTimestamp) * 1000) : null,
+              metadata: {
+                timestamp: Number(msg.messageTimestamp) || Date.now(),
+                pushName: msg.pushName || null,
+                isHistorical: true,
+              },
+            },
+          });
+        } catch (error) {
+          // Skip duplicate or invalid messages
+        }
+      }
+    }
+
+    console.log(`[HistorySync] Completed for channel ${channelId}`);
   }
 
   /**
