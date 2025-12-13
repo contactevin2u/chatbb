@@ -247,8 +247,8 @@ export class ConversationController {
 
       const result = await conversationService.setActiveAgent(
         conversationId,
-        userId,
-        organizationId
+        userId as string,
+        organizationId as string
       );
 
       res.json({
@@ -269,7 +269,7 @@ export class ConversationController {
       const { id: userId } = req.user!;
       const { id: conversationId } = req.params;
 
-      await conversationService.clearActiveAgent(conversationId, userId);
+      await conversationService.clearActiveAgent(conversationId, userId as string);
 
       res.json({
         success: true,
