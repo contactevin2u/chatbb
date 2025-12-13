@@ -127,6 +127,17 @@ router.post(
 );
 
 /**
+ * @route   POST /api/v1/channels/whatsapp/:channelId/reconnect
+ * @desc    Reconnect WhatsApp channel using saved credentials (no QR needed if session valid)
+ * @access  Private (channels:edit)
+ */
+router.post(
+  '/:channelId/reconnect',
+  requirePermission('channels:edit'),
+  whatsappController.reconnectChannel.bind(whatsappController)
+);
+
+/**
  * @route   POST /api/v1/channels/whatsapp/:channelId/messages
  * @desc    Send a message via WhatsApp channel
  * @access  Private (conversations:reply)

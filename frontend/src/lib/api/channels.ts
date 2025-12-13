@@ -98,6 +98,19 @@ export async function disconnectWhatsAppChannel(channelId: string): Promise<{
   return response.data.data;
 }
 
+export async function reconnectWhatsAppChannel(channelId: string): Promise<{
+  channelId: string;
+  status: string;
+  hasAuthState: boolean;
+  message: string;
+}> {
+  const response = await apiClient.post<{
+    success: boolean;
+    data: { channelId: string; status: string; hasAuthState: boolean; message: string };
+  }>(`/channels/whatsapp/${channelId}/reconnect`);
+  return response.data.data;
+}
+
 export async function deleteWhatsAppChannel(channelId: string): Promise<void> {
   await apiClient.delete(`/channels/whatsapp/${channelId}`);
 }

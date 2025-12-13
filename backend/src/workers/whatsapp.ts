@@ -166,6 +166,11 @@ async function setupCommandSubscriber() {
           await handleProfilePictureCommand(channelId, data);
           break;
 
+        case 'reconnect':
+          // Reconnect using saved credentials
+          await handleReconnectCommand(channelId, data);
+          break;
+
         default:
           logger.warn({ command }, 'Unknown command');
       }
@@ -268,6 +273,46 @@ async function handleProfilePictureCommand(channelId: string, data: { jid: strin
   } catch (error) {
     await redisClient.publish(`whatsapp:response:${data.requestId}`, JSON.stringify({
       success: false,
+      error: (error as Error).message,
+    }));
+  }
+}
+
+async function handleReconnectCommand(channelId: string, data: { organizationId: string; hasAuthState: boolean }) {
+  try {
+    logger.info({ channelId, hasAuthState: data.hasAuthState }, 'Reconnect command received');
+
+    // First, close any existing session gracefully (without logout)
+    const existingSession = sessionManager.getSession(channelId);
+    if (existingSession) {
+      try {
+        // Close socket without logging out (preserve credentials)
+        existingSession.socket.end(undefined);
+        logger.info({ channelId }, 'Closed existing session for reconnect');
+      } catch (error) {
+        logger.warn({ channelId, error }, 'Error closing existing session');
+      }
+      // Remove from sessions map
+      sessionManager.removeSession(channelId);
+    }
+
+    // Small delay to ensure clean state
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Create new session - this will use saved credentials from PostgreSQL
+    // If credentials exist and are valid, it will connect without QR
+    // If credentials are invalid or missing, it will generate QR code
+    await sessionManager.createSession(channelId, data.organizationId);
+
+    await redisClient.publish(`whatsapp:${channelId}:status`, JSON.stringify({
+      status: 'reconnecting',
+      channelId,
+    }));
+
+    logger.info({ channelId }, 'Reconnect initiated');
+  } catch (error) {
+    logger.error({ channelId, error }, 'Reconnect failed');
+    await redisClient.publish(`whatsapp:${channelId}:error`, JSON.stringify({
       error: (error as Error).message,
     }));
   }

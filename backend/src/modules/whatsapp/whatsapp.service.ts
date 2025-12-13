@@ -332,6 +332,49 @@ export class WhatsAppService {
   }
 
   /**
+   * Reconnect a WhatsApp channel using saved credentials
+   * If credentials exist, tries to restore session without QR code
+   * If no credentials, falls back to connect flow (QR code)
+   */
+  async reconnectChannel(channelId: string, organizationId: string) {
+    const channel = await prisma.channel.findFirst({
+      where: {
+        id: channelId,
+        organizationId,
+        type: ChannelType.WHATSAPP,
+      },
+    });
+
+    if (!channel) {
+      throw new Error('Channel not found');
+    }
+
+    // Check if we have saved auth state
+    const hasState = await hasAuthState(channelId);
+
+    // Send reconnect command to WhatsApp Worker
+    await redisClient.publish(`whatsapp:cmd:reconnect:${channelId}`, JSON.stringify({
+      organizationId,
+      hasAuthState: hasState,
+    }));
+
+    // Update channel status to connecting
+    await prisma.channel.update({
+      where: { id: channelId },
+      data: { status: ChannelStatus.CONNECTING },
+    });
+
+    return {
+      channelId,
+      status: 'CONNECTING',
+      hasAuthState: hasState,
+      message: hasState
+        ? 'Attempting to reconnect using saved session...'
+        : 'No saved session. QR code will be generated.',
+    };
+  }
+
+  /**
    * Get channel status (from DB - no sessionManager access)
    */
   async getChannelStatus(channelId: string, organizationId: string) {

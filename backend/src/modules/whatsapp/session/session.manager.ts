@@ -674,6 +674,15 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
+   * Remove session from manager (without logout - preserves credentials)
+   * Used for reconnection flow
+   */
+  removeSession(channelId: string): void {
+    this.sessions.delete(channelId);
+    this.logger.info({ channelId }, 'Session removed from manager');
+  }
+
+  /**
    * Disconnect a session
    */
   async disconnectSession(channelId: string): Promise<void> {

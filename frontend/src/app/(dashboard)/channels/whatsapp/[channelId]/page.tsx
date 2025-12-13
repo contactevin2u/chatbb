@@ -31,6 +31,7 @@ import {
 import {
   getWhatsAppChannelStatus,
   disconnectWhatsAppChannel,
+  reconnectWhatsAppChannel,
   deleteWhatsAppChannel,
 } from '@/lib/api/channels';
 
@@ -89,6 +90,22 @@ export default function ChannelSettingsPage() {
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to disconnect');
+    },
+  });
+
+  const reconnectMutation = useMutation({
+    mutationFn: () => reconnectWhatsAppChannel(channelId),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['channel-status', channelId] });
+      if (data.hasAuthState) {
+        toast.success('Reconnecting using saved session...');
+      } else {
+        toast.info('No saved session. Redirecting to QR code...');
+        router.push(`/channels/whatsapp/${channelId}/connect`);
+      }
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to reconnect');
     },
   });
 
@@ -199,15 +216,46 @@ export default function ChannelSettingsPage() {
                   </>
                 )}
               </Button>
-            ) : (
-              <Button asChild>
-                <Link href={`/channels/whatsapp/${channelId}/connect`}>
-                  <Wifi className="mr-2 h-4 w-4" />
-                  Connect
-                </Link>
+            ) : channelStatus?.status === 'CONNECTING' ? (
+              <Button disabled>
+                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                Connecting...
               </Button>
+            ) : (
+              <>
+                {/* Reconnect button - tries to use saved session */}
+                <Button
+                  onClick={() => reconnectMutation.mutate()}
+                  disabled={reconnectMutation.isPending}
+                >
+                  {reconnectMutation.isPending ? (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                      Reconnecting...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      Reconnect
+                    </>
+                  )}
+                </Button>
+                {/* Connect button - always shows QR code */}
+                <Button variant="outline" asChild>
+                  <Link href={`/channels/whatsapp/${channelId}/connect`}>
+                    <Wifi className="mr-2 h-4 w-4" />
+                    Scan QR Code
+                  </Link>
+                </Button>
+              </>
             )}
           </div>
+          {(channelStatus?.status === 'DISCONNECTED' || channelStatus?.status === 'ERROR') &&
+           channelStatus?.hasAuthState && (
+            <p className="text-sm text-muted-foreground">
+              Session saved. Click &quot;Reconnect&quot; to restore without scanning QR code.
+            </p>
+          )}
         </CardContent>
       </Card>
 

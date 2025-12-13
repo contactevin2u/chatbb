@@ -139,6 +139,29 @@ export class WhatsAppController {
   }
 
   /**
+   * Reconnect a WhatsApp channel using saved credentials
+   * POST /api/v1/channels/whatsapp/:channelId/reconnect
+   */
+  async reconnectChannel(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId } = req.user!;
+      const { channelId } = req.params;
+
+      const result = await whatsappService.reconnectChannel(channelId, organizationId);
+
+      res.json({
+        success: true,
+        data: result,
+        message: result.hasAuthState
+          ? 'Reconnection initiated using saved credentials.'
+          : 'No saved session found. Please scan QR code.',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Send a message
    * POST /api/v1/channels/whatsapp/:channelId/messages
    */
