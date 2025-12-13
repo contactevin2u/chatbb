@@ -158,6 +158,15 @@ services:
           type: redis
           property: connectionString
 
+  # ===========================================
+  # Redis
+  # ===========================================
+  - type: redis
+    name: chatbaby-redis
+    region: singapore
+    plan: free
+    ipAllowList: []
+
 # ===========================================
 # Databases
 # ===========================================
@@ -169,12 +178,6 @@ databases:
     user: chatbaby
     ipAllowList: []
     postgresMajorVersion: "18"
-
-# ===========================================
-# Redis
-# ===========================================
-  # Note: Redis is defined as a service, not in databases section
-  # Render auto-provisions Redis when referenced via fromService
 
 # ===========================================
 # Environment Groups (Shared Secrets)
