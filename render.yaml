@@ -15,12 +15,6 @@ services:
     startCommand: npm run start
     healthCheckPath: /health
     autoDeploy: true
-    numInstances: 2 # Scale up to 10 for production
-    scaling:
-      minInstances: 2
-      maxInstances: 10
-      targetMemoryPercent: 80
-      targetCPUPercent: 80
     envVars:
       - key: NODE_ENV
         value: production
