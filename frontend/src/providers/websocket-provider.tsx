@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, useCallback, useRef } f
 import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from '@/stores/auth-store';
 import { env } from '@/config/env';
+import axios from 'axios';
 
 interface WebSocketContextType {
   socket: Socket | null;
@@ -78,9 +79,37 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
       setIsConnected(false);
     });
 
-    newSocket.on('connect_error', (error) => {
+    newSocket.on('connect_error', async (error) => {
       console.error('WebSocket connection error:', error.message);
       setIsConnected(false);
+
+      // If auth error, try to refresh token
+      if (error.message.includes('authentication') || error.message.includes('jwt') || error.message.includes('token')) {
+        console.log('Socket auth failed, attempting token refresh...');
+        try {
+          const refreshToken = useAuthStore.getState().tokens?.refreshToken;
+          if (refreshToken) {
+            const API_URL = env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+            const response = await axios.post(`${API_URL}/api/v1/auth/refresh`, { refreshToken });
+            const newTokens = response.data;
+
+            // Update store with new tokens
+            useAuthStore.getState().setTokens(newTokens);
+
+            // Update socket auth and reconnect
+            newSocket.auth = { token: newTokens.accessToken };
+            newSocket.connect();
+            console.log('Token refreshed, reconnecting socket...');
+          }
+        } catch (refreshError) {
+          console.error('Token refresh failed:', refreshError);
+          // Logout on refresh failure
+          useAuthStore.getState().logout();
+          if (typeof window !== 'undefined') {
+            window.location.href = '/login';
+          }
+        }
+      }
     });
 
     setSocket(newSocket);
