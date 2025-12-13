@@ -14,7 +14,8 @@ export class MessageController {
    */
   async sendMessage(req: Request, res: Response, next: NextFunction) {
     try {
-      const { organizationId, userId } = req.user!;
+      const organizationId = req.user!.organizationId as string;
+      const userId = req.user!.userId as string;
       const { conversationId, text, media } = req.body;
 
       if (!conversationId) {

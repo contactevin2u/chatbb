@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { authService } from './auth.service.js';
+import { authService, type RegisterInput, type LoginInput } from './auth.service.js';
 import { ValidationException } from '../../shared/exceptions/base.exception.js';
 
 export const authRoutes = Router();
@@ -41,7 +41,7 @@ authRoutes.post('/register', async (req, res, next) => {
       });
     }
 
-    const result = await authService.register(parsed.data);
+    const result = await authService.register(parsed.data as RegisterInput);
     res.status(201).json(result);
   } catch (error) {
     next(error);
@@ -58,7 +58,7 @@ authRoutes.post('/login', async (req, res, next) => {
       });
     }
 
-    const result = await authService.login(parsed.data);
+    const result = await authService.login(parsed.data as LoginInput);
     res.json(result);
   } catch (error) {
     next(error);

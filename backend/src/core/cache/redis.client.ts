@@ -2,6 +2,8 @@ import Redis from 'ioredis';
 import { redisConfig } from '../../config/redis.js';
 import { logger } from '../../shared/utils/logger.js';
 
+let redisInstance: Redis | null = null;
+
 export const redis = new Redis(redisConfig.url, {
   maxRetriesPerRequest: redisConfig.maxRetriesPerRequest,
   enableReadyCheck: redisConfig.enableReadyCheck,
@@ -34,3 +36,14 @@ export async function disconnectRedis(): Promise<void> {
   await redis.quit();
   logger.info('Redis disconnected');
 }
+
+export async function connectRedis(): Promise<Redis> {
+  if (redisInstance) {
+    return redisInstance;
+  }
+  redisInstance = redis;
+  return redisInstance;
+}
+
+// Alias for compatibility
+export const redisClient = redis;

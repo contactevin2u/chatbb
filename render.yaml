@@ -11,7 +11,7 @@ services:
     region: singapore
     plan: starter # starter, standard, pro
     rootDir: backend
-    buildCommand: npm ci && npm run build && npx prisma generate
+    buildCommand: npm ci --include=dev && npm run build && npx prisma generate
     startCommand: npm run start
     healthCheckPath: /health
     autoDeploy: true
@@ -55,7 +55,7 @@ services:
     region: singapore
     plan: starter
     rootDir: backend
-    buildCommand: npm ci && npm run build && npx prisma generate
+    buildCommand: npm ci --include=dev && npm run build && npx prisma generate
     startCommand: npm run start:whatsapp
     autoDeploy: true
     envVars:
@@ -90,7 +90,7 @@ services:
     region: singapore
     plan: starter
     rootDir: backend
-    buildCommand: npm ci && npm run build && npx prisma generate
+    buildCommand: npm ci --include=dev && npm run build && npx prisma generate
     startCommand: npm run start:worker
     autoDeploy: true
     envVars:
@@ -125,7 +125,7 @@ services:
     region: singapore
     plan: starter
     rootDir: backend
-    buildCommand: npm ci && npm run build && npx prisma generate
+    buildCommand: npm ci --include=dev && npm run build && npx prisma generate
     schedule: "0 1 * * *" # Daily at 1 AM
     startCommand: npm run job:aggregate-analytics
     envVars:
@@ -142,7 +142,7 @@ services:
     region: singapore
     plan: starter
     rootDir: backend
-    buildCommand: npm ci && npm run build && npx prisma generate
+    buildCommand: npm ci --include=dev && npm run build && npx prisma generate
     schedule: "0 */6 * * *" # Every 6 hours
     startCommand: npm run job:cleanup-sessions
     envVars:

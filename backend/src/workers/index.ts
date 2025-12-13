@@ -46,8 +46,8 @@ async function processBroadcast(job: Job) {
   logger.info({ jobId: job.id, broadcastId, recipientId }, 'Processing broadcast job');
 
   // Import here to avoid circular dependencies
-  const { prisma } = await import('../core/database/prisma');
-  const { sessionManager } = await import('../modules/whatsapp/session/session.manager');
+  const { prisma } = await import('../core/database/prisma.js');
+  const { sessionManager } = await import('../modules/whatsapp/session/session.manager.js');
 
   try {
     // Get recipient
@@ -113,7 +113,7 @@ async function processWebhook(job: Job) {
   const { webhookId, event, payload } = job.data;
   logger.info({ jobId: job.id, webhookId, event }, 'Processing webhook job');
 
-  const { prisma } = await import('../core/database/prisma');
+  const { prisma } = await import('../core/database/prisma.js');
 
   try {
     const webhook = await prisma.webhook.findUnique({

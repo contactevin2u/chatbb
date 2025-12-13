@@ -436,8 +436,8 @@ export class WhatsAppService {
         status: MessageStatus.DELIVERED,
         deliveredAt: new Date(),
         metadata: {
-          timestamp: waMessage.messageTimestamp,
-          pushName: waMessage.pushName,
+          timestamp: Number(waMessage.messageTimestamp) || Date.now(),
+          pushName: waMessage.pushName || null,
         },
       },
       include: {
@@ -447,10 +447,13 @@ export class WhatsAppService {
       },
     });
 
+    // Get the conversation for emitting
+    const messageWithConversation = message as typeof message & { conversation: typeof conversation };
+
     // Emit to WebSocket for real-time updates
     socketServer.to(`org:${channel.organizationId}`).emit('message:new', {
       message,
-      conversation: message.conversation,
+      conversation: messageWithConversation.conversation || conversation,
     });
 
     // Emit to conversation room

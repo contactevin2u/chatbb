@@ -194,7 +194,7 @@ export class WhatsAppController {
       }
 
       // Delete from database
-      const { prisma } = await import('../../core/database/prisma');
+      const { prisma } = await import('../../core/database/prisma.js');
       await prisma.channel.delete({
         where: {
           id: channelId,

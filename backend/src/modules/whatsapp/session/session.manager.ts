@@ -58,7 +58,7 @@ const RATE_LIMIT = {
   NEW_CONTACTS_PER_DAY: 50,
 };
 
-class SessionManager extends EventEmitter {
+export class SessionManager extends EventEmitter {
   private sessions: Map<string, SessionInfo> = new Map();
   private logger = pino({ level: 'info' });
   private msgRetryCache = new NodeCache({ stdTTL: 60, checkperiod: 30 });
@@ -200,7 +200,7 @@ class SessionManager extends EventEmitter {
 
       if (connection === 'close') {
         const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
-        const reason = DisconnectReason[statusCode as keyof typeof DisconnectReason] || 'Unknown';
+        const reason = statusCode ? String(DisconnectReason[statusCode] || 'Unknown') : 'Unknown';
 
         this.logger.warn({ channelId, statusCode, reason }, 'WhatsApp disconnected');
 

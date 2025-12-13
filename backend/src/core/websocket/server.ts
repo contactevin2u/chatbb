@@ -57,7 +57,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
       // Get user info
       const user = await prisma.user.findUnique({
-        where: { id: payload.userId },
+        where: { id: payload.userId as string },
         select: { id: true, organizationId: true, role: true },
       });
 
@@ -208,8 +208,14 @@ export function getSocketServer(): Server {
   return io;
 }
 
+// Socket server interface for type safety
+interface SocketServerInterface {
+  to: (room: string) => { emit: (event: string, data?: unknown) => void };
+  emit: (event: string, data: unknown) => void;
+}
+
 // Export socketServer as an alias for getSocketServer for convenience
-export const socketServer = {
+export const socketServer: SocketServerInterface = {
   to: (room: string) => {
     if (!io) {
       return {
@@ -218,7 +224,7 @@ export const socketServer = {
         },
       };
     }
-    return io.to(room);
+    return io.to(room) as { emit: (event: string, data?: unknown) => void };
   },
   emit: (event: string, data: unknown) => {
     if (!io) {

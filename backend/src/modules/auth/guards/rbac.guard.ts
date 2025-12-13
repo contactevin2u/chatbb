@@ -17,11 +17,16 @@ export type Permission =
   | 'users:delete'
   | 'channels:create'
   | 'channels:read'
+  | 'channels:view'
   | 'channels:update'
+  | 'channels:edit'
   | 'channels:delete'
   | 'conversations:read'
+  | 'conversations:view'
   | 'conversations:read:all'
   | 'conversations:assign'
+  | 'conversations:edit'
+  | 'conversations:reply'
   | 'conversations:close'
   | 'conversations:delete'
   | 'contacts:create'
@@ -55,13 +60,18 @@ const resourcePermissions: Record<string, Record<string, UserRole[]>> = {
   channels: {
     create: ['OWNER', 'ADMIN'],
     read: ['OWNER', 'ADMIN', 'SUPERVISOR', 'AGENT'],
+    view: ['OWNER', 'ADMIN', 'SUPERVISOR', 'AGENT'],
     update: ['OWNER', 'ADMIN'],
+    edit: ['OWNER', 'ADMIN'],
     delete: ['OWNER', 'ADMIN'],
   },
   conversations: {
     read: ['OWNER', 'ADMIN', 'SUPERVISOR', 'AGENT'],
+    view: ['OWNER', 'ADMIN', 'SUPERVISOR', 'AGENT'],
     'read:all': ['OWNER', 'ADMIN', 'SUPERVISOR'],
     assign: ['OWNER', 'ADMIN', 'SUPERVISOR'],
+    edit: ['OWNER', 'ADMIN', 'SUPERVISOR', 'AGENT'],
+    reply: ['OWNER', 'ADMIN', 'SUPERVISOR', 'AGENT'],
     close: ['OWNER', 'ADMIN', 'SUPERVISOR', 'AGENT'],
     delete: ['OWNER', 'ADMIN'],
   },

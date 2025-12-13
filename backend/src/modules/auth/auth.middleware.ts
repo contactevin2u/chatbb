@@ -49,3 +49,6 @@ export function optionalJwtMiddleware(
 
   jwtMiddleware(req, _res, next);
 }
+
+// Alias for compatibility
+export const authMiddleware = jwtMiddleware;
