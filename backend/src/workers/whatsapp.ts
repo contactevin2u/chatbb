@@ -20,7 +20,7 @@ import { connectDatabase, disconnectDatabase, prisma } from '../core/database/pr
 import { connectRedis, disconnectRedis, redisClient } from '../core/cache/redis.client';
 import { logger } from '../shared/utils/logger';
 import { redisConfig } from '../config/redis';
-import { isMediaMessage, uploadToCloudinary } from '../shared/services/media.service';
+import { isMediaMessage, uploadToCloudinary, uploadFromUrlToCloudinary } from '../shared/services/media.service';
 
 // BullMQ queues
 let messageQueue: Queue;
@@ -232,6 +232,11 @@ async function setupCommandSubscriber() {
           await handleProfilePictureCommand(channelId, data);
           break;
 
+        case 'fetch-avatar':
+          // Fetch and store contact avatar
+          await handleFetchAvatarCommand(channelId, data);
+          break;
+
         case 'reconnect':
           // Reconnect using saved credentials
           await handleReconnectCommand(channelId, data);
@@ -341,6 +346,21 @@ async function handleProfilePictureCommand(channelId: string, data: { jid: strin
       success: false,
       error: (error as Error).message,
     }));
+  }
+}
+
+async function handleFetchAvatarCommand(channelId: string, data: { jid: string; contactId: string; organizationId: string }) {
+  try {
+    const avatarUrl = await fetchAndStoreProfilePicture(channelId, data.jid, data.organizationId);
+    if (avatarUrl) {
+      await prisma.contact.update({
+        where: { id: data.contactId },
+        data: { avatarUrl },
+      });
+      logger.info({ contactId: data.contactId, avatarUrl }, 'Contact avatar updated');
+    }
+  } catch (error) {
+    logger.debug({ channelId, contactId: data.contactId, error }, 'Failed to fetch avatar');
   }
 }
 
@@ -530,6 +550,35 @@ async function main() {
 }
 
 /**
+ * Fetch profile picture from WhatsApp and upload to Cloudinary
+ * Returns the Cloudinary URL or null if not available
+ */
+async function fetchAndStoreProfilePicture(
+  channelId: string,
+  jid: string,
+  organizationId: string
+): Promise<string | null> {
+  try {
+    // Get profile picture URL from WhatsApp
+    const ppUrl = await sessionManager.getProfilePicture(channelId, jid);
+    if (!ppUrl) return null;
+
+    // Upload to Cloudinary
+    const identifier = jid.split('@')[0];
+    const cloudinaryUrl = await uploadFromUrlToCloudinary(ppUrl, {
+      folder: `chatbaby/${organizationId}/avatars`,
+      publicId: `contact_${identifier}`,
+    });
+
+    return cloudinaryUrl;
+  } catch (error) {
+    // Profile picture not available (private, no picture, etc.)
+    logger.debug({ channelId, jid }, 'Could not fetch profile picture');
+    return null;
+  }
+}
+
+/**
  * Process contacts upsert - bulk contact sync from WhatsApp
  */
 async function processContactsUpsert(channelId: string, contacts: any[]) {
@@ -540,6 +589,7 @@ async function processContactsUpsert(channelId: string, contacts: any[]) {
 
   const orgId = channel.organizationId;
   let processed = 0;
+  const contactsNeedingAvatar: { id: string; jid: string }[] = [];
 
   for (const contact of contacts) {
     try {
@@ -547,10 +597,13 @@ async function processContactsUpsert(channelId: string, contacts: any[]) {
       const identifier = contact.id?.split('@')[0];
       if (!identifier) continue;
 
+      // Skip groups - they don't have profile pictures in the same way
+      if (contact.id?.endsWith('@g.us')) continue;
+
       // Get contact name from various fields
       const displayName = contact.name || contact.notify || contact.verifiedName || contact.pushname || null;
 
-      await prisma.contact.upsert({
+      const upsertedContact = await prisma.contact.upsert({
         where: {
           organizationId_channelType_identifier: {
             organizationId: orgId,
@@ -569,6 +622,12 @@ async function processContactsUpsert(channelId: string, contacts: any[]) {
           ...(displayName ? { displayName } : {}),
         },
       });
+
+      // Queue for avatar fetch if contact doesn't have one
+      if (!upsertedContact.avatarUrl && contact.id) {
+        contactsNeedingAvatar.push({ id: upsertedContact.id, jid: contact.id });
+      }
+
       processed++;
     } catch {
       // Skip errors, continue with next contact
@@ -576,6 +635,30 @@ async function processContactsUpsert(channelId: string, contacts: any[]) {
   }
 
   logger.info({ channelId, total: contacts.length, processed }, 'Contacts upsert processed');
+
+  // Fetch profile pictures in background (limit to 20 to avoid rate limiting)
+  const avatarsToFetch = contactsNeedingAvatar.slice(0, 20);
+  if (avatarsToFetch.length > 0) {
+    logger.info({ channelId, count: avatarsToFetch.length }, 'Fetching profile pictures...');
+
+    for (const { id, jid } of avatarsToFetch) {
+      try {
+        const avatarUrl = await fetchAndStoreProfilePicture(channelId, jid, orgId);
+        if (avatarUrl) {
+          await prisma.contact.update({
+            where: { id },
+            data: { avatarUrl },
+          });
+        }
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 200));
+      } catch {
+        // Continue with next contact
+      }
+    }
+
+    logger.info({ channelId, count: avatarsToFetch.length }, 'Profile pictures fetched');
+  }
 }
 
 /**

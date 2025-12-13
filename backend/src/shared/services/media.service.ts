@@ -226,6 +226,35 @@ export async function uploadToCloudinary(
 }
 
 /**
+ * Upload image from URL to Cloudinary
+ */
+export async function uploadFromUrlToCloudinary(
+  imageUrl: string,
+  options: {
+    folder: string;
+    publicId?: string;
+  }
+): Promise<string | null> {
+  if (!env.CLOUDINARY_URL) {
+    logger.warn('Cloudinary not configured, skipping upload');
+    return null;
+  }
+
+  try {
+    const result = await cloudinary.uploader.upload(imageUrl, {
+      folder: options.folder,
+      resource_type: 'image',
+      public_id: options.publicId,
+      overwrite: true,
+    });
+    return result.secure_url;
+  } catch (error) {
+    logger.debug({ error, imageUrl }, 'Failed to upload URL to Cloudinary');
+    return null;
+  }
+}
+
+/**
  * Download from WhatsApp and upload to Cloudinary
  */
 export async function processWhatsAppMedia(

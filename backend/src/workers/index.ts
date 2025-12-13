@@ -90,13 +90,35 @@ async function processMessage(job: Job) {
         },
       });
       logger.info({ contactId: contact.id, identifier: contactIdentifier, displayName, isGroup }, 'Created new contact');
-    } else if (displayName && (!contact.displayName || contact.displayName !== displayName)) {
+
+      // Request avatar fetch for new non-group contacts (async, don't wait)
+      if (!isGroup) {
+        const { redisClient } = await import('../core/cache/redis.client.js');
+        redisClient.publish(`whatsapp:cmd:fetch-avatar:${channelId}`, JSON.stringify({
+          jid: remoteJid,
+          contactId: contact.id,
+          organizationId: channel.organizationId,
+        })).catch(() => {}); // Fire and forget
+      }
+    } else {
       // Update existing contact's displayName if available and different
-      contact = await prisma.contact.update({
-        where: { id: contact.id },
-        data: { displayName: displayName },
-      });
-      logger.info({ contactId: contact.id, displayName, isGroup }, 'Updated contact displayName');
+      if (displayName && (!contact.displayName || contact.displayName !== displayName)) {
+        contact = await prisma.contact.update({
+          where: { id: contact.id },
+          data: { displayName: displayName },
+        });
+        logger.info({ contactId: contact.id, displayName, isGroup }, 'Updated contact displayName');
+      }
+
+      // Request avatar fetch for existing contacts without avatar (async, don't wait)
+      if (!isGroup && !contact.avatarUrl) {
+        const { redisClient } = await import('../core/cache/redis.client.js');
+        redisClient.publish(`whatsapp:cmd:fetch-avatar:${channelId}`, JSON.stringify({
+          jid: remoteJid,
+          contactId: contact.id,
+          organizationId: channel.organizationId,
+        })).catch(() => {}); // Fire and forget
+      }
     }
 
     // Determine if this message is from us (sent from phone/other device)
