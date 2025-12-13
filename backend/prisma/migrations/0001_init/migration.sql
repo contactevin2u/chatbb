@@ -1,9 +1,6 @@
 -- CreateExtension
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- CreateExtension
-CREATE EXTENSION IF NOT EXISTS "uuid_ossp";
-
 -- CreateEnum
 CREATE TYPE "PlanType" AS ENUM ('FREE', 'STARTER', 'GROWTH', 'ENTERPRISE');
 
