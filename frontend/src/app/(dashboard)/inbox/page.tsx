@@ -21,6 +21,7 @@ import {
   Mail,
   Tag,
   MessageSquare,
+  Edit,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -35,7 +36,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils/cn';
+import { updateContact } from '@/lib/api/contacts';
 import { useWebSocket } from '@/providers/websocket-provider';
 import {
   listConversations,
@@ -140,6 +151,8 @@ export default function InboxPage() {
   const [messageText, setMessageText] = useState('');
   const [showContactPanel, setShowContactPanel] = useState(true);
   const [typingUsers, setTypingUsers] = useState<Map<string, string>>(new Map());
+  const [editContactOpen, setEditContactOpen] = useState(false);
+  const [editContactName, setEditContactName] = useState('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -198,6 +211,38 @@ export default function InboxPage() {
       toast.success('Conversation reopened');
     },
   });
+
+  // Update contact mutation
+  const updateContactMutation = useMutation({
+    mutationFn: ({ contactId, displayName }: { contactId: string; displayName: string }) =>
+      updateContact(contactId, { displayName }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      setEditContactOpen(false);
+      toast.success('Contact name updated');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to update contact');
+    },
+  });
+
+  // Handle editing contact name
+  const handleEditContact = () => {
+    if (selectedConversation) {
+      setEditContactName(selectedConversation.contact.displayName || '');
+      setEditContactOpen(true);
+    }
+  };
+
+  const handleSaveContactName = () => {
+    if (selectedConversation && editContactName.trim()) {
+      updateContactMutation.mutate({
+        contactId: selectedConversation.contact.id,
+        displayName: editContactName.trim(),
+      });
+    }
+  };
 
   // Handle selecting a conversation
   const handleSelectConversation = useCallback((conversationId: string) => {
@@ -618,9 +663,19 @@ export default function InboxPage() {
                     {getContactInitials(selectedConversation.contact)}
                   </AvatarFallback>
                 </Avatar>
-                <h4 className="font-semibold text-lg">
-                  {getContactName(selectedConversation.contact)}
-                </h4>
+                <div className="flex items-center justify-center gap-2">
+                  <h4 className="font-semibold text-lg">
+                    {getContactName(selectedConversation.contact)}
+                  </h4>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={handleEditContact}
+                  >
+                    <Edit className="h-3 w-3" />
+                  </Button>
+                </div>
                 <p className="text-sm text-muted-foreground">
                   +{selectedConversation.contact.identifier}
                 </p>
@@ -689,6 +744,45 @@ export default function InboxPage() {
           </ScrollArea>
         </div>
       )}
+
+      {/* Edit Contact Name Dialog */}
+      <Dialog open={editContactOpen} onOpenChange={setEditContactOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Contact Name</DialogTitle>
+            <DialogDescription>
+              Change the display name for this contact. This will be shown in all conversations.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="contactName">Display Name</Label>
+              <Input
+                id="contactName"
+                placeholder="Enter contact name"
+                value={editContactName}
+                onChange={(e) => setEditContactName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleSaveContactName();
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditContactOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveContactName}
+              disabled={updateContactMutation.isPending || !editContactName.trim()}
+            >
+              {updateContactMutation.isPending ? 'Saving...' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
