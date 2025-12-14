@@ -17,7 +17,7 @@ import { v4 as uuidv4 } from 'uuid';
 import Redis from 'ioredis';
 
 import { prisma } from '../../core/database/prisma';
-import { hasAuthState } from './session/session.store';
+import { hasAuthState, usePostgresAuthState } from './session/session.store';
 import { socketServer } from '../../core/websocket/server';
 import { redisClient } from '../../core/cache/redis.client';
 import { redisConfig } from '../../config/redis';
@@ -376,6 +376,51 @@ export class WhatsAppService {
       message: hasState
         ? 'Attempting to reconnect using saved session...'
         : 'No saved session. QR code will be generated.',
+    };
+  }
+
+  /**
+   * Clear session/auth state for a WhatsApp channel
+   * Use this when session is corrupted (PreKey errors, decryption failures)
+   * After clearing, user must scan QR code again
+   */
+  async clearSession(channelId: string, organizationId: string) {
+    const channel = await prisma.channel.findFirst({
+      where: {
+        id: channelId,
+        organizationId,
+        type: ChannelType.WHATSAPP,
+      },
+    });
+
+    if (!channel) {
+      throw new Error('Channel not found');
+    }
+
+    // First, disconnect the session if connected
+    try {
+      await redisClient.publish(`whatsapp:cmd:disconnect:${channelId}`, JSON.stringify({}));
+    } catch {
+      // Ignore disconnect errors
+    }
+
+    // Delete auth state from database
+    const authState = await usePostgresAuthState(channelId);
+    await authState.deleteState();
+
+    // Update channel status and clear identifier
+    await prisma.channel.update({
+      where: { id: channelId },
+      data: {
+        status: ChannelStatus.DISCONNECTED,
+        identifier: 'pending',
+      },
+    });
+
+    return {
+      channelId,
+      status: 'SESSION_CLEARED',
+      message: 'Session cleared. Please scan QR code to reconnect.',
     };
   }
 

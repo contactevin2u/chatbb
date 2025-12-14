@@ -201,6 +201,28 @@ export class WhatsAppController {
   }
 
   /**
+   * Clear session/auth state for a WhatsApp channel
+   * DELETE /api/v1/channels/whatsapp/:channelId/session
+   * Use when session is corrupted (PreKey errors, decryption failures)
+   */
+  async clearSession(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId } = req.user!;
+      const { channelId } = req.params;
+
+      const result = await whatsappService.clearSession(channelId, organizationId);
+
+      res.json({
+        success: true,
+        data: result,
+        message: 'Session cleared. Please scan QR code to reconnect.',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Delete a WhatsApp channel
    * DELETE /api/v1/channels/whatsapp/:channelId
    */

@@ -150,6 +150,17 @@ router.post(
 );
 
 /**
+ * @route   DELETE /api/v1/channels/whatsapp/:channelId/session
+ * @desc    Clear session/auth state (use when session is corrupted)
+ * @access  Private (channels:edit)
+ */
+router.delete(
+  '/:channelId/session',
+  requirePermission('channels:edit'),
+  whatsappController.clearSession.bind(whatsappController)
+);
+
+/**
  * @route   DELETE /api/v1/channels/whatsapp/:channelId
  * @desc    Delete a WhatsApp channel
  * @access  Private (channels:delete)

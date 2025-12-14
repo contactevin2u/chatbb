@@ -33,6 +33,7 @@ import {
   disconnectWhatsAppChannel,
   reconnectWhatsAppChannel,
   deleteWhatsAppChannel,
+  clearWhatsAppSession,
 } from '@/lib/api/channels';
 
 const statusConfig = {
@@ -75,6 +76,7 @@ export default function ChannelSettingsPage() {
   const channelId = params.channelId as string;
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [clearSessionDialogOpen, setClearSessionDialogOpen] = useState(false);
 
   const { data: channelStatus, isLoading } = useQuery({
     queryKey: ['channel-status', channelId],
@@ -118,6 +120,19 @@ export default function ChannelSettingsPage() {
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to delete channel');
+    },
+  });
+
+  const clearSessionMutation = useMutation({
+    mutationFn: () => clearWhatsAppSession(channelId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['channel-status', channelId] });
+      setClearSessionDialogOpen(false);
+      toast.success('Session cleared. Please scan QR code to reconnect.');
+      router.push(`/channels/whatsapp/${channelId}/connect`);
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to clear session');
     },
   });
 
@@ -294,14 +309,29 @@ export default function ChannelSettingsPage() {
             Irreversible actions that will affect this channel
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <Button
-            variant="destructive"
-            onClick={() => setDeleteDialogOpen(true)}
-          >
-            <Trash2 className="mr-2 h-4 w-4" />
-            Delete Channel
-          </Button>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Button
+              variant="outline"
+              className="border-orange-500 text-orange-500 hover:bg-orange-500/10"
+              onClick={() => setClearSessionDialogOpen(true)}
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Clear Session
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Use this if you&apos;re experiencing connection errors. You&apos;ll need to scan the QR code again.
+            </p>
+          </div>
+          <div>
+            <Button
+              variant="destructive"
+              onClick={() => setDeleteDialogOpen(true)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete Channel
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -325,6 +355,33 @@ export default function ChannelSettingsPage() {
               disabled={deleteMutation.isPending}
             >
               {deleteMutation.isPending ? 'Deleting...' : 'Delete Channel'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Clear Session Dialog */}
+      <Dialog open={clearSessionDialogOpen} onOpenChange={setClearSessionDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Clear Session</DialogTitle>
+            <DialogDescription>
+              This will clear the saved WhatsApp session data. Use this if you&apos;re experiencing
+              connection errors like &quot;Invalid PreKey&quot; or &quot;No session found&quot;.
+              You will need to scan the QR code again to reconnect.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClearSessionDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="default"
+              className="bg-orange-500 hover:bg-orange-600"
+              onClick={() => clearSessionMutation.mutate()}
+              disabled={clearSessionMutation.isPending}
+            >
+              {clearSessionMutation.isPending ? 'Clearing...' : 'Clear Session'}
             </Button>
           </DialogFooter>
         </DialogContent>

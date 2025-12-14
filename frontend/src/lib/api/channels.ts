@@ -115,6 +115,18 @@ export async function deleteWhatsAppChannel(channelId: string): Promise<void> {
   await apiClient.delete(`/channels/whatsapp/${channelId}`);
 }
 
+export async function clearWhatsAppSession(channelId: string): Promise<{
+  channelId: string;
+  status: string;
+  message: string;
+}> {
+  const response = await apiClient.delete<{
+    success: boolean;
+    data: { channelId: string; status: string; message: string };
+  }>(`/channels/whatsapp/${channelId}/session`);
+  return response.data.data;
+}
+
 export async function sendWhatsAppMessage(channelId: string, input: SendMessageInput): Promise<{
   messageId: string;
   externalId: string;
