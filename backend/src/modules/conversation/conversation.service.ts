@@ -854,6 +854,7 @@ export class ConversationService {
   /**
    * Get group participants for a conversation
    * Only works for group conversations
+   * Looks up participants in contacts DB to get display names and avatars
    */
   async getGroupParticipants(conversationId: string, organizationId: string) {
     const conversation = await prisma.conversation.findFirst({
@@ -886,15 +887,50 @@ export class ConversationService {
       const cached = await redisClient.get(`group:${groupJid}:metadata`);
       if (cached) {
         const metadata = JSON.parse(cached);
+        const rawParticipants = metadata.participants || [];
+
+        // Extract phone numbers from participant JIDs
+        const phoneNumbers = rawParticipants
+          .map((p: any) => p.id?.split('@')[0])
+          .filter(Boolean);
+
+        // Look up participants in contacts database to get displayName and avatarUrl
+        const existingContacts = await prisma.contact.findMany({
+          where: {
+            organizationId,
+            identifier: { in: phoneNumbers },
+          },
+          select: {
+            identifier: true,
+            displayName: true,
+            avatarUrl: true,
+          },
+        });
+
+        // Create a map for quick lookup
+        const contactMap = new Map(
+          existingContacts.map(c => [c.identifier, c])
+        );
+
+        // Build enriched participants list
+        const enrichedParticipants = rawParticipants.map((p: any) => {
+          const phoneNumber = p.id?.split('@')[0] || p.id;
+          const existingContact = contactMap.get(phoneNumber);
+
+          return {
+            id: p.id,
+            identifier: phoneNumber,
+            admin: p.admin || null,
+            displayName: existingContact?.displayName || null,
+            avatarUrl: existingContact?.avatarUrl || null,
+          };
+        });
+
         return {
           isGroup: true,
           subject: metadata.subject || 'Group Chat',
-          participants: (metadata.participants || []).map((p: any) => ({
-            id: p.id,
-            identifier: p.id?.split('@')[0] || p.id,
-            admin: p.admin || null,
-          })),
-          participantCount: metadata.participants?.length || 0,
+          participants: enrichedParticipants,
+          participantCount: rawParticipants.length,
         };
       }
     } catch (error) {

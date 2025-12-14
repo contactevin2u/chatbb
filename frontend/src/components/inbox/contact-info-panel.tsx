@@ -354,11 +354,16 @@ export const ContactInfoPanel = memo(function ContactInfoPanel({
                 {groupParticipants.participants.slice(0, 20).map((participant) => (
                   <div key={participant.id} className="flex items-center gap-2 text-sm">
                     <Avatar className="h-6 w-6">
+                      {participant.avatarUrl && (
+                        <AvatarImage src={participant.avatarUrl} className="object-cover" />
+                      )}
                       <AvatarFallback className="text-[10px]">
-                        {participant.identifier.slice(-2)}
+                        {(participant.displayName || participant.identifier).slice(-2).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="flex-1 truncate">+{participant.identifier}</span>
+                    <span className="flex-1 truncate">
+                      {participant.displayName || `+${participant.identifier}`}
+                    </span>
                     {participant.admin && (
                       <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded">
                         {participant.admin === 'superadmin' ? 'Owner' : 'Admin'}

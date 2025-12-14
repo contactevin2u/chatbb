@@ -95,6 +95,8 @@ export interface GroupParticipant {
   id: string;
   identifier: string;
   admin?: 'admin' | 'superadmin' | null;
+  displayName?: string | null;
+  avatarUrl?: string | null;
 }
 
 export interface GroupParticipantsResponse {
