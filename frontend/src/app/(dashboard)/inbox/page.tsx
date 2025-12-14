@@ -824,8 +824,12 @@ export default function InboxPage() {
                       <div key={message.id}>
                         {showDateSeparator && (
                           <div className="flex items-center justify-center my-4">
-                            <div className="bg-muted px-3 py-1 rounded-full text-xs text-muted-foreground font-medium">
-                              {formatDateHeader(messageDate)}
+                            <div className="flex items-center gap-3 w-full max-w-xs">
+                              <div className="flex-1 h-px bg-border" />
+                              <span className="text-xs text-muted-foreground font-medium px-2 whitespace-nowrap">
+                                {formatDateHeader(messageDate)}
+                              </span>
+                              <div className="flex-1 h-px bg-border" />
                             </div>
                           </div>
                         )}
