@@ -678,7 +678,7 @@ export default function InboxPage() {
 
   // Handle file selection (from file input or paste)
   const handleFileSelect = useCallback((fileOrEvent: File | React.ChangeEvent<HTMLInputElement>) => {
-    const file = fileOrEvent instanceof File ? fileOrEvent : fileOrEvent.target.files?.[0];
+    const file = 'target' in fileOrEvent ? fileOrEvent.target.files?.[0] : fileOrEvent;
     if (!file) return;
 
     // Determine media type
@@ -698,7 +698,7 @@ export default function InboxPage() {
     setSelectedMedia({ file, preview, type });
 
     // Reset file input if it was from input element
-    if (!(fileOrEvent instanceof File) && fileInputRef.current) {
+    if ('target' in fileOrEvent && fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   }, []);
