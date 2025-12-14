@@ -13,10 +13,12 @@ import {
   FileSpreadsheet,
   FileImage,
   File,
+  Clock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SlashCommand } from '@/components/slash-command';
+import { ScheduleMessageDialog } from '@/components/schedule-message-dialog';
 import { QuickReply } from '@/lib/api/quick-replies';
 import { cn } from '@/lib/utils/cn';
 
@@ -111,9 +113,19 @@ export const MessageInput = memo(function MessageInput({
 
   const [slashCommandOpen, setSlashCommandOpen] = useState(false);
   const [slashSearchTerm, setSlashSearchTerm] = useState('');
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
 
   const isClosed = conversationStatus === 'CLOSED';
   const hasContent = messageText.trim() || selectedMedia;
+
+  // Build message content for scheduling
+  const getScheduleMessageContent = useCallback(() => {
+    return {
+      text: messageText.trim() || undefined,
+      mediaUrl: selectedMedia?.preview,
+      mediaType: selectedMedia?.type,
+    };
+  }, [messageText, selectedMedia]);
 
   const handleSlashCommandSelect = useCallback((quickReply: QuickReply) => {
     const slashStart = messageText.lastIndexOf('/');
@@ -312,6 +324,18 @@ export const MessageInput = memo(function MessageInput({
           <Button variant="ghost" size="icon">
             <Smile className="h-5 w-5" />
           </Button>
+          {/* Schedule button - only show when there's content */}
+          {hasContent && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setScheduleDialogOpen(true)}
+              disabled={isClosed}
+              title="Schedule message"
+            >
+              <Clock className="h-5 w-5" />
+            </Button>
+          )}
           {/* Show mic button when no text, send button when there's text or media */}
           {!hasContent ? (
             <Button
@@ -337,6 +361,18 @@ export const MessageInput = memo(function MessageInput({
           )}
         </div>
       )}
+
+      {/* Schedule Message Dialog */}
+      <ScheduleMessageDialog
+        open={scheduleDialogOpen}
+        onOpenChange={setScheduleDialogOpen}
+        conversationId={conversationId}
+        messageContent={getScheduleMessageContent()}
+        onScheduled={() => {
+          onMessageChange('');
+          onClearMedia();
+        }}
+      />
       {isClosed && (
         <p className="text-xs text-muted-foreground mt-2 text-center">
           This conversation is closed.{' '}

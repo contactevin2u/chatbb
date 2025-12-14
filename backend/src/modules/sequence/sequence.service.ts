@@ -389,7 +389,7 @@ export class SequenceService {
               select: { id: true, identifier: true },
             },
             channel: {
-              select: { id: true, type: true, credentials: true },
+              select: { id: true, type: true, config: true },
             },
           },
         },

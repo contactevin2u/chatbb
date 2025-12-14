@@ -204,7 +204,7 @@ export class ScheduledMessageService {
               select: {
                 id: true,
                 type: true,
-                credentials: true,
+                config: true,
               },
             },
           },
