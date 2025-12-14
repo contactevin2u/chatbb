@@ -229,6 +229,7 @@ export default function InboxPage() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const [mediaPreview, setMediaPreview] = useState<{ url: string; type: 'image' | 'video'; filename?: string } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -935,8 +936,8 @@ export default function InboxPage() {
                                       <img
                                         src={message.content.mediaUrl}
                                         alt="Image"
-                                        className="max-w-[280px] max-h-[280px] rounded object-cover cursor-pointer"
-                                        onClick={() => window.open(message.content.mediaUrl, '_blank')}
+                                        className="max-w-[280px] max-h-[280px] rounded object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                                        onClick={() => setMediaPreview({ url: message.content.mediaUrl, type: 'image' })}
                                       />
                                       <Button
                                         variant="secondary"
@@ -965,18 +966,28 @@ export default function InboxPage() {
                                 <div className="space-y-2">
                                   {message.content.mediaUrl ? (
                                     <div className="relative group/media">
-                                      <video
-                                        src={message.content.mediaUrl}
-                                        controls
-                                        preload="metadata"
-                                        playsInline
-                                        className="max-w-[280px] max-h-[280px] rounded"
-                                      />
+                                      <div
+                                        className="relative cursor-pointer"
+                                        onClick={() => setMediaPreview({ url: message.content.mediaUrl, type: 'video' })}
+                                      >
+                                        <video
+                                          src={message.content.mediaUrl}
+                                          preload="metadata"
+                                          playsInline
+                                          className="max-w-[280px] max-h-[280px] rounded"
+                                        />
+                                        <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded hover:bg-black/30 transition-colors">
+                                          <Play className="h-12 w-12 text-white" />
+                                        </div>
+                                      </div>
                                       <Button
                                         variant="secondary"
                                         size="icon"
                                         className="absolute top-2 right-2 h-8 w-8 opacity-0 group-hover/media:opacity-100 transition-opacity"
-                                        onClick={() => downloadFile(message.content.mediaUrl, `video-${message.id}.mp4`)}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          downloadFile(message.content.mediaUrl, `video-${message.id}.mp4`);
+                                        }}
                                       >
                                         <Download className="h-4 w-4" />
                                       </Button>
@@ -1471,6 +1482,58 @@ export default function InboxPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Media Preview Modal */}
+      {mediaPreview && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
+          onClick={() => setMediaPreview(null)}
+        >
+          <div className="relative max-w-[90vw] max-h-[90vh]">
+            {/* Close button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute -top-12 right-0 text-white hover:bg-white/20"
+              onClick={() => setMediaPreview(null)}
+            >
+              <X className="h-6 w-6" />
+            </Button>
+
+            {/* Download button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute -top-12 right-12 text-white hover:bg-white/20"
+              onClick={(e) => {
+                e.stopPropagation();
+                const ext = mediaPreview.type === 'image' ? 'jpg' : 'mp4';
+                downloadFile(mediaPreview.url, `media.${ext}`);
+              }}
+            >
+              <Download className="h-6 w-6" />
+            </Button>
+
+            {/* Media content */}
+            {mediaPreview.type === 'image' ? (
+              <img
+                src={mediaPreview.url}
+                alt="Preview"
+                className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <video
+                src={mediaPreview.url}
+                controls
+                autoPlay
+                className="max-w-[90vw] max-h-[90vh] rounded-lg"
+                onClick={(e) => e.stopPropagation()}
+              />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
