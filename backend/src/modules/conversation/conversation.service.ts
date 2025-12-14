@@ -858,6 +858,7 @@ export class ConversationService {
    * Get group participants for a conversation
    * Only works for group conversations
    * Looks up participants in contacts DB to get display names and avatars
+   * Handles LID resolution for participants stored with LID format
    */
   async getGroupParticipants(conversationId: string, organizationId: string) {
     const conversation = await prisma.conversation.findFirst({
@@ -884,23 +885,32 @@ export class ConversationService {
     // Try to get from Redis cache
     const groupJid = `${conversation.contact.identifier}@g.us`;
     const { redisClient } = await import('../../core/cache/redis.client.js');
+    const { normalizeIdentifier, resolveIdentifier } = await import('../../shared/utils/identifier.js');
 
     try {
       const cached = await redisClient.get(`group:${groupJid}:metadata`);
       if (cached) {
         const metadata = JSON.parse(cached);
         const rawParticipants = metadata.participants || [];
+        const channelId = conversation.channel.id;
 
-        // Extract phone numbers from participant JIDs
-        const phoneNumbers = rawParticipants
-          .map((p: any) => p.id?.split('@')[0])
-          .filter(Boolean);
+        // Resolve all participant identifiers (handles LID to phone number resolution)
+        const resolvedIdentifiers: Map<string, string> = new Map();
+        for (const p of rawParticipants) {
+          if (!p.id) continue;
+          // Resolve LID to phone number if needed
+          const resolved = await resolveIdentifier(channelId, p.id);
+          resolvedIdentifiers.set(p.id, resolved);
+        }
+
+        // Get unique normalized identifiers for DB lookup
+        const uniqueIdentifiers = [...new Set(resolvedIdentifiers.values())];
 
         // Look up participants in contacts database to get displayName and avatarUrl
         const existingContacts = await prisma.contact.findMany({
           where: {
             organizationId,
-            identifier: { in: phoneNumbers },
+            identifier: { in: uniqueIdentifiers },
           },
           select: {
             identifier: true,
@@ -916,12 +926,13 @@ export class ConversationService {
 
         // Build enriched participants list
         const enrichedParticipants = rawParticipants.map((p: any) => {
-          const phoneNumber = p.id?.split('@')[0] || p.id;
-          const existingContact = contactMap.get(phoneNumber);
+          const originalId = p.id || '';
+          const resolvedIdentifier = resolvedIdentifiers.get(originalId) || normalizeIdentifier(originalId);
+          const existingContact = contactMap.get(resolvedIdentifier);
 
           return {
-            id: p.id,
-            identifier: phoneNumber,
+            id: originalId,
+            identifier: resolvedIdentifier,
             admin: p.admin || null,
             displayName: existingContact?.displayName || null,
             avatarUrl: existingContact?.avatarUrl || null,
