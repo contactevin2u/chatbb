@@ -983,6 +983,7 @@ export class SessionManager extends EventEmitter {
 
   /**
    * Update channel status in database
+   * Handles gracefully if channel was deleted
    */
   private async updateChannelStatus(
     channelId: string,
@@ -998,13 +999,25 @@ export class SessionManager extends EventEmitter {
       updateData.identifier = identifier;
     }
 
-    await prisma.channel.update({
-      where: { id: channelId },
-      data: updateData,
-    });
+    try {
+      await prisma.channel.update({
+        where: { id: channelId },
+        data: updateData,
+      });
 
-    // Publish status change to Redis for other servers
-    await redisClient.publish(`channel:${channelId}:status`, JSON.stringify({ status, identifier }));
+      // Publish status change to Redis for other servers
+      await redisClient.publish(`channel:${channelId}:status`, JSON.stringify({ status, identifier }));
+    } catch (error: any) {
+      // Handle "Record to update not found" error gracefully
+      // This happens when a channel was deleted but worker still has the session
+      if (error.code === 'P2025') {
+        this.logger.warn({ channelId, status }, 'Channel not found in database, removing session');
+        // Remove the session since the channel no longer exists
+        this.sessions.delete(channelId);
+        return;
+      }
+      throw error;
+    }
   }
 
   /**

@@ -37,16 +37,20 @@ interface StoredAuthState {
 
 /**
  * Creates a PostgreSQL-based auth state for a WhatsApp channel
+ *
+ * OPTIMIZED: Keys are loaded lazily on-demand, not all at once.
+ * This dramatically improves startup time for channels with many sync keys.
  */
 export async function usePostgresAuthState(channelId: string): Promise<{
   state: AuthenticationState;
   saveCreds: () => Promise<void>;
   deleteState: () => Promise<void>;
 }> {
-  // Load or create credentials
+  // Load credentials only (NOT sync keys - they're loaded lazily)
   const existingAuth = await prisma.whatsAppAuthState.findUnique({
     where: { channelId },
-    include: { syncKeys: true },
+    // DO NOT include syncKeys here - causes slow startup with thousands of keys
+    // Keys are loaded on-demand in keys.get()
   });
 
   let creds: AuthenticationCreds;
@@ -61,16 +65,11 @@ export async function usePostgresAuthState(channelId: string): Promise<{
     creds = initAuthCreds();
   }
 
-  // Build sync keys map
+  // In-memory cache for loaded keys (lazy loaded from database)
   const keys: { [key: string]: SignalDataTypeMap[keyof SignalDataTypeMap] } = {};
 
-  if (existingAuth?.syncKeys) {
-    for (const syncKey of existingAuth.syncKeys) {
-      const decryptedKey = decrypt(syncKey.keyData);
-      const parsedKey = JSON.parse(decryptedKey, BufferJSON.reviver);
-      keys[syncKey.keyId] = parsedKey;
-    }
-  }
+  // REMOVED: Pre-loading all sync keys - this was causing slow startup
+  // Keys are now loaded on-demand in keys.get() method below
 
   const saveCreds = async () => {
     const credsData: StoredAuthState = { creds };
