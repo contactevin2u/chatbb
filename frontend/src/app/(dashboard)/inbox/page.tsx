@@ -676,9 +676,9 @@ export default function InboxPage() {
 
   useKeyboardShortcuts({ shortcuts: inboxShortcuts });
 
-  // Handle file selection
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  // Handle file selection (from file input or paste)
+  const handleFileSelect = useCallback((fileOrEvent: File | React.ChangeEvent<HTMLInputElement>) => {
+    const file = fileOrEvent instanceof File ? fileOrEvent : fileOrEvent.target.files?.[0];
     if (!file) return;
 
     // Determine media type
@@ -697,11 +697,31 @@ export default function InboxPage() {
     const preview = URL.createObjectURL(file);
     setSelectedMedia({ file, preview, type });
 
-    // Reset file input
-    if (fileInputRef.current) {
+    // Reset file input if it was from input element
+    if (!(fileOrEvent instanceof File) && fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   }, []);
+
+  // Handle paste from clipboard (images)
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          // Create a named file for better UX
+          const namedFile = new File([file], `pasted-image-${Date.now()}.png`, { type: file.type });
+          handleFileSelect(namedFile);
+          toast.success('Image pasted');
+        }
+        break;
+      }
+    }
+  }, [handleFileSelect]);
 
   // Clear selected media
   const clearSelectedMedia = useCallback(() => {
@@ -1749,9 +1769,10 @@ export default function InboxPage() {
                     />
                     <Input
                       ref={messageInputRef}
-                      placeholder={selectedMedia ? "Add a caption..." : "Type a message... (/ for quick replies)"}
+                      placeholder={selectedMedia ? "Add a caption..." : "Type a message... (/ for quick replies, Ctrl+V to paste image)"}
                       value={messageText}
                       onChange={handleMessageInputChange}
+                      onPaste={handlePaste}
                       onKeyDown={(e) => {
                         // Let slash command popup handle Enter/Tab
                         if (slashCommandOpen && (e.key === 'Enter' || e.key === 'Tab' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {

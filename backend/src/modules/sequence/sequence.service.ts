@@ -12,7 +12,8 @@ export interface SequenceStepContent {
   mediaUrl?: string;
   mediaFilename?: string;
   mediaType?: 'image' | 'video' | 'audio' | 'document';
-  delayMinutes?: number; // For DELAY type
+  delayMinutes?: number; // For DELAY type (legacy)
+  delaySeconds?: number; // For DELAY type (preferred)
 }
 
 export interface CreateSequenceStepInput {
