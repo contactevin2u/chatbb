@@ -28,6 +28,7 @@ import {
   storeLidMapping,
 } from '../shared/utils/identifier';
 import { sequenceService, SequenceStepContent } from '../modules/sequence/sequence.service';
+import { scheduledMessageService, ScheduledMessageContent } from '../modules/scheduled-message/scheduled-message.service';
 import { SequenceStepType } from '@prisma/client';
 
 // BullMQ queues
@@ -703,6 +704,9 @@ async function main() {
       logger.info(stats, 'Session health check');
     }, 60000);
 
+    // Scheduled message processor - check every 10 seconds
+    setInterval(processScheduledMessages, 10000);
+    logger.info('Scheduled message processor started (10s interval)');
 
     // Graceful shutdown handlers
     const shutdown = async (signal: string) => {
@@ -1295,6 +1299,167 @@ function getMimeType(mediaType: string, filename?: string): string {
     document: 'application/octet-stream',
   };
   return defaultMimes[mediaType] || 'application/octet-stream';
+}
+
+/**
+ * Process scheduled messages that are due
+ * Runs every 10 seconds to check for messages ready to send
+ */
+async function processScheduledMessages() {
+  const { MessageDirection, MessageStatus, MessageType } = await import('@prisma/client');
+
+  try {
+    const dueMessages = await scheduledMessageService.getPendingDueMessages();
+
+    if (dueMessages.length === 0) return;
+
+    logger.info({ count: dueMessages.length }, 'Processing scheduled messages');
+
+    for (const scheduled of dueMessages) {
+      try {
+        const { conversation, content: rawContent } = scheduled;
+        const content = rawContent as ScheduledMessageContent;
+        const channelId = conversation.channelId;
+        const recipient = conversation.contact.identifier;
+
+        // Check if channel is connected
+        const session = sessionManager.getAllSessions().get(channelId);
+        if (!session || session.status !== 'CONNECTED') {
+          logger.warn({ scheduledId: scheduled.id, channelId }, 'Channel not connected, will retry');
+          continue;
+        }
+
+        // Determine message type
+        let messageType: typeof MessageType[keyof typeof MessageType] = MessageType.TEXT;
+        let messageContent: any = {};
+
+        if (content.mediaUrl && content.mediaType) {
+          const typeMap: Record<string, typeof MessageType[keyof typeof MessageType]> = {
+            image: MessageType.IMAGE,
+            video: MessageType.VIDEO,
+            audio: MessageType.AUDIO,
+            document: MessageType.DOCUMENT,
+          };
+          messageType = typeMap[content.mediaType] || MessageType.TEXT;
+          messageContent = {
+            mediaUrl: content.mediaUrl,
+            mediaType: content.mediaType,
+            mimeType: getMimeType(content.mediaType, content.mediaFilename),
+            fileName: content.mediaFilename,
+            caption: content.text,
+          };
+        } else if (content.text) {
+          messageContent = { text: content.text };
+        } else {
+          // Skip empty messages
+          await scheduledMessageService.markAsFailed(scheduled.id, 'No content to send');
+          continue;
+        }
+
+        // Create message record
+        const message = await prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            channelId,
+            direction: MessageDirection.OUTBOUND,
+            type: messageType,
+            content: messageContent,
+            status: MessageStatus.PENDING,
+            sentByUserId: scheduled.createdById,
+            metadata: { scheduledMessageId: scheduled.id },
+          },
+        });
+
+        // Send the message
+        let success = false;
+        let errorMessage: string | undefined;
+        let externalId: string | undefined;
+
+        try {
+          if (content.mediaUrl && content.mediaType) {
+            const media = {
+              type: content.mediaType as 'image' | 'video' | 'audio' | 'document',
+              url: content.mediaUrl,
+              filename: content.mediaFilename,
+              caption: content.text,
+              mimetype: getMimeType(content.mediaType, content.mediaFilename),
+            };
+            const result = await sessionManager.sendMediaMessage(channelId, recipient, media);
+            externalId = result?.key?.id;
+            success = true;
+          } else if (content.text) {
+            const result = await sessionManager.sendTextMessage(channelId, recipient, content.text);
+            externalId = result?.key?.id;
+            success = true;
+          }
+        } catch (sendError: any) {
+          errorMessage = sendError.message || 'Failed to send message';
+          logger.error({ scheduledId: scheduled.id, error: sendError }, 'Scheduled message send failed');
+        }
+
+        // Update message status
+        await prisma.message.update({
+          where: { id: message.id },
+          data: {
+            externalId,
+            status: success ? MessageStatus.SENT : MessageStatus.FAILED,
+            sentAt: success ? new Date() : undefined,
+            failedReason: errorMessage,
+          },
+        });
+
+        // Update conversation lastMessageAt
+        if (success) {
+          await prisma.conversation.update({
+            where: { id: conversation.id },
+            data: { lastMessageAt: new Date() },
+          });
+        }
+
+        // Update scheduled message status
+        if (success) {
+          await scheduledMessageService.markAsSent(scheduled.id);
+        } else {
+          await scheduledMessageService.markAsFailed(scheduled.id, errorMessage || 'Unknown error');
+        }
+
+        // Emit to WebSocket for real-time update
+        const channel = await prisma.channel.findUnique({
+          where: { id: channelId },
+          select: { organizationId: true },
+        });
+
+        if (channel) {
+          const updatedMessage = await prisma.message.findUnique({
+            where: { id: message.id },
+            include: {
+              sentByUser: {
+                select: { id: true, firstName: true, lastName: true, avatarUrl: true },
+              },
+            },
+          });
+
+          await redisClient.publish(`org:${channel.organizationId}:message`, JSON.stringify({
+            message: updatedMessage,
+            conversationId: conversation.id,
+          }));
+        }
+
+        logger.info({
+          scheduledId: scheduled.id,
+          messageId: message.id,
+          externalId,
+          success,
+        }, 'Scheduled message processed');
+
+      } catch (msgError) {
+        logger.error({ scheduledId: scheduled.id, error: msgError }, 'Error processing scheduled message');
+        await scheduledMessageService.markAsFailed(scheduled.id, (msgError as Error).message);
+      }
+    }
+  } catch (error) {
+    logger.error({ error }, 'Error in scheduled message processor');
+  }
 }
 
 main();
