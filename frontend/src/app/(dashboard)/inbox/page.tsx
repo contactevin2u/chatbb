@@ -68,6 +68,7 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils/cn';
+import { formatWhatsAppText } from '@/lib/utils/whatsapp-formatting';
 import { updateContact } from '@/lib/api/contacts';
 import { useWebSocket } from '@/providers/websocket-provider';
 import { useAuthStore } from '@/stores/auth-store';
@@ -1286,7 +1287,7 @@ export default function InboxPage() {
                               )}
 
                               {message.type === 'TEXT' && (
-                                <p className="text-sm whitespace-pre-wrap break-words">{message.content.text}</p>
+                                <p className="text-sm whitespace-pre-wrap break-words">{formatWhatsAppText(message.content.text || '')}</p>
                               )}
                               {message.type === 'IMAGE' && (
                                 <div className="space-y-2">
@@ -1316,7 +1317,7 @@ export default function InboxPage() {
                                     </div>
                                   )}
                                   {(message.content.caption || message.content.text) && (
-                                    <p className="text-sm">{message.content.caption || message.content.text}</p>
+                                    <p className="text-sm whitespace-pre-wrap break-words">{formatWhatsAppText(message.content.caption || message.content.text || '')}</p>
                                   )}
                                 </div>
                               )}
@@ -1357,7 +1358,7 @@ export default function InboxPage() {
                                     </div>
                                   )}
                                   {(message.content.caption || message.content.text) && (
-                                    <p className="text-sm">{message.content.caption || message.content.text}</p>
+                                    <p className="text-sm whitespace-pre-wrap break-words">{formatWhatsAppText(message.content.caption || message.content.text || '')}</p>
                                   )}
                                 </div>
                               )}

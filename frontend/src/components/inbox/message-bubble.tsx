@@ -21,6 +21,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils/cn';
+import { formatWhatsAppText } from '@/lib/utils/whatsapp-formatting';
 
 export interface MessageReaction {
   emoji: string;
@@ -123,7 +124,7 @@ export const MessageBubble = memo(function MessageBubble({
     switch (type) {
       case 'TEXT':
         return (
-          <p className="whitespace-pre-wrap break-words">{content.text}</p>
+          <p className="whitespace-pre-wrap break-words">{formatWhatsAppText(content.text || '')}</p>
         );
 
       case 'IMAGE':
@@ -137,7 +138,7 @@ export const MessageBubble = memo(function MessageBubble({
               />
             )}
             {content.caption && (
-              <p className="whitespace-pre-wrap break-words text-sm">{content.caption}</p>
+              <p className="whitespace-pre-wrap break-words text-sm">{formatWhatsAppText(content.caption)}</p>
             )}
           </div>
         );
@@ -153,7 +154,7 @@ export const MessageBubble = memo(function MessageBubble({
               />
             )}
             {content.caption && (
-              <p className="whitespace-pre-wrap break-words text-sm">{content.caption}</p>
+              <p className="whitespace-pre-wrap break-words text-sm">{formatWhatsAppText(content.caption)}</p>
             )}
           </div>
         );
