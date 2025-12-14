@@ -75,7 +75,6 @@ import { useAuthStore } from '@/stores/auth-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useKeyboardShortcuts, KeyboardShortcut } from '@/hooks/use-keyboard-shortcuts';
 import { SlashCommand, SlashCommandItem } from '@/components/slash-command';
-import { startSequenceExecution } from '@/lib/api/sequences';
 import { ScheduleMessageDialog } from '@/components/schedule-message-dialog';
 import { QuickReply } from '@/lib/api/quick-replies';
 import {
@@ -759,18 +758,22 @@ export default function InboxPage() {
       const newText = messageText.substring(0, slashStart) + quickReply.content.text;
       setMessageText(newText);
     } else {
-      // Sequence: start execution
+      // Sequence: fill chat box with the first TEXT step's content (like quick replies)
       const sequence = item.data;
-      try {
-        if (selectedConversation) {
-          await startSequenceExecution(sequence.id, selectedConversation.id);
-          toast.success(`Started sequence: ${sequence.name}`);
-        }
-        // Clear the slash command text
+      const textSteps = sequence.steps?.filter(s => s.type === 'TEXT') || [];
+
+      if (textSteps.length > 0) {
+        // Get all text content from TEXT steps, separated by newlines
+        const allText = textSteps
+          .map(s => s.content?.text || '')
+          .filter(t => t)
+          .join('\n\n');
+        const newText = messageText.substring(0, slashStart) + allText;
+        setMessageText(newText);
+      } else {
+        toast.error('This sequence has no text messages');
         const newText = messageText.substring(0, slashStart);
         setMessageText(newText);
-      } catch (error: any) {
-        toast.error(error.message || 'Failed to start sequence');
       }
     }
 
@@ -779,7 +782,7 @@ export default function InboxPage() {
 
     // Focus the input
     messageInputRef.current?.focus();
-  }, [messageText, selectedConversation]);
+  }, [messageText]);
 
   // Handle message input change with slash command detection
   const handleMessageInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
