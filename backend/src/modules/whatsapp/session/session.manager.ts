@@ -245,6 +245,11 @@ export class SessionManager extends EventEmitter {
 
         this.emit('connected', channelId, phoneNumber);
         this.logger.info({ channelId, phoneNumber }, 'WhatsApp connected');
+
+        // Fetch all group metadata in background after connection
+        this.fetchAllGroupsMetadata(channelId, socket).catch((err) => {
+          this.logger.warn({ channelId, error: err }, 'Failed to fetch all groups metadata');
+        });
       }
 
       if (connection === 'close') {
@@ -453,6 +458,42 @@ export class SessionManager extends EventEmitter {
         }
       } catch (error) {
         this.logger.warn({ channelId, groupId: id, error }, 'Failed to refresh group metadata after participant change');
+      }
+    });
+
+    // Groups upsert - when groups are first discovered (usually during sync)
+    socket.ev.on('groups.upsert', async (groups) => {
+      this.logger.info({ channelId, count: groups.length }, 'Groups upsert received');
+
+      for (const group of groups) {
+        try {
+          // Cache group metadata
+          await redisClient.setex(`group:${group.id}:metadata`, 3600, JSON.stringify(group));
+
+          // Update Contact record in database
+          if (group.subject) {
+            const { ChannelType } = await import('@prisma/client');
+            const channel = await prisma.channel.findUnique({
+              where: { id: channelId },
+              select: { organizationId: true },
+            });
+
+            if (channel) {
+              const groupIdentifier = group.id.split('@')[0];
+              await prisma.contact.updateMany({
+                where: {
+                  organizationId: channel.organizationId,
+                  channelType: ChannelType.WHATSAPP,
+                  identifier: groupIdentifier,
+                },
+                data: { displayName: group.subject },
+              });
+              this.logger.debug({ channelId, groupId: group.id, subject: group.subject }, 'Group contact name updated from upsert');
+            }
+          }
+        } catch (error) {
+          this.logger.warn({ channelId, groupId: group.id, error }, 'Failed to process group upsert');
+        }
       }
     });
 
@@ -778,6 +819,74 @@ export class SessionManager extends EventEmitter {
     }
 
     return null;
+  }
+
+  /**
+   * Fetch all groups metadata using groupFetchAllParticipating
+   * This is called after connection to populate cache and update contacts
+   */
+  private async fetchAllGroupsMetadata(channelId: string, socket: any): Promise<void> {
+    try {
+      this.logger.info({ channelId }, 'Fetching all groups metadata...');
+
+      // groupFetchAllParticipating returns all groups with full metadata
+      const groups = await socket.groupFetchAllParticipating();
+
+      if (!groups || Object.keys(groups).length === 0) {
+        this.logger.debug({ channelId }, 'No groups found');
+        return;
+      }
+
+      const groupCount = Object.keys(groups).length;
+      this.logger.info({ channelId, groupCount }, 'Fetched all groups');
+
+      // Get channel info for organization ID
+      const channel = await prisma.channel.findUnique({
+        where: { id: channelId },
+        select: { organizationId: true },
+      });
+
+      if (!channel) return;
+
+      const { ChannelType } = await import('@prisma/client');
+      let updatedCount = 0;
+
+      // Process each group
+      for (const [groupJid, metadata] of Object.entries(groups)) {
+        try {
+          const groupMetadata = metadata as any;
+
+          // Cache in Redis
+          await redisClient.setex(`group:${groupJid}:metadata`, 3600, JSON.stringify(groupMetadata));
+
+          // Update Contact in database if subject exists
+          if (groupMetadata.subject) {
+            const groupIdentifier = groupJid.split('@')[0];
+            const result = await prisma.contact.updateMany({
+              where: {
+                organizationId: channel.organizationId,
+                channelType: ChannelType.WHATSAPP,
+                identifier: groupIdentifier,
+                // Only update if name is missing or is fallback
+                OR: [
+                  { displayName: null },
+                  { displayName: 'Group Chat' },
+                ],
+              },
+              data: { displayName: groupMetadata.subject },
+            });
+
+            if (result.count > 0) updatedCount++;
+          }
+        } catch (error) {
+          // Skip individual group errors
+        }
+      }
+
+      this.logger.info({ channelId, groupCount, updatedCount }, 'Groups metadata synced');
+    } catch (error) {
+      this.logger.warn({ channelId, error }, 'Failed to fetch all groups metadata');
+    }
   }
 
   /**

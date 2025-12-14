@@ -95,11 +95,38 @@ function setupEventHandlers() {
 
     const remoteJid = waMessage.key?.remoteJid;
 
-    // For group messages, ensure group metadata is cached
+    // For group messages, ensure group metadata is cached and contact is updated
     if (remoteJid?.endsWith('@g.us')) {
       try {
         // This will fetch and cache if not already cached
-        await sessionManager.getGroupMetadata(channelId, remoteJid);
+        const metadata = await sessionManager.getGroupMetadata(channelId, remoteJid);
+
+        // If we got metadata with a subject, update the contact name in database
+        if (metadata?.subject) {
+          const { ChannelType } = await import('@prisma/client');
+          const channel = await prisma.channel.findUnique({
+            where: { id: channelId },
+            select: { organizationId: true },
+          });
+
+          if (channel) {
+            const groupIdentifier = remoteJid.split('@')[0];
+            await prisma.contact.updateMany({
+              where: {
+                organizationId: channel.organizationId,
+                channelType: ChannelType.WHATSAPP,
+                identifier: groupIdentifier,
+                // Only update if name is null or "Group Chat" (fallback)
+                OR: [
+                  { displayName: null },
+                  { displayName: 'Group Chat' },
+                ],
+              },
+              data: { displayName: metadata.subject },
+            });
+            logger.debug({ channelId, groupJid: remoteJid, subject: metadata.subject }, 'Updated group contact name');
+          }
+        }
       } catch (error) {
         logger.debug({ channelId, groupJid: remoteJid }, 'Could not fetch group metadata');
       }
