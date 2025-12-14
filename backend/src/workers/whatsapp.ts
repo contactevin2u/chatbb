@@ -383,20 +383,47 @@ async function handleSendCommand(channelId: string, data: {
     // Build quoted message object if quotedMessageId is provided
     let quotedMessage: any = undefined;
     if (data.quotedMessageId) {
-      // Construct minimal message object for Baileys quoted option
-      // Baileys needs key (remoteJid, id, fromMe) and can work with minimal message content
+      // Fetch the original message from database to get full content for quote preview
+      const originalMessage = await prisma.message.findFirst({
+        where: {
+          OR: [
+            { externalId: data.quotedMessageId },
+            { id: data.quotedMessageId },
+          ],
+          channelId,
+        },
+        select: {
+          externalId: true,
+          direction: true,
+          content: true,
+          type: true,
+        },
+      });
+
       const jid = data.to.includes('@') ? data.to : `${data.to}@s.whatsapp.net`;
+      const isFromMe = originalMessage?.direction === 'OUTBOUND';
+
+      // Construct message object with actual content for proper quote preview
+      let messageContent: any = { conversation: '' };
+      if (originalMessage?.content) {
+        const content = originalMessage.content as any;
+        if (content.text) {
+          messageContent = { conversation: content.text };
+        } else if (content.caption) {
+          // For media with captions
+          messageContent = { conversation: content.caption };
+        }
+      }
+
       quotedMessage = {
         key: {
           remoteJid: jid,
-          id: data.quotedMessageId,
-          fromMe: false, // Default to false, will be overridden if we have metadata
+          id: originalMessage?.externalId || data.quotedMessageId,
+          fromMe: isFromMe,
         },
-        message: {
-          conversation: '', // Minimal placeholder - Baileys will use stanzaId
-        },
+        message: messageContent,
       };
-      logger.debug({ channelId, quotedMessageId: data.quotedMessageId }, 'Replying to message');
+      logger.debug({ channelId, quotedMessageId: data.quotedMessageId, hasOriginal: !!originalMessage }, 'Replying to message');
     }
 
     // Priority: media > sticker > gif > voiceNote > reaction > text
