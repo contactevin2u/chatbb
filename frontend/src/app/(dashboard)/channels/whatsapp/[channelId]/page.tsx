@@ -216,17 +216,19 @@ export default function ChannelSettingsPage() {
                   </>
                 )}
               </Button>
-            ) : channelStatus?.status === 'CONNECTING' ? (
-              <Button disabled>
-                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                Connecting...
-              </Button>
             ) : (
               <>
+                {channelStatus?.status === 'CONNECTING' && (
+                  <Button disabled variant="outline">
+                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                    Connecting...
+                  </Button>
+                )}
                 {/* Reconnect button - tries to use saved session */}
                 <Button
                   onClick={() => reconnectMutation.mutate()}
                   disabled={reconnectMutation.isPending}
+                  variant={channelStatus?.status === 'CONNECTING' ? 'secondary' : 'default'}
                 >
                   {reconnectMutation.isPending ? (
                     <>
@@ -236,7 +238,7 @@ export default function ChannelSettingsPage() {
                   ) : (
                     <>
                       <RefreshCw className="mr-2 h-4 w-4" />
-                      Reconnect
+                      {channelStatus?.status === 'CONNECTING' ? 'Retry' : 'Reconnect'}
                     </>
                   )}
                 </Button>
@@ -250,6 +252,11 @@ export default function ChannelSettingsPage() {
               </>
             )}
           </div>
+          {channelStatus?.status === 'CONNECTING' && (
+            <p className="text-sm text-muted-foreground">
+              If stuck connecting, click &quot;Retry&quot; or &quot;Scan QR Code&quot; to try again.
+            </p>
+          )}
           {(channelStatus?.status === 'DISCONNECTED' || channelStatus?.status === 'ERROR') &&
            channelStatus?.hasAuthState && (
             <p className="text-sm text-muted-foreground">
