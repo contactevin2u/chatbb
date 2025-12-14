@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Bot,
@@ -20,8 +20,14 @@ import {
   ChevronRight,
   GripVertical,
   X,
+  Upload,
+  Smartphone,
+  Loader2,
+  Check,
+  CheckCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { uploadMedia } from '@/lib/api/conversations';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -199,6 +205,103 @@ function SequenceCard({
   );
 }
 
+// WhatsApp Phone Preview Component
+function WhatsAppPreview({ steps }: { steps: SequenceStep[] }) {
+  return (
+    <div className="w-[280px] flex-shrink-0 bg-gradient-to-b from-pink-100 to-purple-100 dark:from-purple-950 dark:to-pink-950 rounded-[2rem] p-2 shadow-xl">
+      {/* Phone frame */}
+      <div className="bg-[#e5ddd5] dark:bg-[#0b141a] rounded-[1.5rem] h-[480px] flex flex-col overflow-hidden">
+        {/* WhatsApp header */}
+        <div className="bg-[#075e54] dark:bg-[#1f2c34] px-3 py-2 flex items-center gap-2">
+          <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600" />
+          <div className="flex-1">
+            <p className="text-white text-sm font-medium">Customer</p>
+            <p className="text-white/70 text-[10px]">online</p>
+          </div>
+        </div>
+
+        {/* Messages area */}
+        <div className="flex-1 p-2 overflow-y-auto space-y-2">
+          {steps.length === 0 ? (
+            <div className="h-full flex items-center justify-center">
+              <p className="text-xs text-gray-500 dark:text-gray-400 text-center px-4">
+                Add steps to preview your sequence
+              </p>
+            </div>
+          ) : (
+            steps.map((step, index) => {
+              if (step.type === 'DELAY') {
+                return (
+                  <div key={step.id} className="flex justify-center">
+                    <span className="bg-[#fcf4cb] dark:bg-[#1d282f] text-[10px] px-2 py-1 rounded text-gray-600 dark:text-gray-300">
+                      Wait {step.content.delayMinutes}m
+                    </span>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={step.id} className="flex justify-end">
+                  <div className="max-w-[85%] bg-[#dcf8c6] dark:bg-[#005c4b] rounded-lg p-2 shadow-sm">
+                    {step.type !== 'TEXT' && step.content.mediaUrl && (
+                      <div className="mb-1 rounded overflow-hidden">
+                        {step.type === 'IMAGE' ? (
+                          <img
+                            src={step.content.mediaUrl}
+                            alt="Media"
+                            className="w-full h-24 object-cover"
+                          />
+                        ) : step.type === 'VIDEO' ? (
+                          <div className="w-full h-24 bg-black/20 flex items-center justify-center">
+                            <Play className="h-8 w-8 text-white" />
+                          </div>
+                        ) : step.type === 'AUDIO' ? (
+                          <div className="flex items-center gap-2 py-2">
+                            <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
+                              <Mic className="h-4 w-4" />
+                            </div>
+                            <div className="flex-1 h-1 bg-gray-300 dark:bg-gray-600 rounded" />
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 py-1">
+                            <FileText className="h-6 w-6 text-red-500" />
+                            <span className="text-xs truncate">{step.content.mediaFilename || 'Document'}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {step.content.text && (
+                      <p className="text-[11px] text-gray-800 dark:text-gray-100 whitespace-pre-wrap break-words">
+                        {step.content.text}
+                      </p>
+                    )}
+                    <div className="flex items-center justify-end gap-1 mt-1">
+                      <span className="text-[9px] text-gray-500 dark:text-gray-400">
+                        {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      <CheckCheck className="h-3 w-3 text-blue-500" />
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Input bar */}
+        <div className="bg-[#f0f0f0] dark:bg-[#1f2c34] px-2 py-2 flex items-center gap-2">
+          <div className="flex-1 bg-white dark:bg-[#2a3942] rounded-full px-3 py-1.5">
+            <span className="text-xs text-gray-400">Type a message</span>
+          </div>
+          <div className="w-8 h-8 rounded-full bg-[#075e54] dark:bg-[#00a884] flex items-center justify-center">
+            <Mic className="h-4 w-4 text-white" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SequenceEditor({
   sequence,
   open,
@@ -212,6 +315,7 @@ function SequenceEditor({
 }) {
   const queryClient = useQueryClient();
   const isEditing = !!sequence;
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState(sequence?.name || '');
   const [shortcut, setShortcut] = useState(sequence?.shortcut || '');
@@ -221,6 +325,10 @@ function SequenceEditor({
   const [newStepType, setNewStepType] = useState<SequenceStepType>('TEXT');
   const [newStepContent, setNewStepContent] = useState('');
   const [newStepDelay, setNewStepDelay] = useState(5);
+  const [uploading, setUploading] = useState(false);
+  const [uploadedMediaUrl, setUploadedMediaUrl] = useState('');
+  const [uploadedMediaType, setUploadedMediaType] = useState<'image' | 'video' | 'audio' | 'document'>('image');
+  const [showPreview, setShowPreview] = useState(false);
 
   // Reset form when dialog opens or sequence changes
   useEffect(() => {
@@ -232,6 +340,8 @@ function SequenceEditor({
       setAddingStep(false);
       setNewStepContent('');
       setNewStepDelay(5);
+      setUploadedMediaUrl('');
+      setShowPreview(false);
     }
   }, [open, sequence]);
 
@@ -269,6 +379,7 @@ function SequenceEditor({
       setAddingStep(false);
       setNewStepContent('');
       setNewStepDelay(5);
+      setUploadedMediaUrl('');
       queryClient.invalidateQueries({ queryKey: ['sequences'] });
     },
     onError: (error: Error) => {
@@ -286,6 +397,39 @@ function SequenceEditor({
       toast.error(error.message || 'Failed to delete step');
     },
   });
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Determine media type from file
+    let mediaType: 'image' | 'video' | 'audio' | 'document' = 'document';
+    if (file.type.startsWith('image/')) mediaType = 'image';
+    else if (file.type.startsWith('video/')) mediaType = 'video';
+    else if (file.type.startsWith('audio/')) mediaType = 'audio';
+
+    setUploading(true);
+    try {
+      const result = await uploadMedia(file);
+      setUploadedMediaUrl(result.url);
+      setUploadedMediaType(mediaType);
+
+      // Auto-set the step type based on uploaded file
+      if (mediaType === 'image') setNewStepType('IMAGE');
+      else if (mediaType === 'video') setNewStepType('VIDEO');
+      else if (mediaType === 'audio') setNewStepType('AUDIO');
+      else setNewStepType('DOCUMENT');
+
+      toast.success('Media uploaded');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to upload media');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
 
   const handleSave = () => {
     if (!name.trim()) {
@@ -330,7 +474,8 @@ function SequenceEditor({
     } else if (newStepType === 'TEXT') {
       content.text = newStepContent;
     } else {
-      content.mediaUrl = newStepContent;
+      content.mediaUrl = uploadedMediaUrl || newStepContent;
+      content.mediaType = uploadedMediaType;
     }
 
     if (isEditing && sequence) {
@@ -359,6 +504,7 @@ function SequenceEditor({
       setAddingStep(false);
       setNewStepContent('');
       setNewStepDelay(5);
+      setUploadedMediaUrl('');
     }
   };
 
@@ -370,208 +516,348 @@ function SequenceEditor({
     }
   };
 
+  const getAcceptTypes = () => {
+    switch (newStepType) {
+      case 'IMAGE': return 'image/*';
+      case 'VIDEO': return 'video/*';
+      case 'AUDIO': return 'audio/*';
+      case 'DOCUMENT': return '.pdf,.doc,.docx,.xls,.xlsx,.txt';
+      default: return '*/*';
+    }
+  };
+
+  const isMediaStep = ['IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT'].includes(newStepType);
+  const canAddStep = newStepType === 'DELAY' ||
+    (newStepType === 'TEXT' && newStepContent.trim()) ||
+    (isMediaStep && (uploadedMediaUrl || newStepContent.trim()));
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle>{isEditing ? 'Edit Sequence' : 'Create Sequence'}</DialogTitle>
-          <DialogDescription>
-            Build an automated message sequence with multiple steps.
-          </DialogDescription>
+      <DialogContent className={cn(
+        "flex flex-col p-0 gap-0",
+        showPreview ? "max-w-4xl" : "max-w-2xl",
+        "max-h-[90vh]"
+      )}>
+        <DialogHeader className="px-6 pt-6 pb-4 border-b">
+          <div className="flex items-center justify-between">
+            <div>
+              <DialogTitle>{isEditing ? 'Edit Sequence' : 'Create Sequence'}</DialogTitle>
+              <DialogDescription>
+                Build an automated message sequence with multiple steps.
+              </DialogDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowPreview(!showPreview)}
+              className="gap-2"
+            >
+              <Smartphone className="h-4 w-4" />
+              {showPreview ? 'Hide Preview' : 'Preview'}
+            </Button>
+          </div>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 pr-4">
-          <div className="space-y-6 py-4">
-            {/* Basic Info */}
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Sequence Name</Label>
-                <Input
-                  id="name"
-                  placeholder="e.g., Welcome Series"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="shortcut">
-                  Shortcut (optional)
-                  <span className="text-xs text-muted-foreground ml-2">Use in chat with /shortcut</span>
-                </Label>
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground">/</span>
+        <div className="flex flex-1 overflow-hidden">
+          {/* Editor Panel */}
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="space-y-6">
+              {/* Basic Info */}
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Sequence Name</Label>
                   <Input
-                    id="shortcut"
-                    placeholder="e.g., welcome"
-                    value={shortcut}
-                    onChange={(e) => setShortcut(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
-                    className="flex-1"
+                    id="name"
+                    placeholder="e.g., Welcome Series"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="shortcut">
+                    Shortcut (optional)
+                    <span className="text-xs text-muted-foreground ml-2">Use in chat with /shortcut</span>
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">/</span>
+                    <Input
+                      id="shortcut"
+                      placeholder="e.g., welcome"
+                      value={shortcut}
+                      onChange={(e) => setShortcut(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
+                      className="flex-1"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="description">Description (optional)</Label>
+                  <Textarea
+                    id="description"
+                    placeholder="Describe what this sequence does..."
+                    value={description}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDescription(e.target.value)}
+                    rows={2}
                   />
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Description (optional)</Label>
-                <Textarea
-                  id="description"
-                  placeholder="Describe what this sequence does..."
-                  value={description}
-                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDescription(e.target.value)}
-                  rows={2}
-                />
-              </div>
-            </div>
 
-            {/* Steps */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label>Steps</Label>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setAddingStep(true)}
-                  disabled={addingStep}
-                >
-                  <Plus className="h-4 w-4 mr-1" />
-                  Add Step
-                </Button>
-              </div>
-
-              {steps.length === 0 && !addingStep && (
-                <div className="text-center py-8 border-2 border-dashed rounded-lg">
-                  <Zap className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground">No steps yet</p>
+              {/* Steps */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>Steps ({steps.length})</Label>
                   <Button
-                    variant="link"
+                    variant="outline"
                     size="sm"
                     onClick={() => setAddingStep(true)}
+                    disabled={addingStep}
                   >
-                    Add your first step
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add Step
                   </Button>
                 </div>
-              )}
 
-              {/* Existing steps */}
-              <div className="space-y-2">
-                {steps.map((step, index) => (
-                  <div
-                    key={step.id}
-                    className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg group"
-                  >
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <GripVertical className="h-4 w-4" />
-                      <span className="text-xs font-medium w-6">{index + 1}.</span>
-                    </div>
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <div className="p-1.5 bg-background rounded">
-                        {stepTypeIcons[step.type]}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium">{stepTypeLabels[step.type]}</p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {step.type === 'DELAY'
-                            ? `Wait ${step.content.delayMinutes} minutes`
-                            : step.content.text || step.content.mediaUrl || 'No content'}
-                        </p>
-                      </div>
-                    </div>
+                {steps.length === 0 && !addingStep && (
+                  <div className="text-center py-8 border-2 border-dashed rounded-lg">
+                    <Zap className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">No steps yet</p>
                     <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 opacity-0 group-hover:opacity-100"
-                      onClick={() => handleRemoveStep(step.id)}
+                      variant="link"
+                      size="sm"
+                      onClick={() => setAddingStep(true)}
                     >
-                      <X className="h-4 w-4" />
+                      Add your first step
                     </Button>
                   </div>
-                ))}
-              </div>
+                )}
 
-              {/* Add step form */}
-              {addingStep && (
-                <div className="p-4 border rounded-lg space-y-4">
-                  <div className="flex items-center justify-between">
-                    <Label>New Step</Label>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6"
-                      onClick={() => setAddingStep(false)}
+                {/* Existing steps */}
+                <div className="space-y-2">
+                  {steps.map((step, index) => (
+                    <div
+                      key={step.id}
+                      className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg group"
                     >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <div className="space-y-3">
-                    <div className="space-y-2">
-                      <Label>Step Type</Label>
-                      <Select
-                        value={newStepType}
-                        onValueChange={(v) => setNewStepType(v as SequenceStepType)}
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <GripVertical className="h-4 w-4" />
+                        <span className="text-xs font-medium w-6">{index + 1}.</span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <div className="p-1.5 bg-background rounded">
+                          {stepTypeIcons[step.type]}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium">{stepTypeLabels[step.type]}</p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {step.type === 'DELAY'
+                              ? `Wait ${step.content.delayMinutes} minutes`
+                              : step.content.text || step.content.mediaUrl || 'No content'}
+                          </p>
+                        </div>
+                        {step.content.mediaUrl && step.type === 'IMAGE' && (
+                          <img
+                            src={step.content.mediaUrl}
+                            alt=""
+                            className="h-10 w-10 object-cover rounded"
+                          />
+                        )}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 opacity-0 group-hover:opacity-100"
+                        onClick={() => handleRemoveStep(step.id)}
                       >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Object.entries(stepTypeLabels).map(([type, label]) => (
-                            <SelectItem key={type} value={type}>
-                              <div className="flex items-center gap-2">
-                                {stepTypeIcons[type as SequenceStepType]}
-                                {label}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        <X className="h-4 w-4" />
+                      </Button>
                     </div>
-
-                    {newStepType === 'DELAY' ? (
-                      <div className="space-y-2">
-                        <Label>Delay (minutes)</Label>
-                        <Input
-                          type="number"
-                          min={1}
-                          value={newStepDelay}
-                          onChange={(e) => setNewStepDelay(parseInt(e.target.value) || 1)}
-                        />
-                      </div>
-                    ) : newStepType === 'TEXT' ? (
-                      <div className="space-y-2">
-                        <Label>Message Text</Label>
-                        <Textarea
-                          placeholder="Enter your message..."
-                          value={newStepContent}
-                          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNewStepContent(e.target.value)}
-                          rows={3}
-                        />
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <Label>Media URL</Label>
-                        <Input
-                          placeholder="https://example.com/media.jpg"
-                          value={newStepContent}
-                          onChange={(e) => setNewStepContent(e.target.value)}
-                        />
-                      </div>
-                    )}
-
-                    <Button
-                      onClick={handleAddStep}
-                      disabled={
-                        (newStepType !== 'DELAY' && !newStepContent.trim()) ||
-                        addStepMutation.isPending
-                      }
-                      className="w-full"
-                    >
-                      Add Step
-                    </Button>
-                  </div>
+                  ))}
                 </div>
-              )}
+
+                {/* Add step form */}
+                {addingStep && (
+                  <div className="p-4 border rounded-lg space-y-4 bg-muted/30">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-base font-semibold">New Step</Label>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => {
+                          setAddingStep(false);
+                          setUploadedMediaUrl('');
+                          setNewStepContent('');
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>Step Type</Label>
+                        <Select
+                          value={newStepType}
+                          onValueChange={(v) => {
+                            setNewStepType(v as SequenceStepType);
+                            setUploadedMediaUrl('');
+                            setNewStepContent('');
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(stepTypeLabels).map(([type, label]) => (
+                              <SelectItem key={type} value={type}>
+                                <div className="flex items-center gap-2">
+                                  {stepTypeIcons[type as SequenceStepType]}
+                                  {label}
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {newStepType === 'DELAY' ? (
+                        <div className="space-y-2">
+                          <Label>Delay (minutes)</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={newStepDelay}
+                            onChange={(e) => setNewStepDelay(parseInt(e.target.value) || 1)}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            The sequence will wait this long before sending the next message
+                          </p>
+                        </div>
+                      ) : newStepType === 'TEXT' ? (
+                        <div className="space-y-2">
+                          <Label>Message Text</Label>
+                          <Textarea
+                            placeholder="Enter your message..."
+                            value={newStepContent}
+                            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNewStepContent(e.target.value)}
+                            rows={4}
+                            className="resize-none"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Supports WhatsApp formatting: *bold*, _italic_, ~strikethrough~
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          <Label>Upload {stepTypeLabels[newStepType]}</Label>
+
+                          {/* Upload button */}
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              className="flex-1"
+                              onClick={() => fileInputRef.current?.click()}
+                              disabled={uploading}
+                            >
+                              {uploading ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                  Uploading...
+                                </>
+                              ) : (
+                                <>
+                                  <Upload className="h-4 w-4 mr-2" />
+                                  Choose File
+                                </>
+                              )}
+                            </Button>
+                            <input
+                              ref={fileInputRef}
+                              type="file"
+                              accept={getAcceptTypes()}
+                              onChange={handleFileUpload}
+                              className="hidden"
+                            />
+                          </div>
+
+                          {/* Preview uploaded media */}
+                          {uploadedMediaUrl && (
+                            <div className="relative border rounded-lg overflow-hidden">
+                              {newStepType === 'IMAGE' ? (
+                                <img src={uploadedMediaUrl} alt="Preview" className="w-full h-40 object-cover" />
+                              ) : newStepType === 'VIDEO' ? (
+                                <video src={uploadedMediaUrl} className="w-full h-40 object-cover" controls />
+                              ) : newStepType === 'AUDIO' ? (
+                                <audio src={uploadedMediaUrl} className="w-full" controls />
+                              ) : (
+                                <div className="p-4 flex items-center gap-2">
+                                  <FileText className="h-8 w-8 text-muted-foreground" />
+                                  <span className="text-sm">Document uploaded</span>
+                                </div>
+                              )}
+                              <Button
+                                variant="destructive"
+                                size="icon"
+                                className="absolute top-2 right-2 h-6 w-6"
+                                onClick={() => setUploadedMediaUrl('')}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          )}
+
+                          {/* Or URL input */}
+                          {!uploadedMediaUrl && (
+                            <>
+                              <div className="relative">
+                                <div className="absolute inset-0 flex items-center">
+                                  <span className="w-full border-t" />
+                                </div>
+                                <div className="relative flex justify-center text-xs uppercase">
+                                  <span className="bg-background px-2 text-muted-foreground">or paste URL</span>
+                                </div>
+                              </div>
+                              <Input
+                                placeholder="https://example.com/media.jpg"
+                                value={newStepContent}
+                                onChange={(e) => setNewStepContent(e.target.value)}
+                              />
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      <Button
+                        onClick={handleAddStep}
+                        disabled={!canAddStep || addStepMutation.isPending}
+                        className="w-full"
+                      >
+                        {addStepMutation.isPending ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Adding...
+                          </>
+                        ) : (
+                          <>
+                            <Check className="h-4 w-4 mr-2" />
+                            Add Step
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </ScrollArea>
 
-        <DialogFooter>
+          {/* Preview Panel */}
+          {showPreview && (
+            <div className="border-l p-4 bg-muted/30 flex items-center justify-center">
+              <WhatsAppPreview steps={steps} />
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="px-6 py-4 border-t">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
@@ -579,7 +865,14 @@ function SequenceEditor({
             onClick={handleSave}
             disabled={!name.trim() || createMutation.isPending || updateMutation.isPending}
           >
-            {createMutation.isPending || updateMutation.isPending ? 'Saving...' : 'Save'}
+            {createMutation.isPending || updateMutation.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              'Save Sequence'
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>
