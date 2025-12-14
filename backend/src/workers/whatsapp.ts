@@ -51,6 +51,19 @@ function setupEventHandlers() {
     const remoteJidAlt = (waMessage.key as any)?.remoteJidAlt;
     const participantAlt = (waMessage.key as any)?.participantAlt;
 
+    // DEBUG: Log full message key to understand what Baileys provides
+    if (originalRemoteJid?.includes('@lid')) {
+      logger.info({
+        channelId,
+        messageKeyFields: Object.keys(waMessage.key || {}),
+        remoteJid: originalRemoteJid,
+        remoteJidAlt: remoteJidAlt || 'NOT_PROVIDED',
+        fromMe: waMessage.key?.fromMe,
+        participant: waMessage.key?.participant,
+        participantAlt: participantAlt || 'NOT_PROVIDED',
+      }, 'DEBUG: LID message key contents');
+    }
+
     // Resolve LID to phone number if possible
     if (originalRemoteJid?.includes('@lid') && remoteJidAlt && !remoteJidAlt.includes('@lid')) {
       // remoteJid is LID, remoteJidAlt is phone number - use phone number
