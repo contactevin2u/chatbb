@@ -20,6 +20,7 @@ export interface ChatHeaderContact {
   firstName: string | null;
   lastName: string | null;
   avatarUrl: string | null;
+  isGroup: boolean;
 }
 
 export interface ChatHeaderConversation {
@@ -41,8 +42,8 @@ interface ChatHeaderProps {
   onReopen: (id: string) => void;
 }
 
-function isGroupContact(identifier: string): boolean {
-  return identifier.includes('-');
+function isGroupContact(contact: ChatHeaderContact): boolean {
+  return contact.isGroup;
 }
 
 function getContactName(contact: ChatHeaderContact): string {
@@ -73,7 +74,7 @@ export const ChatHeader = memo(function ChatHeader({
   onClose,
   onReopen,
 }: ChatHeaderProps) {
-  const isGroup = isGroupContact(conversation.contact.identifier);
+  const isGroup = isGroupContact(conversation.contact);
 
   return (
     <div className="h-16 border-b border-pink-200/50 dark:border-purple-800/50 flex items-center justify-between px-4 bg-gradient-to-r from-white via-pink-50/30 to-lavender-50/30 dark:from-purple-950 dark:via-purple-900/30 dark:to-pink-950/30">

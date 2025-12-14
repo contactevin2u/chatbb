@@ -231,24 +231,28 @@ export function buildJid(identifier: string, isGroup: boolean = false): string {
 /**
  * Get or create a contact with upsert pattern
  * Uses Prisma upsert for atomic operation - prevents race conditions
+ *
+ * IMPORTANT: isGroup should be determined from the original JID using
+ * jid.endsWith('@g.us') BEFORE normalization, not from the identifier
  */
 export async function getOrCreateContact(options: {
   organizationId: string;
   channelType: ChannelType;
   identifier: string;
   displayName?: string | null;
-  isGroup?: boolean;
+  isGroup: boolean; // Required - must be determined from original JID
 }): Promise<{
   id: string;
   identifier: string;
   displayName: string | null;
   avatarUrl: string | null;
+  isGroup: boolean;
   isNew: boolean;
 }> {
   const { organizationId, channelType, identifier, displayName, isGroup } = options;
 
-  // Detect if this is a group based on identifier pattern (contains hyphen like 123456789-1234567890)
-  const isGroupContact = isGroup ?? identifier.includes('-');
+  // isGroup is now explicitly passed, determined from original JID (jid.endsWith('@g.us'))
+  const isGroupContact = isGroup;
 
   // Check if contact exists first to determine if it's new
   const existing = await prisma.contact.findUnique({
@@ -286,17 +290,21 @@ export async function getOrCreateContact(options: {
         channelType,
         identifier,
         displayName,
+        isGroup: isGroupContact,
       },
       update: {
         // For groups: update to real name (not fallback)
         // For individuals: update if they don't have a name yet
         ...(shouldUpdateGroupName || shouldUpdateIndividualName ? { displayName } : {}),
+        // Always ensure isGroup is correct (fix for existing contacts)
+        isGroup: isGroupContact,
       },
       select: {
         id: true,
         identifier: true,
         displayName: true,
         avatarUrl: true,
+        isGroup: true,
       },
     });
 
@@ -318,24 +326,31 @@ export async function getOrCreateContact(options: {
           identifier: true,
           displayName: true,
           avatarUrl: true,
+          isGroup: true,
         },
       });
 
       if (fetched) {
         // Update displayName if: groups with real name, or individuals without name
+        // Also update isGroup to fix existing contacts
         const shouldUpdateFetched =
           (isGroupContact && isValidGroupName && fetched.displayName !== displayName) ||
-          (!isGroupContact && displayName && !fetched.displayName);
+          (!isGroupContact && displayName && !fetched.displayName) ||
+          fetched.isGroup !== isGroupContact;
 
         if (shouldUpdateFetched) {
           const updated = await prisma.contact.update({
             where: { id: fetched.id },
-            data: { displayName },
+            data: {
+              ...(shouldUpdateGroupName || shouldUpdateIndividualName ? { displayName } : {}),
+              isGroup: isGroupContact,
+            },
             select: {
               id: true,
               identifier: true,
               displayName: true,
               avatarUrl: true,
+              isGroup: true,
             },
           });
           return { ...updated, isNew: false };

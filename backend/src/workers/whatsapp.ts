@@ -996,6 +996,7 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
         channelType: ChannelType.WHATSAPP,
         identifier,
         displayName,
+        isGroup,
       });
 
       // Use shared upsert helper for consistent conversation creation

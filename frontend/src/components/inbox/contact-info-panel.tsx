@@ -34,6 +34,7 @@ export interface ContactPanelContact {
   firstName: string | null;
   lastName: string | null;
   avatarUrl: string | null;
+  isGroup: boolean;
 }
 
 export interface ContactPanelChannel {
@@ -117,8 +118,8 @@ interface ContactInfoPanelProps {
   isAddingNote?: boolean;
 }
 
-function isGroupContact(identifier: string): boolean {
-  return identifier.includes('-');
+function isGroupContact(contact: ContactPanelContact): boolean {
+  return contact.isGroup;
 }
 
 function getContactName(contact: ContactPanelContact): string {
@@ -152,7 +153,7 @@ export const ContactInfoPanel = memo(function ContactInfoPanel({
   isAddingNote,
 }: ContactInfoPanelProps) {
   const [newNoteContent, setNewNoteContent] = useState('');
-  const isGroup = isGroupContact(conversation.contact.identifier);
+  const isGroup = isGroupContact(conversation.contact);
 
   const handleAddNote = () => {
     if (newNoteContent.trim()) {

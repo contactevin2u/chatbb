@@ -164,9 +164,9 @@ function getContactInitials(contact: Conversation['contact']): string {
   return name.slice(0, 2).toUpperCase();
 }
 
-// Check if contact is a group (group identifiers contain '-' like 123456789-1234567890)
+// Check if contact is a group using the isGroup field from database
 function isGroupContact(contact: Conversation['contact']): boolean {
-  return contact.identifier.includes('-');
+  return contact.isGroup;
 }
 
 // Format date header for message groups

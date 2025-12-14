@@ -562,6 +562,9 @@ export class WhatsAppService {
     // The WhatsApp Worker will return an error if the session is not connected
 
     // Get or create contact using consistent normalization
+    // Determine if this is a group from the original JID suffix (the definitive indicator)
+    // Only @g.us suffix reliably indicates a group - don't use hyphen check as fallback
+    const isGroup = input.to.endsWith('@g.us');
     const contactIdentifier = normalizeIdentifier(input.to);
 
     // Use upsert helpers for atomic operations (prevents race conditions)
@@ -569,6 +572,7 @@ export class WhatsAppService {
       organizationId: channel.organizationId,
       channelType: ChannelType.WHATSAPP,
       identifier: contactIdentifier,
+      isGroup,
     });
 
     // Get or create conversation using upsert

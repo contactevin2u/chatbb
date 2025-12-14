@@ -19,6 +19,7 @@ export interface Contact {
   firstName?: string;
   lastName?: string;
   avatarUrl?: string;
+  isGroup: boolean;
 }
 
 export interface Channel {

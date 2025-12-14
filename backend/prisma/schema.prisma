@@ -244,6 +244,7 @@ model Contact {
   organizationId String      @map("organization_id") @db.Uuid
   identifier     String
   channelType    ChannelType @map("channel_type")
+  isGroup        Boolean     @default(false) @map("is_group")
   displayName    String?     @map("display_name")
   firstName      String?     @map("first_name")
   lastName       String?     @map("last_name")

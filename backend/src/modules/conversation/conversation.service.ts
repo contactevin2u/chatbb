@@ -108,6 +108,7 @@ export class ConversationService {
               firstName: true,
               lastName: true,
               avatarUrl: true,
+              isGroup: true,
             },
           },
           channel: {
@@ -256,6 +257,7 @@ export class ConversationService {
             id: true,
             displayName: true,
             identifier: true,
+            isGroup: true,
           },
         },
         assignedUser: {
@@ -489,6 +491,7 @@ export class ConversationService {
             displayName: true,
             firstName: true,
             lastName: true,
+            isGroup: true,
           },
         },
         messages: {
@@ -861,7 +864,7 @@ export class ConversationService {
       where: { id: conversationId, organizationId },
       include: {
         contact: {
-          select: { identifier: true, displayName: true },
+          select: { identifier: true, displayName: true, isGroup: true },
         },
         channel: {
           select: { id: true },
@@ -873,9 +876,8 @@ export class ConversationService {
       throw new Error('Conversation not found');
     }
 
-    // Check if this is a group (identifier contains '-')
-    const isGroup = conversation.contact.identifier.includes('-');
-    if (!isGroup) {
+    // Check if this is a group using the isGroup field from database
+    if (!conversation.contact.isGroup) {
       return { isGroup: false, participants: [], participantCount: 0 };
     }
 

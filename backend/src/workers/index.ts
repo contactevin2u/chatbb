@@ -558,6 +558,7 @@ async function processHistorySync(job: Job) {
         channelType: ChannelType.WHATSAPP,
         identifier,
         displayName,
+        isGroup,
       });
 
       // Use shared upsert helper for consistent conversation creation

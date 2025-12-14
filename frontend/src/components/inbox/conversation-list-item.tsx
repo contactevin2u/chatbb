@@ -14,7 +14,7 @@ export interface ConversationContact {
   firstName: string | null;
   lastName: string | null;
   avatarUrl: string | null;
-  isGroup?: boolean;
+  isGroup: boolean;
 }
 
 export interface ConversationLastMessage {
