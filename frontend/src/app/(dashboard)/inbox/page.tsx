@@ -74,6 +74,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useKeyboardShortcuts, KeyboardShortcut } from '@/hooks/use-keyboard-shortcuts';
 import { SlashCommand } from '@/components/slash-command';
+import { ScheduleMessageDialog } from '@/components/schedule-message-dialog';
 import { QuickReply } from '@/lib/api/quick-replies';
 import {
   listConversations,
@@ -270,6 +271,7 @@ export default function InboxPage() {
   const [newNoteContent, setNewNoteContent] = useState('');
   const [slashCommandOpen, setSlashCommandOpen] = useState(false);
   const [slashSearchTerm, setSlashSearchTerm] = useState('');
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -1657,6 +1659,18 @@ export default function InboxPage() {
                   <Button variant="ghost" size="icon">
                     <Smile className="h-5 w-5" />
                   </Button>
+                  {/* Schedule button - only show when there's content */}
+                  {(messageText.trim() || selectedMedia) && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setScheduleDialogOpen(true)}
+                      disabled={selectedConversation.status === 'CLOSED'}
+                      title="Schedule message"
+                    >
+                      <Clock className="h-5 w-5" />
+                    </Button>
+                  )}
                   {/* Show mic button when no text, send button when there's text or media */}
                   {!messageText.trim() && !selectedMedia ? (
                     <Button
@@ -2115,6 +2129,24 @@ export default function InboxPage() {
             )}
           </div>
         </div>
+      )}
+
+      {/* Schedule Message Dialog */}
+      {selectedConversationId && (
+        <ScheduleMessageDialog
+          open={scheduleDialogOpen}
+          onOpenChange={setScheduleDialogOpen}
+          conversationId={selectedConversationId}
+          messageContent={{
+            text: messageText.trim() || undefined,
+            mediaUrl: selectedMedia?.preview,
+            mediaType: selectedMedia?.type,
+          }}
+          onScheduled={() => {
+            setMessageText('');
+            setSelectedMedia(null);
+          }}
+        />
       )}
     </div>
   );
