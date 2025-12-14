@@ -898,6 +898,18 @@ export default function InboxPage() {
                                   : 'bg-muted'
                               )}
                             >
+                              {/* Sender name */}
+                              {message.direction === 'OUTBOUND' && message.sentByUser && (
+                                <p className="text-[11px] font-medium text-primary-foreground/80 mb-1">
+                                  {message.sentByUser.firstName} {message.sentByUser.lastName}
+                                </p>
+                              )}
+                              {message.direction === 'INBOUND' && (
+                                <p className="text-[11px] font-medium text-foreground/70 mb-1">
+                                  {getContactName(selectedConversation.contact)}
+                                </p>
+                              )}
+
                               {/* Quoted message (reply) */}
                               {message.content.quotedMessage && (
                                 <div className={cn(
