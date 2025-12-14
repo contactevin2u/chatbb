@@ -98,7 +98,7 @@ export default function DashboardLayout({
         <Header />
 
         {/* Page Content */}
-        <main className="min-h-[calc(100vh-64px)]">{children}</main>
+        <main className="h-[calc(100vh-64px)]">{children}</main>
       </div>
 
       {/* Global Modals */}

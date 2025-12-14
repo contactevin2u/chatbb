@@ -871,11 +871,11 @@ export default function InboxPage() {
   }, []);
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full overflow-hidden">
       {/* Conversation List Panel */}
       <div
         className={cn(
-          'border-r flex flex-col transition-all duration-200 ease-in-out',
+          'border-r flex flex-col transition-all duration-200 ease-in-out flex-shrink-0',
           conversationListCollapsed ? 'w-0 overflow-hidden' : 'w-80'
         )}
       >
