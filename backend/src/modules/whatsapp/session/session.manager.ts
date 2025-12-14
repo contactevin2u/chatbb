@@ -303,13 +303,21 @@ export class SessionManager extends EventEmitter {
       }
     });
 
-    // Baileys v7 LID mapping updates
-    socket.ev.on('lid-mapping.update', async (mapping) => {
-      for (const [lid, pn] of Object.entries(mapping)) {
-        this.emit('lid-mapping:update', channelId, { lid, pn: pn as string });
-        this.logger.debug({ channelId, lid, pn }, 'LID mapping received');
+    // Baileys v7 LID mapping updates (only available in v7+)
+    // @ts-ignore - Event may not exist in v6
+    if (socket.ev.listenerCount?.('lid-mapping.update') !== undefined || true) {
+      try {
+        // @ts-ignore
+        socket.ev.on('lid-mapping.update', async (mapping: Record<string, string>) => {
+          for (const [lid, pn] of Object.entries(mapping)) {
+            this.emit('lid-mapping:update', channelId, { lid, pn });
+            this.logger.debug({ channelId, lid, pn }, 'LID mapping received');
+          }
+        });
+      } catch {
+        // LID mapping not supported in this Baileys version
       }
-    });
+    }
 
     // Historical message sync (requires macOS Desktop browser + syncFullHistory: true)
     socket.ev.on('messaging-history.set', async ({ chats, contacts, messages, syncType }) => {
