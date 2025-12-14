@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { Menu, Bell, Search, LogOut, User, Settings } from 'lucide-react';
+import { Menu, Search, LogOut, User, Settings, Command } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -14,10 +14,11 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useUIStore } from '@/stores/ui-store';
 import { useAuthStore } from '@/stores/auth-store';
+import { NotificationBell } from './notification-bell';
 
 export function Header() {
   const router = useRouter();
-  const { toggleSidebar } = useUIStore();
+  const { setMobileMenuOpen, openCommandPalette } = useUIStore();
   const { user, logout } = useAuthStore();
 
   const handleLogout = () => {
@@ -37,32 +38,28 @@ export function Header() {
           variant="ghost"
           size="icon"
           className="lg:hidden"
-          onClick={toggleSidebar}
+          onClick={() => setMobileMenuOpen(true)}
         >
           <Menu className="h-5 w-5" />
         </Button>
 
-        {/* Search */}
-        <div className="hidden md:flex items-center gap-2 bg-muted rounded-lg px-3 py-2">
+        {/* Search / Command Palette Trigger */}
+        <button
+          onClick={openCommandPalette}
+          className="hidden md:flex items-center gap-2 bg-muted hover:bg-muted/80 rounded-lg px-3 py-2 transition-colors cursor-pointer"
+        >
           <Search className="h-4 w-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Search conversations..."
-            className="bg-transparent text-sm outline-none w-64"
-          />
-          <kbd className="hidden lg:inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
-            <span className="text-xs">⌘</span>K
+          <span className="text-sm text-muted-foreground w-48 text-left">Search...</span>
+          <kbd className="hidden lg:inline-flex h-5 select-none items-center gap-1 rounded border bg-background px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+            <Command className="h-3 w-3" />K
           </kbd>
-        </div>
+        </button>
       </div>
 
       {/* Right side */}
       <div className="flex items-center gap-2">
-        {/* Notifications */}
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5" />
-          <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-destructive rounded-full" />
-        </Button>
+        {/* Notifications - Unreplied conversations (72 hours) */}
+        <NotificationBell />
 
         {/* User menu */}
         <DropdownMenu>

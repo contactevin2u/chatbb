@@ -24,6 +24,9 @@ import { analyticsRoutes } from './modules/analytics/analytics.routes.js';
 import { webhookRoutes } from './modules/webhook/webhook.routes.js';
 import { mediaRoutes } from './modules/media/media.routes.js';
 import { tagRoutes } from './modules/tag/tag.routes.js';
+import { quickReplyRoutes } from './modules/quick-reply/quick-reply.routes.js';
+import { scheduledMessageRoutes } from './modules/scheduled-message/scheduled-message.routes.js';
+import { sequenceRoutes } from './modules/sequence/sequence.routes.js';
 
 export function createApp(): Express {
   const app = express();
@@ -103,6 +106,9 @@ export function createApp(): Express {
   app.use(`${apiPrefix}/webhooks`, webhookRoutes);
   app.use(`${apiPrefix}/media`, mediaRoutes);
   app.use(`${apiPrefix}/tags`, tagRoutes);
+  app.use(`${apiPrefix}/quick-replies`, quickReplyRoutes);
+  app.use(`${apiPrefix}/scheduled-messages`, scheduledMessageRoutes);
+  app.use(`${apiPrefix}/sequences`, sequenceRoutes);
 
   // 404 handler
   app.use((_req: Request, res: Response) => {

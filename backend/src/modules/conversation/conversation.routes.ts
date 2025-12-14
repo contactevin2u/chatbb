@@ -8,6 +8,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 
 import { conversationController } from './conversation.controller';
+import { scheduledMessageController } from '../scheduled-message/scheduled-message.controller';
+import { sequenceController } from '../sequence/sequence.controller';
 import { authMiddleware } from '../auth/auth.middleware';
 import { requirePermission } from '../auth/guards/rbac.guard';
 
@@ -67,6 +69,17 @@ router.get(
   '/stats',
   requirePermission('conversations:view'),
   conversationController.getStats.bind(conversationController)
+);
+
+/**
+ * @route   GET /api/v1/conversations/unreplied
+ * @desc    Get unreplied conversations count (last 72 hours)
+ * @access  Private (conversations:view)
+ */
+router.get(
+  '/unreplied',
+  requirePermission('conversations:view'),
+  conversationController.getUnrepliedCount.bind(conversationController)
 );
 
 /**
@@ -157,6 +170,28 @@ router.get(
   '/:id/messages',
   requirePermission('conversations:view'),
   conversationController.getMessages.bind(conversationController)
+);
+
+/**
+ * @route   GET /api/v1/conversations/:conversationId/scheduled-messages
+ * @desc    List scheduled messages for a conversation
+ * @access  Private (conversations:view)
+ */
+router.get(
+  '/:conversationId/scheduled-messages',
+  requirePermission('conversations:view'),
+  scheduledMessageController.listForConversation.bind(scheduledMessageController)
+);
+
+/**
+ * @route   GET /api/v1/conversations/:conversationId/sequences
+ * @desc    List sequence executions for a conversation
+ * @access  Private (conversations:view)
+ */
+router.get(
+  '/:conversationId/sequences',
+  requirePermission('conversations:view'),
+  sequenceController.getConversationExecutions.bind(sequenceController)
 );
 
 /**

@@ -239,6 +239,31 @@ export async function getConversationStats(): Promise<ConversationStats> {
   return response.data.data;
 }
 
+// Unreplied conversations (72 hours)
+
+export interface UnrepliedConversation {
+  id: string;
+  contactName: string;
+  channelName: string;
+  lastMessageAt: string;
+  waitMinutes: number;
+}
+
+export interface UnrepliedResponse {
+  total: number;
+  urgent: number;
+  warning: number;
+  recent: number;
+  conversations: UnrepliedConversation[];
+}
+
+export async function getUnrepliedConversations(): Promise<UnrepliedResponse> {
+  const response = await apiClient.get<{ success: boolean; data: UnrepliedResponse }>(
+    '/conversations/unreplied'
+  );
+  return response.data.data;
+}
+
 // Messages
 
 export async function getMessages(

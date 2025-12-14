@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow, isToday, isYesterday, format, isSameDay } from 'date-fns';
 import {
@@ -41,6 +41,8 @@ import {
   Plus,
   StickyNote,
   Trash2,
+  PanelLeftClose,
+  PanelLeft,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -68,6 +70,10 @@ import { cn } from '@/lib/utils/cn';
 import { updateContact } from '@/lib/api/contacts';
 import { useWebSocket } from '@/providers/websocket-provider';
 import { useAuthStore } from '@/stores/auth-store';
+import { useUIStore } from '@/stores/ui-store';
+import { useKeyboardShortcuts, KeyboardShortcut } from '@/hooks/use-keyboard-shortcuts';
+import { SlashCommand } from '@/components/slash-command';
+import { QuickReply } from '@/lib/api/quick-replies';
 import {
   listConversations,
   getMessages,
@@ -237,6 +243,7 @@ export default function InboxPage() {
   const queryClient = useQueryClient();
   const { socket, joinConversation, leaveConversation, startTyping, stopTyping } = useWebSocket();
   const { user } = useAuthStore();
+  const { conversationListCollapsed, toggleConversationList } = useUIStore();
 
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -257,6 +264,8 @@ export default function InboxPage() {
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
   const [mediaPreview, setMediaPreview] = useState<{ url: string; type: 'image' | 'video'; filename?: string } | null>(null);
   const [newNoteContent, setNewNoteContent] = useState('');
+  const [slashCommandOpen, setSlashCommandOpen] = useState(false);
+  const [slashSearchTerm, setSlashSearchTerm] = useState('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -265,6 +274,7 @@ export default function InboxPage() {
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const previousConversationRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messageInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch conversations
   const { data: conversationsData, isLoading: isLoadingConversations } = useQuery({
@@ -538,6 +548,98 @@ export default function InboxPage() {
     markConversationAsRead(conversationId).catch(() => {});
   }, [joinConversation, leaveConversation]);
 
+  // Keyboard shortcuts for inbox
+  const inboxShortcuts = useMemo<KeyboardShortcut[]>(() => {
+    const conversations = conversationsData?.conversations || [];
+    const currentIndex = conversations.findIndex((c) => c.id === selectedConversationId);
+
+    return [
+      {
+        key: 'j',
+        description: 'Next conversation',
+        category: 'navigation',
+        action: () => {
+          if (conversations.length === 0) return;
+          const nextIndex = currentIndex < conversations.length - 1 ? currentIndex + 1 : 0;
+          const nextConversation = conversations[nextIndex];
+          if (nextConversation) {
+            handleSelectConversation(nextConversation.id);
+          }
+        },
+      },
+      {
+        key: 'k',
+        description: 'Previous conversation',
+        category: 'navigation',
+        action: () => {
+          if (conversations.length === 0) return;
+          const prevIndex = currentIndex > 0 ? currentIndex - 1 : conversations.length - 1;
+          const prevConversation = conversations[prevIndex];
+          if (prevConversation) {
+            handleSelectConversation(prevConversation.id);
+          }
+        },
+      },
+      {
+        key: 'r',
+        description: 'Reply (focus message input)',
+        category: 'actions',
+        action: () => {
+          if (selectedConversationId && messageInputRef.current) {
+            messageInputRef.current.focus();
+          }
+        },
+      },
+      {
+        key: 'e',
+        description: 'Close conversation',
+        category: 'actions',
+        action: () => {
+          if (selectedConversation && selectedConversation.status !== 'CLOSED') {
+            closeConversationMutation.mutate(selectedConversation.id);
+          }
+        },
+      },
+      {
+        key: 'p',
+        description: 'Pin/Unpin conversation',
+        category: 'actions',
+        action: () => {
+          if (selectedConversation) {
+            if (selectedConversation.isPinned) {
+              unpinConversationMutation.mutate(selectedConversation.id);
+            } else {
+              pinConversationMutation.mutate(selectedConversation.id);
+            }
+          }
+        },
+      },
+      {
+        key: 'Escape',
+        description: 'Clear selection / Close panel',
+        category: 'actions',
+        action: () => {
+          if (showContactPanel) {
+            setShowContactPanel(false);
+          } else if (selectedConversationId) {
+            setSelectedConversationId(null);
+          }
+        },
+      },
+    ];
+  }, [
+    conversationsData?.conversations,
+    selectedConversationId,
+    selectedConversation,
+    closeConversationMutation,
+    pinConversationMutation,
+    unpinConversationMutation,
+    showContactPanel,
+    handleSelectConversation,
+  ]);
+
+  useKeyboardShortcuts({ shortcuts: inboxShortcuts });
+
   // Handle file selection
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -631,6 +733,48 @@ export default function InboxPage() {
       stopTyping(selectedConversationId);
     }, 2000);
   }, [selectedConversationId, startTyping, stopTyping]);
+
+  // Handle slash command selection
+  const handleSlashCommandSelect = useCallback((quickReply: QuickReply) => {
+    // Replace the slash command with the quick reply text
+    const slashStart = messageText.lastIndexOf('/');
+    const newText = messageText.substring(0, slashStart) + quickReply.content.text;
+    setMessageText(newText);
+    setSlashCommandOpen(false);
+    setSlashSearchTerm('');
+
+    // Focus the input
+    messageInputRef.current?.focus();
+  }, [messageText]);
+
+  // Handle message input change with slash command detection
+  const handleMessageInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setMessageText(value);
+    handleTyping();
+
+    // Check for slash command
+    const lastSlashIndex = value.lastIndexOf('/');
+    if (lastSlashIndex !== -1) {
+      // Check if slash is at start or after a space (not in the middle of a word)
+      const charBeforeSlash = value[lastSlashIndex - 1];
+      if (lastSlashIndex === 0 || charBeforeSlash === ' ' || charBeforeSlash === '\n') {
+        const searchTerm = value.substring(lastSlashIndex + 1);
+        // Only show popup if there's no space after the slash (still typing the command)
+        if (!searchTerm.includes(' ')) {
+          setSlashSearchTerm(searchTerm);
+          setSlashCommandOpen(true);
+          return;
+        }
+      }
+    }
+
+    // Close popup if no valid slash command
+    if (slashCommandOpen) {
+      setSlashCommandOpen(false);
+      setSlashSearchTerm('');
+    }
+  }, [handleTyping, slashCommandOpen]);
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
@@ -729,7 +873,12 @@ export default function InboxPage() {
   return (
     <div className="flex h-full">
       {/* Conversation List Panel */}
-      <div className="w-80 border-r flex flex-col">
+      <div
+        className={cn(
+          'border-r flex flex-col transition-all duration-200 ease-in-out',
+          conversationListCollapsed ? 'w-0 overflow-hidden' : 'w-80'
+        )}
+      >
         {/* Search and Filter */}
         <div className="p-4 border-b space-y-3">
           <div className="relative">
@@ -877,6 +1026,20 @@ export default function InboxPage() {
             {/* Chat Header */}
             <div className="h-16 border-b flex items-center justify-between px-4">
               <div className="flex items-center gap-3">
+                {/* Toggle conversation list */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={toggleConversationList}
+                  className="flex-shrink-0"
+                  title={conversationListCollapsed ? 'Show conversations' : 'Hide conversations'}
+                >
+                  {conversationListCollapsed ? (
+                    <PanelLeft className="h-5 w-5" />
+                  ) : (
+                    <PanelLeftClose className="h-5 w-5" />
+                  )}
+                </Button>
                 <div className="relative">
                   <Avatar>
                     <AvatarImage src={selectedConversation.contact.avatarUrl || undefined} />
@@ -1447,21 +1610,36 @@ export default function InboxPage() {
                   >
                     <Paperclip className="h-5 w-5" />
                   </Button>
-                  <Input
-                    placeholder={selectedMedia ? "Add a caption..." : "Type a message..."}
-                    value={messageText}
-                    onChange={(e) => {
-                      setMessageText(e.target.value);
-                      handleTyping();
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendMessage();
-                      }
-                    }}
-                    disabled={selectedConversation.status === 'CLOSED'}
-                  />
+                  <div className="relative flex-1">
+                    {/* Slash Command Popup */}
+                    <SlashCommand
+                      isOpen={slashCommandOpen}
+                      searchTerm={slashSearchTerm}
+                      position={{ top: 0, left: 0 }}
+                      onSelect={handleSlashCommandSelect}
+                      onClose={() => {
+                        setSlashCommandOpen(false);
+                        setSlashSearchTerm('');
+                      }}
+                    />
+                    <Input
+                      ref={messageInputRef}
+                      placeholder={selectedMedia ? "Add a caption..." : "Type a message... (/ for quick replies)"}
+                      value={messageText}
+                      onChange={handleMessageInputChange}
+                      onKeyDown={(e) => {
+                        // Let slash command popup handle Enter/Tab
+                        if (slashCommandOpen && (e.key === 'Enter' || e.key === 'Tab' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+                          return;
+                        }
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSendMessage();
+                        }
+                      }}
+                      disabled={selectedConversation.status === 'CLOSED'}
+                    />
+                  </div>
                   <Button variant="ghost" size="icon">
                     <Smile className="h-5 w-5" />
                   </Button>
@@ -1505,11 +1683,37 @@ export default function InboxPage() {
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground">
-            <div className="text-center">
-              <MessageSquare className="h-16 w-16 mx-auto mb-4 opacity-50" />
-              <p className="text-lg font-medium">Select a conversation</p>
-              <p className="text-sm">Choose a conversation from the list to start messaging</p>
+          <div className="flex-1 flex flex-col">
+            {/* Empty state header with toggle */}
+            {conversationListCollapsed && (
+              <div className="h-16 border-b flex items-center px-4">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={toggleConversationList}
+                  title="Show conversations"
+                >
+                  <PanelLeft className="h-5 w-5" />
+                </Button>
+              </div>
+            )}
+            <div className="flex-1 flex items-center justify-center text-muted-foreground">
+              <div className="text-center">
+                <MessageSquare className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                <p className="text-lg font-medium">Select a conversation</p>
+                <p className="text-sm">Choose a conversation from the list to start messaging</p>
+                {conversationListCollapsed && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={toggleConversationList}
+                    className="mt-4"
+                  >
+                    <PanelLeft className="h-4 w-4 mr-2" />
+                    Show conversations
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         )}

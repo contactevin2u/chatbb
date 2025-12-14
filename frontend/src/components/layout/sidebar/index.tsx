@@ -13,12 +13,21 @@ import {
   Settings,
   UsersRound,
   ChevronLeft,
+  ChevronRight,
+  PanelLeftClose,
+  PanelLeft,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { Button } from '@/components/ui/button';
 import { useUIStore } from '@/stores/ui-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { hasPermission, type Permission } from '@/config/permissions';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface NavItem {
   title: string;
@@ -41,7 +50,7 @@ const navItems: NavItem[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { sidebarCollapsed, toggleSidebar } = useUIStore();
+  const { sidebarCollapsed, toggleSidebar, mobileMenuOpen, setMobileMenuOpen } = useUIStore();
   const { user } = useAuthStore();
 
   const filteredNavItems = navItems.filter((item) => {
@@ -51,51 +60,67 @@ export function Sidebar() {
   });
 
   return (
-    <>
+    <TooltipProvider delayDuration={0}>
       {/* Backdrop for mobile */}
       <div
         className={cn(
-          'fixed inset-0 z-40 bg-black/50 lg:hidden transition-opacity',
-          sidebarCollapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'
+          'fixed inset-0 z-40 bg-black/50 lg:hidden transition-opacity duration-200',
+          mobileMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         )}
-        onClick={toggleSidebar}
+        onClick={() => setMobileMenuOpen(false)}
       />
 
       {/* Sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 w-64 bg-card border-r transition-transform lg:translate-x-0',
-          sidebarCollapsed ? '-translate-x-full' : 'translate-x-0'
+          'fixed inset-y-0 left-0 z-50 bg-card border-r flex flex-col transition-all duration-200 ease-in-out',
+          // Desktop: collapsed = icon-only (w-16), expanded = full (w-64)
+          sidebarCollapsed ? 'lg:w-16' : 'lg:w-64',
+          // Mobile: controlled by mobileMenuOpen
+          mobileMenuOpen ? 'translate-x-0 w-64' : '-translate-x-full lg:translate-x-0',
         )}
       >
         {/* Logo */}
-        <div className="h-16 flex items-center justify-between px-4 border-b">
+        <div className={cn(
+          'h-16 flex items-center border-b transition-all duration-200',
+          sidebarCollapsed ? 'lg:justify-center lg:px-2 px-4' : 'justify-between px-4'
+        )}>
           <Link href="/dashboard" className="flex items-center gap-2">
-            <MessageSquare className="h-7 w-7 text-primary" />
-            <span className="text-xl font-bold">ChatBaby</span>
+            <MessageSquare className="h-7 w-7 text-primary flex-shrink-0" />
+            <span className={cn(
+              'text-xl font-bold transition-all duration-200',
+              sidebarCollapsed ? 'lg:hidden' : ''
+            )}>
+              ChatBaby
+            </span>
           </Link>
+          {/* Mobile close button */}
           <Button
             variant="ghost"
             size="icon"
             className="lg:hidden"
-            onClick={toggleSidebar}
+            onClick={() => setMobileMenuOpen(false)}
           >
             <ChevronLeft className="h-5 w-5" />
           </Button>
         </div>
 
         {/* Navigation */}
-        <nav className="p-4 space-y-1">
+        <nav className={cn(
+          'flex-1 py-4 space-y-1 overflow-y-auto',
+          sidebarCollapsed ? 'lg:px-2 px-4' : 'px-4'
+        )}>
           {filteredNavItems.map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
             const Icon = item.icon;
 
-            return (
+            const linkContent = (
               <Link
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                  'flex items-center gap-3 rounded-lg text-sm font-medium transition-colors',
+                  sidebarCollapsed ? 'lg:justify-center lg:px-0 lg:py-2.5 px-3 py-2.5' : 'px-3 py-2.5',
                   isActive
                     ? 'bg-primary text-primary-foreground'
                     : 'text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -103,17 +128,64 @@ export function Sidebar() {
                 onClick={() => {
                   // Close sidebar on mobile after navigation
                   if (window.innerWidth < 1024) {
-                    toggleSidebar();
+                    setMobileMenuOpen(false);
                   }
                 }}
               >
-                <Icon className="h-5 w-5" />
-                {item.title}
+                <Icon className={cn('h-5 w-5 flex-shrink-0', sidebarCollapsed && 'lg:h-5 lg:w-5')} />
+                <span className={cn(
+                  'transition-all duration-200',
+                  sidebarCollapsed ? 'lg:hidden' : ''
+                )}>
+                  {item.title}
+                </span>
               </Link>
             );
+
+            // Show tooltip when collapsed on desktop
+            if (sidebarCollapsed) {
+              return (
+                <Tooltip key={item.href}>
+                  <TooltipTrigger asChild>
+                    {linkContent}
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="hidden lg:block">
+                    {item.title}
+                  </TooltipContent>
+                </Tooltip>
+              );
+            }
+
+            return linkContent;
           })}
         </nav>
+
+        {/* Collapse Toggle (Desktop only) */}
+        <div className={cn(
+          'hidden lg:flex border-t p-2',
+          sidebarCollapsed ? 'justify-center' : 'justify-end'
+        )}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleSidebar}
+                className="h-8 w-8"
+              >
+                {sidebarCollapsed ? (
+                  <PanelLeft className="h-4 w-4" />
+                ) : (
+                  <PanelLeftClose className="h-4 w-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              {sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} <kbd className="ml-2 text-xs opacity-60">[</kbd>
+            </TooltipContent>
+          </Tooltip>
+        </div>
       </aside>
-    </>
+    </TooltipProvider>
   );
 }

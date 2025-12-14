@@ -1,0 +1,371 @@
+'use client';
+
+import { memo, useState } from 'react';
+import { format } from 'date-fns';
+import {
+  Check,
+  CheckCheck,
+  Clock,
+  AlertCircle,
+  Reply,
+  Heart,
+  ThumbsUp,
+  Download,
+  Play,
+  Pause,
+  FileText,
+  FileSpreadsheet,
+  FileImage,
+  File,
+} from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils/cn';
+
+export interface MessageReaction {
+  emoji: string;
+  count: number;
+  userIds: string[];
+}
+
+export interface MessageContent {
+  text?: string;
+  caption?: string;
+  url?: string;
+  filename?: string;
+  mimetype?: string;
+  latitude?: number;
+  longitude?: number;
+  vcard?: string;
+}
+
+export interface QuotedMessage {
+  id: string;
+  content: MessageContent;
+  type: string;
+  direction: string;
+}
+
+export interface MessageData {
+  id: string;
+  externalId: string;
+  type: string;
+  direction: 'INBOUND' | 'OUTBOUND';
+  status: string;
+  content: MessageContent;
+  quotedMessage?: QuotedMessage | null;
+  reactions: MessageReaction[];
+  sentByUser?: {
+    firstName: string;
+    lastName: string;
+  } | null;
+  createdAt: string;
+}
+
+interface MessageBubbleProps {
+  message: MessageData;
+  isGroup?: boolean;
+  senderName?: string;
+  onReply?: (message: MessageData) => void;
+  onReaction?: (messageId: string, emoji: string) => void;
+  playingAudioId?: string | null;
+  onAudioPlay?: (id: string) => void;
+  onAudioPause?: () => void;
+  onDownload?: (url: string, filename: string) => void;
+  currentUserId?: string;
+}
+
+function getStatusIcon(status: string) {
+  switch (status) {
+    case 'PENDING':
+      return <Clock className="h-3 w-3 text-muted-foreground" />;
+    case 'SENT':
+      return <Check className="h-3 w-3 text-muted-foreground" />;
+    case 'DELIVERED':
+      return <CheckCheck className="h-3 w-3 text-muted-foreground" />;
+    case 'READ':
+      return <CheckCheck className="h-3 w-3 text-blue-500" />;
+    case 'FAILED':
+      return <AlertCircle className="h-3 w-3 text-destructive" />;
+    default:
+      return null;
+  }
+}
+
+function getFileIcon(mimetype?: string) {
+  if (!mimetype) return <File className="h-8 w-8" />;
+
+  if (mimetype.includes('pdf')) return <FileText className="h-8 w-8 text-red-500" />;
+  if (mimetype.includes('spreadsheet') || mimetype.includes('excel'))
+    return <FileSpreadsheet className="h-8 w-8 text-green-500" />;
+  if (mimetype.includes('image')) return <FileImage className="h-8 w-8 text-blue-500" />;
+  return <File className="h-8 w-8 text-muted-foreground" />;
+}
+
+export const MessageBubble = memo(function MessageBubble({
+  message,
+  isGroup,
+  senderName,
+  onReply,
+  onReaction,
+  playingAudioId,
+  onAudioPlay,
+  onAudioPause,
+  onDownload,
+  currentUserId,
+}: MessageBubbleProps) {
+  const isOutbound = message.direction === 'OUTBOUND';
+  const [showActions, setShowActions] = useState(false);
+
+  const renderContent = () => {
+    const { type, content } = message;
+
+    switch (type) {
+      case 'TEXT':
+        return (
+          <p className="whitespace-pre-wrap break-words">{content.text}</p>
+        );
+
+      case 'IMAGE':
+        return (
+          <div className="space-y-2">
+            {content.url && (
+              <img
+                src={content.url}
+                alt={content.filename || 'Image'}
+                className="max-w-[300px] max-h-[300px] rounded-lg object-cover cursor-pointer"
+              />
+            )}
+            {content.caption && (
+              <p className="whitespace-pre-wrap break-words text-sm">{content.caption}</p>
+            )}
+          </div>
+        );
+
+      case 'VIDEO':
+        return (
+          <div className="space-y-2">
+            {content.url && (
+              <video
+                src={content.url}
+                controls
+                className="max-w-[300px] max-h-[300px] rounded-lg"
+              />
+            )}
+            {content.caption && (
+              <p className="whitespace-pre-wrap break-words text-sm">{content.caption}</p>
+            )}
+          </div>
+        );
+
+      case 'AUDIO':
+        return (
+          <div className="flex items-center gap-3 min-w-[200px]">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 rounded-full"
+              onClick={() => {
+                if (playingAudioId === message.id) {
+                  onAudioPause?.();
+                } else {
+                  onAudioPlay?.(message.id);
+                }
+              }}
+            >
+              {playingAudioId === message.id ? (
+                <Pause className="h-5 w-5" />
+              ) : (
+                <Play className="h-5 w-5" />
+              )}
+            </Button>
+            <div className="flex-1 h-1 bg-muted rounded-full">
+              <div className="h-full w-0 bg-primary rounded-full" />
+            </div>
+            {content.url && (
+              <audio id={`audio-${message.id}`} src={content.url} className="hidden" />
+            )}
+          </div>
+        );
+
+      case 'DOCUMENT':
+        return (
+          <div
+            className="flex items-center gap-3 p-2 bg-muted/50 rounded-lg cursor-pointer hover:bg-muted transition-colors"
+            onClick={() => content.url && onDownload?.(content.url, content.filename || 'document')}
+          >
+            {getFileIcon(content.mimetype)}
+            <div className="flex-1 min-w-0">
+              <p className="font-medium truncate text-sm">{content.filename || 'Document'}</p>
+              <p className="text-xs text-muted-foreground">
+                {content.mimetype?.split('/')[1]?.toUpperCase() || 'FILE'}
+              </p>
+            </div>
+            <Download className="h-4 w-4 text-muted-foreground" />
+          </div>
+        );
+
+      case 'STICKER':
+        return content.url ? (
+          <img
+            src={content.url}
+            alt="Sticker"
+            className="w-32 h-32 object-contain"
+          />
+        ) : (
+          <p className="text-muted-foreground">🏷️ Sticker</p>
+        );
+
+      case 'LOCATION':
+        return (
+          <div className="space-y-2">
+            <div className="w-[200px] h-[120px] bg-muted rounded-lg flex items-center justify-center">
+              <span className="text-4xl">📍</span>
+            </div>
+            {content.latitude && content.longitude && (
+              <a
+                href={`https://maps.google.com/?q=${content.latitude},${content.longitude}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-primary hover:underline"
+              >
+                Open in Maps
+              </a>
+            )}
+          </div>
+        );
+
+      default:
+        return (
+          <p className="text-muted-foreground italic">Unsupported message type</p>
+        );
+    }
+  };
+
+  return (
+    <div
+      className={cn(
+        'flex gap-2 max-w-[85%] group',
+        isOutbound ? 'ml-auto flex-row-reverse' : ''
+      )}
+      onMouseEnter={() => setShowActions(true)}
+      onMouseLeave={() => setShowActions(false)}
+    >
+      {/* Avatar for inbound messages */}
+      {!isOutbound && isGroup && (
+        <Avatar className="h-8 w-8 flex-shrink-0">
+          <AvatarFallback className="text-xs">
+            {senderName?.slice(0, 2).toUpperCase() || '??'}
+          </AvatarFallback>
+        </Avatar>
+      )}
+
+      <div className="flex flex-col gap-1">
+        {/* Sender name for group inbound */}
+        {!isOutbound && isGroup && senderName && (
+          <span className="text-xs font-medium text-muted-foreground ml-1">
+            {senderName}
+          </span>
+        )}
+
+        {/* Quoted message */}
+        {message.quotedMessage && (
+          <div
+            className={cn(
+              'text-xs p-2 rounded border-l-2 mb-1 max-w-[250px]',
+              isOutbound
+                ? 'bg-primary/10 border-primary/50'
+                : 'bg-muted border-muted-foreground/50'
+            )}
+          >
+            <p className="truncate">
+              {message.quotedMessage.content.text ||
+                `[${message.quotedMessage.type}]`}
+            </p>
+          </div>
+        )}
+
+        {/* Message bubble */}
+        <div
+          className={cn(
+            'rounded-2xl px-4 py-2 relative',
+            isOutbound
+              ? 'bg-primary text-primary-foreground rounded-br-md'
+              : 'bg-muted rounded-bl-md'
+          )}
+        >
+          {renderContent()}
+
+          {/* Time and status */}
+          <div
+            className={cn(
+              'flex items-center gap-1 mt-1',
+              isOutbound ? 'justify-end' : 'justify-start'
+            )}
+          >
+            <span className="text-[10px] opacity-70">
+              {format(new Date(message.createdAt), 'HH:mm')}
+            </span>
+            {isOutbound && getStatusIcon(message.status)}
+          </div>
+        </div>
+
+        {/* Reactions */}
+        {message.reactions.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1">
+            {message.reactions.map((reaction) => (
+              <button
+                key={reaction.emoji}
+                className={cn(
+                  'flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border',
+                  reaction.userIds.includes(currentUserId || '')
+                    ? 'bg-primary/10 border-primary/50'
+                    : 'bg-muted border-transparent'
+                )}
+                onClick={() => onReaction?.(message.externalId, reaction.emoji)}
+              >
+                <span>{reaction.emoji}</span>
+                <span>{reaction.count}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Action buttons */}
+      {showActions && (
+        <div
+          className={cn(
+            'flex items-center gap-1 self-center opacity-0 group-hover:opacity-100 transition-opacity',
+            isOutbound ? 'flex-row-reverse' : ''
+          )}
+        >
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => onReply?.(message)}
+          >
+            <Reply className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => onReaction?.(message.externalId, '❤️')}
+          >
+            <Heart className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => onReaction?.(message.externalId, '👍')}
+          >
+            <ThumbsUp className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+});

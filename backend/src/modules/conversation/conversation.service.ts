@@ -465,6 +465,99 @@ export class ConversationService {
     };
   }
 
+  /**
+   * Get unreplied conversations count (last 72 hours)
+   * Returns conversations where the last message is inbound and waiting for reply
+   */
+  async getUnrepliedCount(organizationId: string) {
+    const seventyTwoHoursAgo = new Date(Date.now() - 72 * 60 * 60 * 1000);
+
+    // Find conversations where:
+    // 1. Status is OPEN or PENDING
+    // 2. Last message is within 72 hours
+    const unrepliedConversations = await prisma.conversation.findMany({
+      where: {
+        organizationId,
+        status: { in: [ConversationStatus.OPEN, ConversationStatus.PENDING] },
+        lastMessageAt: { gte: seventyTwoHoursAgo },
+      },
+      include: {
+        contact: {
+          select: {
+            id: true,
+            identifier: true,
+            displayName: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+        messages: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: {
+            id: true,
+            direction: true,
+            createdAt: true,
+            type: true,
+            content: true,
+          },
+        },
+        channel: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: { lastMessageAt: 'asc' }, // Oldest first (longest waiting)
+    });
+
+    // Map to include lastMessage and filter to only those where last message is INBOUND
+    const conversationsWithLastMessage = unrepliedConversations.map((c) => ({
+      ...c,
+      lastMessage: c.messages[0] || null,
+    }));
+
+    const waitingConversations = conversationsWithLastMessage.filter(
+      (c) => c.lastMessage?.direction === 'INBOUND'
+    );
+
+    // Categorize by wait time
+    const now = Date.now();
+    const oneHourAgo = now - 60 * 60 * 1000;
+    const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
+
+    const urgent = waitingConversations.filter(
+      (c) => c.lastMessage && new Date(c.lastMessage.createdAt).getTime() < twentyFourHoursAgo
+    );
+    const warning = waitingConversations.filter(
+      (c) =>
+        c.lastMessage &&
+        new Date(c.lastMessage.createdAt).getTime() >= twentyFourHoursAgo &&
+        new Date(c.lastMessage.createdAt).getTime() < oneHourAgo
+    );
+    const recent = waitingConversations.filter(
+      (c) => c.lastMessage && new Date(c.lastMessage.createdAt).getTime() >= oneHourAgo
+    );
+
+    return {
+      total: waitingConversations.length,
+      urgent: urgent.length,    // > 24 hours
+      warning: warning.length,  // 1-24 hours
+      recent: recent.length,    // < 1 hour
+      conversations: waitingConversations.slice(0, 10).map((c) => ({
+        id: c.id,
+        contactName:
+          c.contact.displayName ||
+          (c.contact.firstName ? `${c.contact.firstName} ${c.contact.lastName || ''}`.trim() : null) ||
+          c.contact.identifier,
+        channelName: c.channel.name,
+        lastMessageAt: c.lastMessageAt,
+        waitMinutes: c.lastMessage ? Math.floor((now - new Date(c.lastMessage.createdAt).getTime()) / (1000 * 60)) : 0,
+      })),
+    };
+  }
+
   // ==================== PIN FUNCTIONALITY ====================
 
   /**

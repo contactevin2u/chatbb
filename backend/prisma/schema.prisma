@@ -21,18 +21,20 @@ model Organization {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  users         User[]
-  teams         Team[]
-  channels      Channel[]
-  contacts      Contact[]
-  conversations Conversation[]
-  tags          Tag[]
-  customFields  CustomFieldDefinition[]
-  automations   Automation[]
-  quickReplies  QuickReply[]
-  broadcasts    Broadcast[]
-  webhooks      Webhook[]
-  auditLogs     AuditLog[]
+  users             User[]
+  teams             Team[]
+  channels          Channel[]
+  contacts          Contact[]
+  conversations     Conversation[]
+  tags              Tag[]
+  customFields      CustomFieldDefinition[]
+  automations       Automation[]
+  quickReplies      QuickReply[]
+  scheduledMessages ScheduledMessage[]
+  messageSequences  MessageSequence[]
+  broadcasts        Broadcast[]
+  webhooks          Webhook[]
+  auditLogs         AuditLog[]
 
   @@map("organizations")
 }
@@ -71,6 +73,7 @@ model User {
   messages                Message[]           @relation("SentByUser")
   auditLogs               AuditLog[]
   conversationNotes       ConversationNote[]  @relation("ConversationNotes")
+  scheduledMessages       ScheduledMessage[]
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -353,15 +356,17 @@ model Conversation {
   createdAt        DateTime           @default(now()) @map("created_at")
   updatedAt        DateTime           @updatedAt @map("updated_at")
 
-  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  channel      Channel             @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  contact      Contact             @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  assignedUser User?               @relation("AssignedAgent", fields: [assignedUserId], references: [id])
-  activeAgent  User?               @relation("ActiveAgent", fields: [activeAgentId], references: [id])
-  messages     Message[]
-  agents       ConversationAgent[]
-  tags         ConversationTag[]
-  notes        ConversationNote[]
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channel            Channel             @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  contact            Contact             @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  assignedUser       User?               @relation("AssignedAgent", fields: [assignedUserId], references: [id])
+  activeAgent        User?               @relation("ActiveAgent", fields: [activeAgentId], references: [id])
+  messages           Message[]
+  agents             ConversationAgent[]
+  tags               ConversationTag[]
+  notes              ConversationNote[]
+  scheduledMessages  ScheduledMessage[]
+  sequenceExecutions SequenceExecution[]
 
   @@unique([channelId, contactId])
   @@index([organizationId])
@@ -568,6 +573,114 @@ model QuickReply {
   @@unique([organizationId, shortcut])
   @@index([organizationId])
   @@map("quick_replies")
+}
+
+// ==================== SCHEDULED MESSAGES ====================
+
+enum ScheduledMessageStatus {
+  PENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+model ScheduledMessage {
+  id             String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String                 @map("organization_id") @db.Uuid
+  conversationId String                 @map("conversation_id") @db.Uuid
+  createdById    String                 @map("created_by_id") @db.Uuid
+  content        Json // { text?: string, mediaType?: string, mediaUrl?: string }
+  scheduledAt    DateTime               @map("scheduled_at")
+  sentAt         DateTime?              @map("sent_at")
+  status         ScheduledMessageStatus @default(PENDING)
+  errorMessage   String?                @map("error_message")
+  createdAt      DateTime               @default(now()) @map("created_at")
+  updatedAt      DateTime               @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([conversationId])
+  @@index([scheduledAt])
+  @@index([status])
+  @@map("scheduled_messages")
+}
+
+// ==================== MESSAGE SEQUENCES ====================
+
+enum MessageSequenceStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum SequenceStepType {
+  TEXT
+  IMAGE
+  VIDEO
+  AUDIO
+  DOCUMENT
+  DELAY
+}
+
+model MessageSequence {
+  id             String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String                @map("organization_id") @db.Uuid
+  name           String
+  description    String?
+  status         MessageSequenceStatus @default(DRAFT)
+  triggerType    String                @default("manual") @map("trigger_type") // manual, keyword, tag_added, etc.
+  triggerConfig  Json?                 @map("trigger_config") // { keyword: "hello", tagId: "..." }
+  usageCount     Int                   @default(0) @map("usage_count")
+  createdAt      DateTime              @default(now()) @map("created_at")
+  updatedAt      DateTime              @updatedAt @map("updated_at")
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  steps        MessageSequenceStep[]
+  executions   SequenceExecution[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@map("message_sequences")
+}
+
+model MessageSequenceStep {
+  id         String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sequenceId String           @map("sequence_id") @db.Uuid
+  order      Int // Step order in sequence
+  type       SequenceStepType
+  content    Json // { text?: string, mediaUrl?: string, mediaFilename?: string, delayMinutes?: number }
+  createdAt  DateTime         @default(now()) @map("created_at")
+  updatedAt  DateTime         @updatedAt @map("updated_at")
+
+  sequence MessageSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+
+  @@index([sequenceId])
+  @@map("message_sequence_steps")
+}
+
+model SequenceExecution {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sequenceId     String    @map("sequence_id") @db.Uuid
+  conversationId String    @map("conversation_id") @db.Uuid
+  currentStep    Int       @default(0) @map("current_step")
+  status         String    @default("running") // running, completed, stopped, failed
+  startedAt      DateTime  @default(now()) @map("started_at")
+  completedAt    DateTime? @map("completed_at")
+  nextStepAt     DateTime? @map("next_step_at") // When to execute next step (for delays)
+  errorMessage   String?   @map("error_message")
+
+  sequence     MessageSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  conversation Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([sequenceId])
+  @@index([conversationId])
+  @@index([status])
+  @@index([nextStepAt])
+  @@map("sequence_executions")
 }
 
 // ==================== BROADCAST ====================

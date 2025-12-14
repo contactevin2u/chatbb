@@ -237,6 +237,25 @@ export class ConversationController {
   }
 
   /**
+   * Get unreplied conversations count (last 72 hours)
+   * GET /api/v1/conversations/unreplied
+   */
+  async getUnrepliedCount(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId } = req.user!;
+
+      const unreplied = await conversationService.getUnrepliedCount(organizationId);
+
+      res.json({
+        success: true,
+        data: unreplied,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Set active agent for a conversation (collision prevention)
    * POST /api/v1/conversations/:id/active
    */
