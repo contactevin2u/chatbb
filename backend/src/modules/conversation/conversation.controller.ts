@@ -242,13 +242,13 @@ export class ConversationController {
    */
   async setActiveAgent(req: Request, res: Response, next: NextFunction) {
     try {
-      const { id: userId, organizationId } = req.user!;
+      const { sub: userId, organizationId } = req.user!;
       const { id: conversationId } = req.params;
 
       const result = await conversationService.setActiveAgent(
         conversationId,
-        userId as string,
-        organizationId as string
+        userId,
+        organizationId
       );
 
       res.json({
@@ -266,10 +266,10 @@ export class ConversationController {
    */
   async clearActiveAgent(req: Request, res: Response, next: NextFunction) {
     try {
-      const { id: userId } = req.user!;
+      const { sub: userId } = req.user!;
       const { id: conversationId } = req.params;
 
-      await conversationService.clearActiveAgent(conversationId, userId as string);
+      await conversationService.clearActiveAgent(conversationId, userId);
 
       res.json({
         success: true,
