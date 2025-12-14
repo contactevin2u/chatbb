@@ -257,7 +257,21 @@ export class SequenceController {
         success: true,
         data: execution,
       });
-    } catch (error) {
+    } catch (error: any) {
+      // Handle known error cases with proper HTTP status codes
+      const message = error?.message || '';
+      if (message.includes('not found') || message.includes('not active')) {
+        return res.status(404).json({
+          success: false,
+          error: message,
+        });
+      }
+      if (message.includes('already running')) {
+        return res.status(409).json({
+          success: false,
+          error: message,
+        });
+      }
       next(error);
     }
   }
