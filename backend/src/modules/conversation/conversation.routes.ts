@@ -27,6 +27,18 @@ const assignConversationSchema = z.object({
   userId: z.string().uuid().nullable().optional(),
 });
 
+const addTagSchema = z.object({
+  tagId: z.string().uuid(),
+});
+
+const addNoteSchema = z.object({
+  content: z.string().min(1).max(5000),
+});
+
+const updateNoteSchema = z.object({
+  content: z.string().min(1).max(5000),
+});
+
 // Validation middleware
 const validate = (schema: z.ZodSchema) => {
   return (req: any, res: any, next: any) => {
@@ -167,6 +179,127 @@ router.delete(
   '/:id/active',
   requirePermission('conversations:view'),
   conversationController.clearActiveAgent.bind(conversationController)
+);
+
+// ==================== PIN ROUTES ====================
+
+/**
+ * @route   PUT /api/v1/conversations/:id/pin
+ * @desc    Pin conversation
+ * @access  Private (conversations:edit)
+ */
+router.put(
+  '/:id/pin',
+  requirePermission('conversations:edit'),
+  conversationController.pinConversation.bind(conversationController)
+);
+
+/**
+ * @route   DELETE /api/v1/conversations/:id/pin
+ * @desc    Unpin conversation
+ * @access  Private (conversations:edit)
+ */
+router.delete(
+  '/:id/pin',
+  requirePermission('conversations:edit'),
+  conversationController.unpinConversation.bind(conversationController)
+);
+
+// ==================== TAG ROUTES ====================
+
+/**
+ * @route   GET /api/v1/conversations/:id/tags
+ * @desc    Get tags for conversation
+ * @access  Private (conversations:view)
+ */
+router.get(
+  '/:id/tags',
+  requirePermission('conversations:view'),
+  conversationController.getTags.bind(conversationController)
+);
+
+/**
+ * @route   POST /api/v1/conversations/:id/tags
+ * @desc    Add tag to conversation
+ * @access  Private (conversations:edit)
+ */
+router.post(
+  '/:id/tags',
+  requirePermission('conversations:edit'),
+  validate(addTagSchema),
+  conversationController.addTag.bind(conversationController)
+);
+
+/**
+ * @route   DELETE /api/v1/conversations/:id/tags/:tagId
+ * @desc    Remove tag from conversation
+ * @access  Private (conversations:edit)
+ */
+router.delete(
+  '/:id/tags/:tagId',
+  requirePermission('conversations:edit'),
+  conversationController.removeTag.bind(conversationController)
+);
+
+// ==================== NOTE ROUTES ====================
+
+/**
+ * @route   GET /api/v1/conversations/:id/notes
+ * @desc    Get notes for conversation
+ * @access  Private (conversations:view)
+ */
+router.get(
+  '/:id/notes',
+  requirePermission('conversations:view'),
+  conversationController.getNotes.bind(conversationController)
+);
+
+/**
+ * @route   POST /api/v1/conversations/:id/notes
+ * @desc    Add note to conversation
+ * @access  Private (conversations:edit)
+ */
+router.post(
+  '/:id/notes',
+  requirePermission('conversations:edit'),
+  validate(addNoteSchema),
+  conversationController.addNote.bind(conversationController)
+);
+
+/**
+ * @route   PATCH /api/v1/notes/:noteId
+ * @desc    Update note
+ * @access  Private (conversations:edit)
+ */
+router.patch(
+  '/notes/:noteId',
+  requirePermission('conversations:edit'),
+  validate(updateNoteSchema),
+  conversationController.updateNote.bind(conversationController)
+);
+
+/**
+ * @route   DELETE /api/v1/notes/:noteId
+ * @desc    Delete note
+ * @access  Private (conversations:edit)
+ */
+router.delete(
+  '/notes/:noteId',
+  requirePermission('conversations:edit'),
+  conversationController.deleteNote.bind(conversationController)
+);
+
+// ==================== GROUP ROUTES ====================
+
+/**
+ * @route   GET /api/v1/conversations/:id/participants
+ * @desc    Get group participants
+ * @access  Private (conversations:view)
+ */
+router.get(
+  '/:id/participants',
+  requirePermission('conversations:view'),
+  conversationController.getGroupParticipants.bind(conversationController)
 );
 
 export const conversationRoutes = router;

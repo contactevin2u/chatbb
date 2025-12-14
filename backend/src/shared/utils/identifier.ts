@@ -237,6 +237,7 @@ export async function getOrCreateContact(options: {
   channelType: ChannelType;
   identifier: string;
   displayName?: string | null;
+  isGroup?: boolean;
 }): Promise<{
   id: string;
   identifier: string;
@@ -244,7 +245,10 @@ export async function getOrCreateContact(options: {
   avatarUrl: string | null;
   isNew: boolean;
 }> {
-  const { organizationId, channelType, identifier, displayName } = options;
+  const { organizationId, channelType, identifier, displayName, isGroup } = options;
+
+  // Detect if this is a group based on identifier pattern (contains hyphen like 123456789-1234567890)
+  const isGroupContact = isGroup ?? identifier.includes('-');
 
   // Check if contact exists first to determine if it's new
   const existing = await prisma.contact.findUnique({
@@ -255,10 +259,15 @@ export async function getOrCreateContact(options: {
         identifier,
       },
     },
-    select: { id: true },
+    select: { id: true, displayName: true },
   });
 
   const isNew = !existing;
+
+  // For groups, determine if we should update the displayName
+  // Update if: new name is provided, it's not a fallback, and it's different from current
+  const isValidGroupName = displayName && displayName !== 'Group Chat';
+  const shouldUpdateGroupName = isGroupContact && isValidGroupName && existing?.displayName !== displayName;
 
   try {
     const contact = await prisma.contact.upsert({
@@ -276,8 +285,9 @@ export async function getOrCreateContact(options: {
         displayName,
       },
       update: {
-        // Only update displayName if provided and contact doesn't have one
-        ...(displayName ? {} : {}),
+        // For groups: always update to real name (not fallback)
+        // For individuals: only update if they don't have a name
+        ...(shouldUpdateGroupName ? { displayName } : {}),
       },
       select: {
         id: true,
@@ -287,8 +297,8 @@ export async function getOrCreateContact(options: {
       },
     });
 
-    // Update displayName if provided and current is empty
-    if (displayName && !contact.displayName) {
+    // Update displayName for individual contacts if provided and current is empty
+    if (!isGroupContact && displayName && !contact.displayName) {
       const updated = await prisma.contact.update({
         where: { id: contact.id },
         data: { displayName },
@@ -324,6 +334,20 @@ export async function getOrCreateContact(options: {
       });
 
       if (fetched) {
+        // For groups, update the name if we have a real one
+        if (isGroupContact && isValidGroupName && fetched.displayName !== displayName) {
+          const updated = await prisma.contact.update({
+            where: { id: fetched.id },
+            data: { displayName },
+            select: {
+              id: true,
+              identifier: true,
+              displayName: true,
+              avatarUrl: true,
+            },
+          });
+          return { ...updated, isNew: false };
+        }
         return { ...fetched, isNew: false };
       }
     }

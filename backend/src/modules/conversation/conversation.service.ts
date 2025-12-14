@@ -78,14 +78,19 @@ export class ConversationService {
       };
     }
 
-    // Build orderBy
-    const orderBy: Prisma.ConversationOrderByWithRelationInput = {};
+    // Build orderBy - pinned conversations always first
+    const orderBy: Prisma.ConversationOrderByWithRelationInput[] = [
+      { isPinned: 'desc' }, // Pinned first
+      { pinnedAt: 'desc' }, // Most recently pinned first among pinned
+    ];
+
+    // Add user-specified sort
     if (sortBy === 'lastMessageAt') {
-      orderBy.lastMessageAt = sortOrder;
+      orderBy.push({ lastMessageAt: sortOrder });
     } else if (sortBy === 'createdAt') {
-      orderBy.createdAt = sortOrder;
+      orderBy.push({ createdAt: sortOrder });
     } else if (sortBy === 'unreadCount') {
-      orderBy.unreadCount = sortOrder;
+      orderBy.push({ unreadCount: sortOrder });
     }
 
     const [conversations, total] = await Promise.all([
@@ -132,6 +137,18 @@ export class ConversationService {
               createdAt: true,
             },
           },
+          tags: {
+            include: {
+              tag: {
+                select: {
+                  id: true,
+                  name: true,
+                  color: true,
+                },
+              },
+            },
+            orderBy: { createdAt: 'asc' },
+          },
         },
       }),
       prisma.conversation.count({ where }),
@@ -142,6 +159,7 @@ export class ConversationService {
         ...conv,
         lastMessage: conv.messages[0] || null,
         messages: undefined, // Remove messages array from response
+        tags: conv.tags.map((ct) => ct.tag), // Flatten tags
       })),
       total,
       limit,
@@ -444,6 +462,358 @@ export class ConversationService {
       closed,
       unassigned,
       total: open + pending + resolved + closed,
+    };
+  }
+
+  // ==================== PIN FUNCTIONALITY ====================
+
+  /**
+   * Pin a conversation
+   */
+  async pinConversation(conversationId: string, organizationId: string) {
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: conversationId, organizationId },
+    });
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    const updated = await prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        isPinned: true,
+        pinnedAt: new Date(),
+      },
+    });
+
+    socketServer.to(`org:${organizationId}`).emit('conversation:updated', {
+      id: conversationId,
+      isPinned: true,
+      pinnedAt: updated.pinnedAt,
+    });
+
+    return updated;
+  }
+
+  /**
+   * Unpin a conversation
+   */
+  async unpinConversation(conversationId: string, organizationId: string) {
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: conversationId, organizationId },
+    });
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    const updated = await prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        isPinned: false,
+        pinnedAt: null,
+      },
+    });
+
+    socketServer.to(`org:${organizationId}`).emit('conversation:updated', {
+      id: conversationId,
+      isPinned: false,
+      pinnedAt: null,
+    });
+
+    return updated;
+  }
+
+  // ==================== TAGS FUNCTIONALITY ====================
+
+  /**
+   * Add tag to conversation
+   */
+  async addTag(conversationId: string, tagId: string, organizationId: string) {
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: conversationId, organizationId },
+    });
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    const tag = await prisma.tag.findFirst({
+      where: { id: tagId, organizationId },
+    });
+
+    if (!tag) {
+      throw new Error('Tag not found');
+    }
+
+    const conversationTag = await prisma.conversationTag.upsert({
+      where: {
+        conversationId_tagId: { conversationId, tagId },
+      },
+      create: { conversationId, tagId },
+      update: {},
+      include: {
+        tag: true,
+      },
+    });
+
+    socketServer.to(`org:${organizationId}`).emit('conversation:tag:added', {
+      conversationId,
+      tag: conversationTag.tag,
+    });
+
+    return conversationTag;
+  }
+
+  /**
+   * Remove tag from conversation
+   */
+  async removeTag(conversationId: string, tagId: string, organizationId: string) {
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: conversationId, organizationId },
+    });
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    await prisma.conversationTag.delete({
+      where: {
+        conversationId_tagId: { conversationId, tagId },
+      },
+    });
+
+    socketServer.to(`org:${organizationId}`).emit('conversation:tag:removed', {
+      conversationId,
+      tagId,
+    });
+
+    return { success: true };
+  }
+
+  /**
+   * Get tags for a conversation
+   */
+  async getTags(conversationId: string, organizationId: string) {
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: conversationId, organizationId },
+      include: {
+        tags: {
+          include: { tag: true },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    return conversation.tags.map((ct) => ct.tag);
+  }
+
+  // ==================== NOTES FUNCTIONALITY ====================
+
+  /**
+   * Add note to conversation
+   */
+  async addNote(conversationId: string, userId: string, content: string, organizationId: string) {
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: conversationId, organizationId },
+    });
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    const note = await prisma.conversationNote.create({
+      data: {
+        conversationId,
+        userId,
+        content,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatarUrl: true,
+          },
+        },
+      },
+    });
+
+    socketServer.to(`conversation:${conversationId}`).emit('conversation:note:added', note);
+
+    return note;
+  }
+
+  /**
+   * Update note
+   */
+  async updateNote(noteId: string, userId: string, content: string, organizationId: string) {
+    const note = await prisma.conversationNote.findFirst({
+      where: { id: noteId },
+      include: {
+        conversation: {
+          select: { organizationId: true },
+        },
+      },
+    });
+
+    if (!note || note.conversation.organizationId !== organizationId) {
+      throw new Error('Note not found');
+    }
+
+    // Only note author can edit
+    if (note.userId !== userId) {
+      throw new Error('Only the note author can edit');
+    }
+
+    const updated = await prisma.conversationNote.update({
+      where: { id: noteId },
+      data: { content },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatarUrl: true,
+          },
+        },
+      },
+    });
+
+    socketServer.to(`conversation:${note.conversationId}`).emit('conversation:note:updated', updated);
+
+    return updated;
+  }
+
+  /**
+   * Delete note
+   */
+  async deleteNote(noteId: string, userId: string, organizationId: string) {
+    const note = await prisma.conversationNote.findFirst({
+      where: { id: noteId },
+      include: {
+        conversation: {
+          select: { organizationId: true },
+        },
+      },
+    });
+
+    if (!note || note.conversation.organizationId !== organizationId) {
+      throw new Error('Note not found');
+    }
+
+    // Only note author can delete
+    if (note.userId !== userId) {
+      throw new Error('Only the note author can delete');
+    }
+
+    await prisma.conversationNote.delete({
+      where: { id: noteId },
+    });
+
+    socketServer.to(`conversation:${note.conversationId}`).emit('conversation:note:deleted', {
+      noteId,
+      conversationId: note.conversationId,
+    });
+
+    return { success: true };
+  }
+
+  /**
+   * Get notes for a conversation
+   */
+  async getNotes(conversationId: string, organizationId: string) {
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: conversationId, organizationId },
+    });
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    const notes = await prisma.conversationNote.findMany({
+      where: { conversationId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatarUrl: true,
+          },
+        },
+      },
+    });
+
+    return notes;
+  }
+
+  // ==================== GROUP FUNCTIONALITY ====================
+
+  /**
+   * Get group participants for a conversation
+   * Only works for group conversations
+   */
+  async getGroupParticipants(conversationId: string, organizationId: string) {
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: conversationId, organizationId },
+      include: {
+        contact: {
+          select: { identifier: true, displayName: true },
+        },
+        channel: {
+          select: { id: true },
+        },
+      },
+    });
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    // Check if this is a group (identifier contains '-')
+    const isGroup = conversation.contact.identifier.includes('-');
+    if (!isGroup) {
+      return { isGroup: false, participants: [], participantCount: 0 };
+    }
+
+    // Try to get from Redis cache
+    const groupJid = `${conversation.contact.identifier}@g.us`;
+    const { redisClient } = await import('../../core/cache/redis.client.js');
+
+    try {
+      const cached = await redisClient.get(`group:${groupJid}:metadata`);
+      if (cached) {
+        const metadata = JSON.parse(cached);
+        return {
+          isGroup: true,
+          subject: metadata.subject || 'Group Chat',
+          participants: (metadata.participants || []).map((p: any) => ({
+            id: p.id,
+            identifier: p.id?.split('@')[0] || p.id,
+            admin: p.admin || null,
+          })),
+          participantCount: metadata.participants?.length || 0,
+        };
+      }
+    } catch (error) {
+      // Cache miss or parse error, continue
+    }
+
+    // Return basic info if no cached metadata
+    return {
+      isGroup: true,
+      subject: conversation.contact.displayName || 'Group Chat',
+      participants: [],
+      participantCount: 0,
     };
   }
 }

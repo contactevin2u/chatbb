@@ -70,6 +70,44 @@ export interface Message {
   createdAt: string;
 }
 
+export interface Tag {
+  id: string;
+  name: string;
+  color: string;
+}
+
+export interface ConversationNote {
+  id: string;
+  conversationId: string;
+  userId: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+  user: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    avatarUrl?: string;
+  };
+}
+
+export interface GroupParticipant {
+  id: string;
+  identifier: string;
+  admin?: 'admin' | 'superadmin' | null;
+}
+
+export interface GroupParticipantsResponse {
+  isGroup: boolean;
+  subject?: string;
+  participants: GroupParticipant[];
+  participantCount: number;
+}
+
+export interface ConversationTagRelation {
+  tag: Tag;
+}
+
 export interface Conversation {
   id: string;
   organizationId: string;
@@ -81,12 +119,15 @@ export interface Conversation {
   lastMessageAt?: string;
   unreadCount: number;
   closedAt?: string;
+  isPinned?: boolean;
+  pinnedAt?: string;
   createdAt: string;
   updatedAt: string;
   contact: Contact;
   channel: Channel;
   assignedUser?: User;
   lastMessage?: Message;
+  tags?: ConversationTagRelation[];
 }
 
 export interface ConversationStats {
@@ -298,4 +339,98 @@ export async function setActiveAgent(conversationId: string): Promise<SetActiveA
 
 export async function clearActiveAgent(conversationId: string): Promise<void> {
   await apiClient.delete(`/conversations/${conversationId}/active`);
+}
+
+// Pin/Unpin conversations
+
+export async function pinConversation(conversationId: string): Promise<Conversation> {
+  const response = await apiClient.put<{ success: boolean; data: Conversation }>(
+    `/conversations/${conversationId}/pin`
+  );
+  return response.data.data;
+}
+
+export async function unpinConversation(conversationId: string): Promise<Conversation> {
+  const response = await apiClient.delete<{ success: boolean; data: Conversation }>(
+    `/conversations/${conversationId}/pin`
+  );
+  return response.data.data;
+}
+
+// Conversation Tags
+
+export async function getConversationTags(conversationId: string): Promise<Tag[]> {
+  const response = await apiClient.get<{ success: boolean; data: Tag[] }>(
+    `/conversations/${conversationId}/tags`
+  );
+  return response.data.data;
+}
+
+export async function addConversationTag(conversationId: string, tagId: string): Promise<void> {
+  await apiClient.post(`/conversations/${conversationId}/tags`, { tagId });
+}
+
+export async function removeConversationTag(conversationId: string, tagId: string): Promise<void> {
+  await apiClient.delete(`/conversations/${conversationId}/tags/${tagId}`);
+}
+
+// Conversation Notes
+
+export async function getConversationNotes(conversationId: string): Promise<ConversationNote[]> {
+  const response = await apiClient.get<{ success: boolean; data: ConversationNote[] }>(
+    `/conversations/${conversationId}/notes`
+  );
+  return response.data.data;
+}
+
+export async function addConversationNote(conversationId: string, content: string): Promise<ConversationNote> {
+  const response = await apiClient.post<{ success: boolean; data: ConversationNote }>(
+    `/conversations/${conversationId}/notes`,
+    { content }
+  );
+  return response.data.data;
+}
+
+export async function updateConversationNote(noteId: string, content: string): Promise<ConversationNote> {
+  const response = await apiClient.patch<{ success: boolean; data: ConversationNote }>(
+    `/conversations/notes/${noteId}`,
+    { content }
+  );
+  return response.data.data;
+}
+
+export async function deleteConversationNote(noteId: string): Promise<void> {
+  await apiClient.delete(`/conversations/notes/${noteId}`);
+}
+
+// Group participants
+
+export async function getGroupParticipants(conversationId: string): Promise<GroupParticipantsResponse> {
+  const response = await apiClient.get<{ success: boolean; data: GroupParticipantsResponse }>(
+    `/conversations/${conversationId}/participants`
+  );
+  return response.data.data;
+}
+
+// Tags management
+
+export async function listTags(): Promise<(Tag & { contactCount: number; conversationCount: number })[]> {
+  const response = await apiClient.get<{ success: boolean; data: (Tag & { contactCount: number; conversationCount: number })[] }>(
+    '/tags'
+  );
+  return response.data.data;
+}
+
+export async function createTag(data: { name: string; color?: string }): Promise<Tag> {
+  const response = await apiClient.post<{ success: boolean; data: Tag }>('/tags', data);
+  return response.data.data;
+}
+
+export async function updateTag(tagId: string, data: { name?: string; color?: string }): Promise<Tag> {
+  const response = await apiClient.patch<{ success: boolean; data: Tag }>(`/tags/${tagId}`, data);
+  return response.data.data;
+}
+
+export async function deleteTag(tagId: string): Promise<void> {
+  await apiClient.delete(`/tags/${tagId}`);
 }

@@ -18,9 +18,10 @@ import {
   AlertCircle,
   AlertTriangle,
   User,
+  Users,
   Phone,
   Mail,
-  Tag,
+  Tag as TagIcon,
   MessageSquare,
   Edit,
   Reply,
@@ -35,6 +36,11 @@ import {
   FileImage,
   File,
   Square,
+  Pin,
+  PinOff,
+  Plus,
+  StickyNote,
+  Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -73,11 +79,26 @@ import {
   clearActiveAgent,
   uploadMedia,
   reactToMessage,
+  pinConversation,
+  unpinConversation,
+  getConversationTags,
+  addConversationTag,
+  removeConversationTag,
+  getConversationNotes,
+  addConversationNote,
+  updateConversationNote,
+  deleteConversationNote,
+  getGroupParticipants,
+  listTags,
   type Conversation,
   type Message,
   type ConversationStatus,
   type UploadedMedia,
   type MessageReaction,
+  type Tag,
+  type ConversationNote,
+  type GroupParticipantsResponse,
+  type ConversationTagRelation,
 } from '@/lib/api/conversations';
 
 // Status badge component
@@ -132,6 +153,11 @@ function getContactInitials(contact: Conversation['contact']): string {
     return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
   }
   return name.slice(0, 2).toUpperCase();
+}
+
+// Check if contact is a group (group identifiers contain '-' like 123456789-1234567890)
+function isGroupContact(contact: Conversation['contact']): boolean {
+  return contact.identifier.includes('-');
 }
 
 // Format date header for message groups
@@ -230,6 +256,7 @@ export default function InboxPage() {
   const [recordingTime, setRecordingTime] = useState(0);
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
   const [mediaPreview, setMediaPreview] = useState<{ url: string; type: 'image' | 'video'; filename?: string } | null>(null);
+  const [newNoteContent, setNewNoteContent] = useState('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -320,6 +347,75 @@ export default function InboxPage() {
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to update contact');
     },
+  });
+
+  // Pin conversation mutation
+  const pinConversationMutation = useMutation({
+    mutationFn: pinConversation,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      toast.success('Conversation pinned');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to pin conversation');
+    },
+  });
+
+  // Unpin conversation mutation
+  const unpinConversationMutation = useMutation({
+    mutationFn: unpinConversation,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      toast.success('Conversation unpinned');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to unpin conversation');
+    },
+  });
+
+  // Add note mutation
+  const addNoteMutation = useMutation({
+    mutationFn: ({ conversationId, content }: { conversationId: string; content: string }) =>
+      addConversationNote(conversationId, content),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversationNotes', selectedConversationId] });
+      toast.success('Note added');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to add note');
+    },
+  });
+
+  // Delete note mutation
+  const deleteNoteMutation = useMutation({
+    mutationFn: deleteConversationNote,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversationNotes', selectedConversationId] });
+      toast.success('Note deleted');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to delete note');
+    },
+  });
+
+  // Fetch tags
+  const { data: allTags } = useQuery({
+    queryKey: ['tags'],
+    queryFn: listTags,
+  });
+
+  // Fetch conversation notes
+  const { data: conversationNotes } = useQuery({
+    queryKey: ['conversationNotes', selectedConversationId],
+    queryFn: () => selectedConversationId ? getConversationNotes(selectedConversationId) : null,
+    enabled: !!selectedConversationId,
+  });
+
+  // Fetch group participants
+  const { data: groupParticipants } = useQuery({
+    queryKey: ['groupParticipants', selectedConversationId],
+    queryFn: () => selectedConversationId ? getGroupParticipants(selectedConversationId) : null,
+    enabled: !!selectedConversationId && !!selectedConversation && isGroupContact(selectedConversation.contact),
   });
 
   // Handle editing contact name
@@ -700,20 +796,36 @@ export default function InboxPage() {
                     <div className="relative">
                       <Avatar>
                         <AvatarImage src={conversation.contact.avatarUrl || undefined} />
-                        <AvatarFallback>{getContactInitials(conversation.contact)}</AvatarFallback>
+                        <AvatarFallback>
+                          {isGroupContact(conversation.contact) ? (
+                            <Users className="h-5 w-5" />
+                          ) : (
+                            getContactInitials(conversation.contact)
+                          )}
+                        </AvatarFallback>
                       </Avatar>
                       {conversation.unreadCount > 0 && (
                         <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">
                           {conversation.unreadCount > 9 ? '9+' : conversation.unreadCount}
                         </span>
                       )}
+                      {isGroupContact(conversation.contact) && (
+                        <span className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-green-500 text-white flex items-center justify-center">
+                          <Users className="h-2.5 w-2.5" />
+                        </span>
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
-                        <p className="font-medium truncate">
-                          {getContactName(conversation.contact)}
-                        </p>
-                        <span className="text-xs text-muted-foreground">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {conversation.isPinned && (
+                            <Pin className="h-3 w-3 text-primary flex-shrink-0" />
+                          )}
+                          <p className="font-medium truncate">
+                            {getContactName(conversation.contact)}
+                          </p>
+                        </div>
+                        <span className="text-xs text-muted-foreground flex-shrink-0 ml-2">
                           {conversation.lastMessageAt
                             ? formatDistanceToNow(new Date(conversation.lastMessageAt), { addSuffix: true })
                             : ''}
@@ -722,11 +834,32 @@ export default function InboxPage() {
                       <p className="text-sm text-muted-foreground truncate">
                         {getMessagePreview(conversation.lastMessage)}
                       </p>
-                      <div className="flex items-center gap-2 mt-1">
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
                         <StatusBadge status={conversation.status} />
                         <span className="text-xs text-muted-foreground">
                           {conversation.channel.name}
                         </span>
+                        {conversation.tags && conversation.tags.length > 0 && (
+                          <>
+                            {conversation.tags.slice(0, 2).map((tagRelation) => (
+                              <span
+                                key={tagRelation.tag.id}
+                                className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                                style={{
+                                  backgroundColor: `${tagRelation.tag.color}20`,
+                                  color: tagRelation.tag.color,
+                                }}
+                              >
+                                {tagRelation.tag.name}
+                              </span>
+                            ))}
+                            {conversation.tags.length > 2 && (
+                              <span className="text-[10px] text-muted-foreground">
+                                +{conversation.tags.length - 2}
+                              </span>
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -744,14 +877,34 @@ export default function InboxPage() {
             {/* Chat Header */}
             <div className="h-16 border-b flex items-center justify-between px-4">
               <div className="flex items-center gap-3">
-                <Avatar>
-                  <AvatarImage src={selectedConversation.contact.avatarUrl || undefined} />
-                  <AvatarFallback>{getContactInitials(selectedConversation.contact)}</AvatarFallback>
-                </Avatar>
+                <div className="relative">
+                  <Avatar>
+                    <AvatarImage src={selectedConversation.contact.avatarUrl || undefined} />
+                    <AvatarFallback>
+                      {isGroupContact(selectedConversation.contact) ? (
+                        <Users className="h-5 w-5" />
+                      ) : (
+                        getContactInitials(selectedConversation.contact)
+                      )}
+                    </AvatarFallback>
+                  </Avatar>
+                  {isGroupContact(selectedConversation.contact) && (
+                    <span className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-green-500 text-white flex items-center justify-center">
+                      <Users className="h-2.5 w-2.5" />
+                    </span>
+                  )}
+                </div>
                 <div>
-                  <p className="font-medium">{getContactName(selectedConversation.contact)}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium">{getContactName(selectedConversation.contact)}</p>
+                    {isGroupContact(selectedConversation.contact) && (
+                      <span className="text-xs bg-green-500/10 text-green-600 px-1.5 py-0.5 rounded">Group</span>
+                    )}
+                  </div>
                   <p className="text-sm text-muted-foreground">
-                    +{selectedConversation.contact.identifier}
+                    {isGroupContact(selectedConversation.contact)
+                      ? `Group ID: ${selectedConversation.contact.identifier}`
+                      : `+${selectedConversation.contact.identifier}`}
                   </p>
                 </div>
               </div>
@@ -770,6 +923,22 @@ export default function InboxPage() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
+                    {selectedConversation.isPinned ? (
+                      <DropdownMenuItem
+                        onClick={() => unpinConversationMutation.mutate(selectedConversation.id)}
+                      >
+                        <PinOff className="h-4 w-4 mr-2" />
+                        Unpin conversation
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem
+                        onClick={() => pinConversationMutation.mutate(selectedConversation.id)}
+                      >
+                        <Pin className="h-4 w-4 mr-2" />
+                        Pin conversation
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuSeparator />
                     {selectedConversation.status === 'CLOSED' ? (
                       <DropdownMenuItem
                         onClick={() => reopenConversationMutation.mutate(selectedConversation.id)}
@@ -907,7 +1076,10 @@ export default function InboxPage() {
                               )}
                               {message.direction === 'INBOUND' && (
                                 <p className="text-[11px] font-medium text-foreground/70 mb-1">
-                                  {getContactName(selectedConversation.contact)}
+                                  {/* For group messages, show the actual sender from metadata */}
+                                  {isGroupContact(selectedConversation.contact) && message.metadata?.groupSender
+                                    ? message.metadata.groupSender.pushName || `+${message.metadata.groupSender.identifier}`
+                                    : getContactName(selectedConversation.contact)}
                                 </p>
                               )}
 
@@ -1347,7 +1519,9 @@ export default function InboxPage() {
       {showContactPanel && selectedConversation && (
         <div className="w-80 border-l flex flex-col">
           <div className="h-16 border-b flex items-center justify-between px-4">
-            <h3 className="font-semibold">Contact Info</h3>
+            <h3 className="font-semibold">
+              {isGroupContact(selectedConversation.contact) ? 'Group Info' : 'Contact Info'}
+            </h3>
             <Button variant="ghost" size="icon" onClick={() => setShowContactPanel(false)}>
               <X className="h-5 w-5" />
             </Button>
@@ -1356,12 +1530,23 @@ export default function InboxPage() {
             <div className="p-4 space-y-6">
               {/* Contact Avatar & Name */}
               <div className="text-center">
-                <Avatar className="h-20 w-20 mx-auto mb-3">
-                  <AvatarImage src={selectedConversation.contact.avatarUrl || undefined} />
-                  <AvatarFallback className="text-2xl">
-                    {getContactInitials(selectedConversation.contact)}
-                  </AvatarFallback>
-                </Avatar>
+                <div className="relative inline-block">
+                  <Avatar className="h-20 w-20 mx-auto mb-3">
+                    <AvatarImage src={selectedConversation.contact.avatarUrl || undefined} />
+                    <AvatarFallback className="text-2xl">
+                      {isGroupContact(selectedConversation.contact) ? (
+                        <Users className="h-8 w-8" />
+                      ) : (
+                        getContactInitials(selectedConversation.contact)
+                      )}
+                    </AvatarFallback>
+                  </Avatar>
+                  {isGroupContact(selectedConversation.contact) && (
+                    <span className="absolute bottom-2 right-0 h-6 w-6 rounded-full bg-green-500 text-white flex items-center justify-center">
+                      <Users className="h-3.5 w-3.5" />
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center justify-center gap-2">
                   <h4 className="font-semibold text-lg">
                     {getContactName(selectedConversation.contact)}
@@ -1375,24 +1560,37 @@ export default function InboxPage() {
                     <Edit className="h-3 w-3" />
                   </Button>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  +{selectedConversation.contact.identifier}
-                </p>
+                {isGroupContact(selectedConversation.contact) ? (
+                  <p className="text-sm text-green-600 font-medium">WhatsApp Group</p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    +{selectedConversation.contact.identifier}
+                  </p>
+                )}
               </div>
 
-              {/* Contact Details */}
+              {/* Contact/Group Details */}
               <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <Phone className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm">+{selectedConversation.contact.identifier}</span>
-                </div>
-                {selectedConversation.contact.firstName && (
+                {isGroupContact(selectedConversation.contact) ? (
                   <div className="flex items-center gap-3">
-                    <User className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm">
-                      {selectedConversation.contact.firstName} {selectedConversation.contact.lastName}
-                    </span>
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">Group ID: {selectedConversation.contact.identifier}</span>
                   </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-3">
+                      <Phone className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm">+{selectedConversation.contact.identifier}</span>
+                    </div>
+                    {selectedConversation.contact.firstName && (
+                      <div className="flex items-center gap-3">
+                        <User className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm">
+                          {selectedConversation.contact.firstName} {selectedConversation.contact.lastName}
+                        </span>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 
@@ -1436,6 +1634,172 @@ export default function InboxPage() {
                         {selectedConversation.assignedUser.lastName}
                       </span>
                     </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Tags */}
+              <div className="border-t pt-4">
+                <h5 className="text-sm font-medium mb-3 flex items-center gap-2">
+                  <TagIcon className="h-4 w-4" />
+                  Tags
+                </h5>
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedConversation.tags && selectedConversation.tags.length > 0 ? (
+                    selectedConversation.tags.map((tagRelation) => (
+                      <span
+                        key={tagRelation.tag.id}
+                        className="px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
+                        style={{
+                          backgroundColor: `${tagRelation.tag.color}20`,
+                          color: tagRelation.tag.color,
+                        }}
+                      >
+                        {tagRelation.tag.name}
+                        <button
+                          onClick={() => removeConversationTag(selectedConversation.id, tagRelation.tag.id)
+                            .then(() => queryClient.invalidateQueries({ queryKey: ['conversations'] }))}
+                          className="hover:bg-black/10 rounded"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-xs text-muted-foreground">No tags</span>
+                  )}
+                </div>
+                {allTags && allTags.length > 0 && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="mt-2 w-full">
+                        <Plus className="h-3 w-3 mr-1" />
+                        Add Tag
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-48">
+                      {allTags.map((tag) => {
+                        const isAdded = selectedConversation.tags?.some(t => t.tag.id === tag.id);
+                        return (
+                          <DropdownMenuItem
+                            key={tag.id}
+                            disabled={isAdded}
+                            onClick={() => addConversationTag(selectedConversation.id, tag.id)
+                              .then(() => queryClient.invalidateQueries({ queryKey: ['conversations'] }))}
+                          >
+                            <span
+                              className="w-3 h-3 rounded-full mr-2"
+                              style={{ backgroundColor: tag.color }}
+                            />
+                            {tag.name}
+                            {isAdded && <Check className="h-3 w-3 ml-auto" />}
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
+
+              {/* Group Participants */}
+              {isGroupContact(selectedConversation.contact) && groupParticipants?.isGroup && (
+                <div className="border-t pt-4">
+                  <h5 className="text-sm font-medium mb-3 flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    Participants ({groupParticipants.participantCount})
+                  </h5>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {groupParticipants.participants.slice(0, 20).map((participant) => (
+                      <div key={participant.id} className="flex items-center gap-2 text-sm">
+                        <Avatar className="h-6 w-6">
+                          <AvatarFallback className="text-[10px]">
+                            {participant.identifier.slice(-2)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="flex-1 truncate">+{participant.identifier}</span>
+                        {participant.admin && (
+                          <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded">
+                            {participant.admin === 'superadmin' ? 'Owner' : 'Admin'}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                    {groupParticipants.participantCount > 20 && (
+                      <p className="text-xs text-muted-foreground text-center">
+                        +{groupParticipants.participantCount - 20} more
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Notes */}
+              <div className="border-t pt-4">
+                <h5 className="text-sm font-medium mb-3 flex items-center gap-2">
+                  <StickyNote className="h-4 w-4" />
+                  Notes
+                </h5>
+                <div className="space-y-3">
+                  {/* Add note form */}
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Add a note..."
+                      value={newNoteContent}
+                      onChange={(e) => setNewNoteContent(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && newNoteContent.trim()) {
+                          addNoteMutation.mutate({
+                            conversationId: selectedConversation.id,
+                            content: newNoteContent.trim(),
+                          });
+                          setNewNoteContent('');
+                        }
+                      }}
+                      className="h-8 text-sm"
+                    />
+                    <Button
+                      size="sm"
+                      className="h-8 px-2"
+                      disabled={!newNoteContent.trim() || addNoteMutation.isPending}
+                      onClick={() => {
+                        if (newNoteContent.trim()) {
+                          addNoteMutation.mutate({
+                            conversationId: selectedConversation.id,
+                            content: newNoteContent.trim(),
+                          });
+                          setNewNoteContent('');
+                        }
+                      }}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  {/* Notes list */}
+                  {conversationNotes && conversationNotes.length > 0 ? (
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {conversationNotes.map((note) => (
+                        <div key={note.id} className="bg-muted/50 rounded p-2 text-sm">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="flex-1 whitespace-pre-wrap break-words">{note.content}</p>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5 flex-shrink-0"
+                              onClick={() => deleteNoteMutation.mutate(note.id)}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                          <div className="flex items-center gap-1 mt-1 text-[10px] text-muted-foreground">
+                            <span>{note.user.firstName} {note.user.lastName}</span>
+                            <span>·</span>
+                            <span>{formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">No notes yet</p>
                   )}
                 </div>
               </div>

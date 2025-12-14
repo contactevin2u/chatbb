@@ -388,15 +388,50 @@ export class SessionManager extends EventEmitter {
       this.logger.info({ channelId, syncType }, 'Historical sync processed');
     });
 
-    // Group metadata updates - cache for performance
+    // Group metadata updates - cache for performance and sync to database
     socket.ev.on('groups.update', async (updates) => {
       for (const update of updates) {
         if (update.id) {
+          // Update Redis cache
           const existing = await redisClient.get(`group:${update.id}:metadata`);
           if (existing) {
             const metadata = JSON.parse(existing);
             const updated = { ...metadata, ...update };
             await redisClient.setex(`group:${update.id}:metadata`, 3600, JSON.stringify(updated));
+          } else if (update.subject) {
+            // Cache the new metadata if it has a subject
+            await redisClient.setex(`group:${update.id}:metadata`, 3600, JSON.stringify(update));
+          }
+
+          // Update Contact record in database if subject (group name) changed
+          if (update.subject) {
+            try {
+              const { ChannelType } = await import('@prisma/client');
+              const groupIdentifier = update.id.split('@')[0]; // Remove @g.us
+
+              // Get the channel to find the organization
+              const channel = await prisma.channel.findUnique({
+                where: { id: channelId },
+                select: { organizationId: true },
+              });
+
+              if (channel) {
+                // Update the contact's displayName
+                await prisma.contact.updateMany({
+                  where: {
+                    organizationId: channel.organizationId,
+                    channelType: ChannelType.WHATSAPP,
+                    identifier: groupIdentifier,
+                  },
+                  data: {
+                    displayName: update.subject,
+                  },
+                });
+                this.logger.info({ channelId, groupId: update.id, newName: update.subject }, 'Group name updated in database');
+              }
+            } catch (error) {
+              this.logger.warn({ channelId, groupId: update.id, error }, 'Failed to update group name in database');
+            }
           }
         }
       }

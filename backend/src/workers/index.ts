@@ -87,6 +87,7 @@ async function processMessage(job: Job) {
       channelType: ChannelType.WHATSAPP,
       identifier: contactIdentifier,
       displayName,
+      isGroup,
     });
 
     if (contact.isNew) {
@@ -290,6 +291,25 @@ async function processMessage(job: Job) {
       }
     }
 
+    // Build message metadata
+    const messageMetadata: Record<string, any> = {
+      timestamp: Number(waMessage.messageTimestamp) || Date.now(),
+      pushName: waMessage.pushName || null,
+      fromMe: isFromMe,
+    };
+
+    // For group messages, store sender info (participant)
+    if (isGroup && !isFromMe) {
+      const participant = waMessage.key?.participant;
+      if (participant) {
+        messageMetadata.groupSender = {
+          jid: participant,
+          identifier: normalizeIdentifier(participant),
+          pushName: waMessage.pushName || null,
+        };
+      }
+    }
+
     // Create message with error handling for race conditions
     let savedMessage;
     try {
@@ -304,11 +324,7 @@ async function processMessage(job: Job) {
           status: isFromMe ? MessageStatus.SENT : MessageStatus.DELIVERED,
           sentAt: isFromMe ? new Date() : null,
           deliveredAt: isFromMe ? null : new Date(),
-          metadata: {
-            timestamp: Number(waMessage.messageTimestamp) || Date.now(),
-            pushName: waMessage.pushName || null,
-            fromMe: isFromMe,
-          },
+          metadata: messageMetadata,
         },
       });
 

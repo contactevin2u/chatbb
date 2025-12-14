@@ -23,6 +23,7 @@ import { broadcastRoutes } from './modules/broadcast/broadcast.routes.js';
 import { analyticsRoutes } from './modules/analytics/analytics.routes.js';
 import { webhookRoutes } from './modules/webhook/webhook.routes.js';
 import { mediaRoutes } from './modules/media/media.routes.js';
+import { tagRoutes } from './modules/tag/tag.routes.js';
 
 export function createApp(): Express {
   const app = express();
@@ -101,6 +102,7 @@ export function createApp(): Express {
   app.use(`${apiPrefix}/analytics`, analyticsRoutes);
   app.use(`${apiPrefix}/webhooks`, webhookRoutes);
   app.use(`${apiPrefix}/media`, mediaRoutes);
+  app.use(`${apiPrefix}/tags`, tagRoutes);
 
   // 404 handler
   app.use((_req: Request, res: Response) => {

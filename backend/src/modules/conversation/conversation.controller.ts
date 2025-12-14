@@ -278,6 +278,215 @@ export class ConversationController {
       next(error);
     }
   }
+
+  // ==================== PIN METHODS ====================
+
+  /**
+   * Pin conversation
+   * PUT /api/v1/conversations/:id/pin
+   */
+  async pinConversation(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId } = req.user!;
+      const { id } = req.params;
+
+      const conversation = await conversationService.pinConversation(id, organizationId);
+
+      res.json({
+        success: true,
+        data: conversation,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Unpin conversation
+   * DELETE /api/v1/conversations/:id/pin
+   */
+  async unpinConversation(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId } = req.user!;
+      const { id } = req.params;
+
+      const conversation = await conversationService.unpinConversation(id, organizationId);
+
+      res.json({
+        success: true,
+        data: conversation,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ==================== TAG METHODS ====================
+
+  /**
+   * Get tags for conversation
+   * GET /api/v1/conversations/:id/tags
+   */
+  async getTags(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId } = req.user!;
+      const { id } = req.params;
+
+      const tags = await conversationService.getTags(id, organizationId);
+
+      res.json({
+        success: true,
+        data: tags,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Add tag to conversation
+   * POST /api/v1/conversations/:id/tags
+   */
+  async addTag(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId } = req.user!;
+      const { id } = req.params;
+      const { tagId } = req.body;
+
+      const conversationTag = await conversationService.addTag(id, tagId, organizationId);
+
+      res.json({
+        success: true,
+        data: conversationTag,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Remove tag from conversation
+   * DELETE /api/v1/conversations/:id/tags/:tagId
+   */
+  async removeTag(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId } = req.user!;
+      const { id, tagId } = req.params;
+
+      await conversationService.removeTag(id, tagId, organizationId);
+
+      res.json({
+        success: true,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ==================== NOTE METHODS ====================
+
+  /**
+   * Get notes for conversation
+   * GET /api/v1/conversations/:id/notes
+   */
+  async getNotes(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId } = req.user!;
+      const { id } = req.params;
+
+      const notes = await conversationService.getNotes(id, organizationId);
+
+      res.json({
+        success: true,
+        data: notes,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Add note to conversation
+   * POST /api/v1/conversations/:id/notes
+   */
+  async addNote(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { sub: userId, organizationId } = req.user!;
+      const { id } = req.params;
+      const { content } = req.body;
+
+      const note = await conversationService.addNote(id, userId, content, organizationId);
+
+      res.json({
+        success: true,
+        data: note,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Update note
+   * PATCH /api/v1/notes/:noteId
+   */
+  async updateNote(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { sub: userId, organizationId } = req.user!;
+      const { noteId } = req.params;
+      const { content } = req.body;
+
+      const note = await conversationService.updateNote(noteId, userId, content, organizationId);
+
+      res.json({
+        success: true,
+        data: note,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Delete note
+   * DELETE /api/v1/notes/:noteId
+   */
+  async deleteNote(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { sub: userId, organizationId } = req.user!;
+      const { noteId } = req.params;
+
+      await conversationService.deleteNote(noteId, userId, organizationId);
+
+      res.json({
+        success: true,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ==================== GROUP METHODS ====================
+
+  /**
+   * Get group participants
+   * GET /api/v1/conversations/:id/participants
+   */
+  async getGroupParticipants(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId } = req.user!;
+      const { id } = req.params;
+
+      const result = await conversationService.getGroupParticipants(id, organizationId);
+
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const conversationController = new ConversationController();
