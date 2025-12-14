@@ -836,9 +836,25 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
   let messagesProcessed = 0;
 
   // Process contacts
+  // Baileys v7: If contact.id is LID format, contact.phoneNumber contains the actual phone
   for (const contact of data.contacts || []) {
     try {
-      const identifier = contact.id ? normalizeIdentifier(contact.id) : null;
+      let identifier: string | null = null;
+      const contactId = contact.id;
+      const phoneNumber = contact.phoneNumber;
+
+      if (contactId?.includes('@lid') && phoneNumber) {
+        // id is LID, use phoneNumber instead
+        identifier = normalizeIdentifier(phoneNumber);
+
+        // Store the LID mapping for future use
+        const lidPart = normalizeIdentifier(contactId);
+        await redisClient.hset(`lid:${channelId}`, lidPart, identifier);
+        await redisClient.hset(`pn:${channelId}`, identifier, lidPart);
+      } else if (contactId) {
+        identifier = normalizeIdentifier(contactId);
+      }
+
       if (!identifier) continue;
 
       await prisma.contact.upsert({
@@ -872,7 +888,19 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
       if (!remoteJid) continue;
 
       const isGroup = remoteJid.endsWith('@g.us');
-      const identifier = normalizeIdentifier(remoteJid);
+
+      // Resolve LID to phone number for non-group chats
+      let identifier: string;
+      if (!isGroup && remoteJid.includes('@lid')) {
+        identifier = normalizeIdentifier(remoteJid);
+        // Try to find phone number from Redis
+        const phoneNumber = await redisClient.hget(`lid:${channelId}`, identifier);
+        if (phoneNumber) {
+          identifier = phoneNumber;
+        }
+      } else {
+        identifier = normalizeIdentifier(remoteJid);
+      }
 
       // Get display name - for groups, try to get from cache or chat.name
       let displayName = chat.name || null;

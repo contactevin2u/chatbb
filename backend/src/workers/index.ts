@@ -355,9 +355,28 @@ async function processHistorySync(job: Job) {
   const orgId = channel.organizationId;
 
   // Process contacts (batch upsert)
+  // Baileys v7 contact structure: { id, phoneNumber?, lid?, name?, notify? }
+  // If id is LID format, phoneNumber contains the actual phone number
   for (const contact of contacts || []) {
     try {
-      const identifier = contact.id ? normalizeIdentifier(contact.id) : null;
+      let identifier: string | null = null;
+      const contactId = contact.id;
+      const phoneNumber = contact.phoneNumber; // Present if id is LID
+
+      if (contactId?.includes('@lid') && phoneNumber) {
+        // id is LID, use phoneNumber instead
+        identifier = normalizeIdentifier(phoneNumber);
+
+        // Store the LID mapping for future use
+        const lidPart = normalizeIdentifier(contactId);
+        await redisClient.hset(`lid:${channelId}`, lidPart, identifier);
+        await redisClient.hset(`pn:${channelId}`, identifier, lidPart);
+        logger.debug({ channelId, lid: lidPart, phone: identifier }, 'Stored LID mapping from history sync contact');
+      } else if (contactId) {
+        // id is already phone number format, or no phoneNumber field
+        identifier = await resolveIdentifier(channelId, contactId);
+      }
+
       if (!identifier) continue;
 
       await prisma.contact.upsert({
@@ -384,13 +403,22 @@ async function processHistorySync(job: Job) {
   }
 
   // Process chats and create conversations (including groups)
+  // Baileys v7 chat structure may include alternate JID fields
   for (const chat of chats || []) {
     try {
       const remoteJid = chat.id;
       if (!remoteJid) continue;
 
       const isGroup = remoteJid.endsWith('@g.us');
-      const identifier = normalizeIdentifier(remoteJid);
+
+      // Resolve LID to phone number for non-group chats
+      let identifier: string;
+      if (!isGroup && remoteJid.includes('@lid')) {
+        // Try to resolve LID using Redis mappings
+        identifier = await resolveIdentifier(channelId, remoteJid);
+      } else {
+        identifier = normalizeIdentifier(remoteJid);
+      }
 
       // Get display name - for groups, try to get from cache or chat.name
       let displayName = chat.name || null;
