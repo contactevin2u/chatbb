@@ -167,7 +167,7 @@ export class MessageService {
   }
 
   /**
-   * Send a message
+   * Send a message (optimized for speed)
    */
   async sendMessage(input: SendMessageInput) {
     const { conversationId, organizationId, userId, text, media, quotedMessageId } = input;
@@ -219,7 +219,21 @@ export class MessageService {
       messageContent.quotedMessageId = quotedMessageId;
     }
 
-    // Create message record
+    // OPTIMIZATION: Start sending immediately while creating DB record in parallel
+    const recipient = conversation.contact.identifier;
+
+    // Start WhatsApp send (don't await yet)
+    const sendPromise = conversation.channel.type === 'WHATSAPP'
+      ? whatsappService.sendMessageRaw(
+          conversation.channelId,
+          recipient,
+          text,
+          media,
+          { quotedMessageId }
+        )
+      : Promise.resolve({ externalId: undefined as string | undefined });
+
+    // Create message record in parallel with sending
     const message = await prisma.message.create({
       data: {
         conversationId,
@@ -242,50 +256,36 @@ export class MessageService {
       },
     });
 
-    // Send via channel provider
+    // Now wait for send to complete
     try {
-      let externalId: string | undefined;
+      const result = await sendPromise;
+      const externalId = result.externalId;
 
-      if (conversation.channel.type === 'WHATSAPP') {
-        // Send via WhatsApp using whatsappService (sends command to WhatsApp Worker via Redis)
-        const recipient = conversation.contact.identifier;
-
-        // Use low-level method since we're already handling DB operations here
-        const result = await whatsappService.sendMessageRaw(
-          conversation.channelId,
-          recipient,
-          text,
-          media,
-          { quotedMessageId }
-        );
-        externalId = result.externalId;
-      }
-
-      // Update message with external ID and sent status
-      const updatedMessage = await prisma.message.update({
-        where: { id: message.id },
-        data: {
-          externalId,
-          status: MessageStatus.SENT,
-          sentAt: new Date(),
-        },
-        include: {
-          sentByUser: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              avatarUrl: true,
+      // Update message and conversation in parallel
+      const [updatedMessage] = await Promise.all([
+        prisma.message.update({
+          where: { id: message.id },
+          data: {
+            externalId,
+            status: MessageStatus.SENT,
+            sentAt: new Date(),
+          },
+          include: {
+            sentByUser: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                avatarUrl: true,
+              },
             },
           },
-        },
-      });
-
-      // Update conversation
-      await prisma.conversation.update({
-        where: { id: conversationId },
-        data: { lastMessageAt: new Date() },
-      });
+        }),
+        prisma.conversation.update({
+          where: { id: conversationId },
+          data: { lastMessageAt: new Date() },
+        }),
+      ]);
 
       // Emit to WebSocket - exclude sender to prevent duplicate UI updates
       // Sender already has the message from mutation's onSuccess
