@@ -22,6 +22,25 @@ import { logger } from '../shared/utils/logger';
 import { redisConfig } from '../config/redis';
 import { isMediaMessage, uploadToCloudinary, uploadFromUrlToCloudinary } from '../shared/services/media.service';
 
+/**
+ * Normalize WhatsApp JID to consistent contact identifier
+ * Handles various formats:
+ * - 1234567890@s.whatsapp.net -> 1234567890
+ * - +1234567890@s.whatsapp.net -> 1234567890
+ * - 1234567890:0@lid -> 1234567890
+ * - 1234567890:0@s.whatsapp.net -> 1234567890
+ */
+function normalizeIdentifier(jidOrId: string): string {
+  let identifier = jidOrId.split('@')[0];
+  // Remove lid suffix (e.g., "1234567890:0" -> "1234567890")
+  if (identifier.includes(':')) {
+    identifier = identifier.split(':')[0];
+  }
+  // Remove leading + sign
+  identifier = identifier.replace(/^\+/, '');
+  return identifier;
+}
+
 // BullMQ queues
 let messageQueue: Queue;
 let historySyncQueue: Queue;
@@ -570,7 +589,7 @@ async function fetchAndStoreProfilePicture(
     if (!ppUrl) return null;
 
     // Upload to Cloudinary
-    const identifier = jid.split('@')[0];
+    const identifier = normalizeIdentifier(jid);
     const cloudinaryUrl = await uploadFromUrlToCloudinary(ppUrl, {
       folder: `chatbaby/${organizationId}/avatars`,
       publicId: `contact_${identifier}`,
@@ -600,7 +619,7 @@ async function processContactsUpsert(channelId: string, contacts: any[]) {
   for (const contact of contacts) {
     try {
       // Extract identifier from JID (e.g., "1234567890@s.whatsapp.net" -> "1234567890")
-      const identifier = contact.id?.split('@')[0];
+      const identifier = contact.id ? normalizeIdentifier(contact.id) : null;
       if (!identifier) continue;
 
       // Skip groups - they don't have profile pictures in the same way
@@ -681,7 +700,7 @@ async function processContactsUpdate(channelId: string, contacts: any[]) {
 
   for (const contact of contacts) {
     try {
-      const identifier = contact.id?.split('@')[0];
+      const identifier = contact.id ? normalizeIdentifier(contact.id) : null;
       if (!identifier) continue;
 
       // Get contact name from various fields
@@ -725,7 +744,7 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
   // Process contacts
   for (const contact of data.contacts || []) {
     try {
-      const identifier = contact.id?.split('@')[0];
+      const identifier = contact.id ? normalizeIdentifier(contact.id) : null;
       if (!identifier) continue;
 
       await prisma.contact.upsert({
@@ -759,7 +778,7 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
       if (!remoteJid) continue;
 
       const isGroup = remoteJid.endsWith('@g.us');
-      const identifier = remoteJid.split('@')[0];
+      const identifier = normalizeIdentifier(remoteJid);
 
       // Get display name - for groups, try to get from cache or chat.name
       let displayName = chat.name || null;
@@ -827,7 +846,7 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
   for (const [jid, msgs] of Object.entries(data.messages || {})) {
     if (!Array.isArray(msgs) || messageCount >= messageLimit) continue;
 
-    const identifier = jid.split('@')[0];
+    const identifier = normalizeIdentifier(jid);
 
     const contact = await prisma.contact.findFirst({
       where: { organizationId: orgId, channelType: ChannelType.WHATSAPP, identifier },

@@ -25,6 +25,25 @@ const QUEUES = {
   HISTORY_SYNC: 'history-sync-queue',
 };
 
+/**
+ * Normalize WhatsApp JID to consistent contact identifier
+ * Handles various formats:
+ * - 1234567890@s.whatsapp.net -> 1234567890
+ * - +1234567890@s.whatsapp.net -> 1234567890
+ * - 1234567890:0@lid -> 1234567890
+ * - 1234567890:0@s.whatsapp.net -> 1234567890
+ */
+function normalizeIdentifier(jidOrId: string): string {
+  let identifier = jidOrId.split('@')[0];
+  // Remove lid suffix (e.g., "1234567890:0" -> "1234567890")
+  if (identifier.includes(':')) {
+    identifier = identifier.split(':')[0];
+  }
+  // Remove leading + sign
+  identifier = identifier.replace(/^\+/, '');
+  return identifier;
+}
+
 // Message queue processor - handles incoming messages and status updates
 async function processMessage(job: Job) {
   const jobName = job.name;
@@ -45,7 +64,7 @@ async function processMessage(job: Job) {
 
     // Check if this is a group message
     const isGroup = remoteJid.endsWith('@g.us');
-    const contactIdentifier = remoteJid.split('@')[0];
+    const contactIdentifier = normalizeIdentifier(remoteJid);
 
     // For individual contacts: use pushName from message
     // For groups: check Redis cache (populated by historical sync/group updates)
@@ -381,7 +400,7 @@ async function processHistorySync(job: Job) {
   // Process contacts (batch upsert)
   for (const contact of contacts || []) {
     try {
-      const identifier = contact.id?.split('@')[0];
+      const identifier = contact.id ? normalizeIdentifier(contact.id) : null;
       if (!identifier) continue;
 
       await prisma.contact.upsert({
@@ -414,7 +433,7 @@ async function processHistorySync(job: Job) {
       if (!remoteJid) continue;
 
       const isGroup = remoteJid.endsWith('@g.us');
-      const identifier = remoteJid.split('@')[0];
+      const identifier = normalizeIdentifier(remoteJid);
 
       // Get display name - for groups, try to get from cache or chat.name
       let displayName = chat.name || null;
@@ -479,7 +498,7 @@ async function processHistorySync(job: Job) {
   for (const [jid, msgs] of Object.entries(messages || {})) {
     if (!Array.isArray(msgs)) continue;
 
-    const identifier = jid.split('@')[0];
+    const identifier = normalizeIdentifier(jid);
 
     const contact = await prisma.contact.findFirst({
       where: { organizationId: orgId, channelType: ChannelType.WHATSAPP, identifier },
