@@ -100,6 +100,12 @@ export class ContactService {
               tag: true,
             },
           },
+          // Include the most recent conversation for quick navigation
+          conversations: {
+            orderBy: { lastMessageAt: 'desc' },
+            take: 1,
+            select: { id: true },
+          },
           _count: {
             select: {
               conversations: true,
@@ -115,6 +121,9 @@ export class ContactService {
         ...contact,
         tags: contact.tags.map((t) => t.tag),
         conversationCount: contact._count.conversations,
+        // Include the most recent conversation ID for linking
+        latestConversationId: contact.conversations[0]?.id || null,
+        conversations: undefined,
         _count: undefined,
       })),
       total,

@@ -1,10 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
-  Plus,
   MoreVertical,
   Trash2,
   Edit,
@@ -12,6 +12,7 @@ import {
   Phone,
   Mail,
   Users,
+  ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -68,6 +69,7 @@ function formatPhoneNumber(identifier: string): string {
 }
 
 export default function ContactsPage() {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
@@ -218,7 +220,15 @@ export default function ContactsPage() {
               </TableHeader>
               <TableBody>
                 {data?.contacts.map((contact) => (
-                  <TableRow key={contact.id}>
+                  <TableRow
+                    key={contact.id}
+                    className={contact.latestConversationId ? 'cursor-pointer hover:bg-muted/50' : ''}
+                    onClick={() => {
+                      if (contact.latestConversationId) {
+                        router.push(`/inbox?conversation=${contact.latestConversationId}`);
+                      }
+                    }}
+                  >
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <Avatar>
@@ -257,7 +267,7 @@ export default function ContactsPage() {
                         {contact.conversationCount || 0}
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -265,6 +275,17 @@ export default function ContactsPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          {contact.latestConversationId && (
+                            <>
+                              <DropdownMenuItem
+                                onClick={() => router.push(`/inbox?conversation=${contact.latestConversationId}`)}
+                              >
+                                <ExternalLink className="mr-2 h-4 w-4" />
+                                View Conversation
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                            </>
+                          )}
                           <DropdownMenuItem onClick={() => handleEdit(contact)}>
                             <Edit className="mr-2 h-4 w-4" />
                             Edit

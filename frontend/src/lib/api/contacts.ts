@@ -24,6 +24,8 @@ export interface Contact {
   metadata?: Record<string, any>;
   tags: Tag[];
   conversationCount?: number;
+  latestConversationId?: string | null;
+  isGroup?: boolean;
   createdAt: string;
   updatedAt: string;
 }

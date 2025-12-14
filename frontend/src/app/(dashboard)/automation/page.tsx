@@ -27,6 +27,7 @@ import {
   CheckCheck,
   Reply,
   Hash,
+  Square,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { uploadMedia } from '@/lib/api/conversations';
@@ -96,7 +97,7 @@ const stepTypeLabels: Record<SequenceStepType, string> = {
   TEXT: 'Text Message',
   IMAGE: 'Image',
   VIDEO: 'Video',
-  AUDIO: 'Audio',
+  AUDIO: 'Voice Note',
   DOCUMENT: 'Document',
   DELAY: 'Wait/Delay',
 };
@@ -582,6 +583,13 @@ function SequenceEditor({
   const [uploadedMediaType, setUploadedMediaType] = useState<'image' | 'video' | 'audio' | 'document'>('image');
   const [showPreview, setShowPreview] = useState(false);
 
+  // Audio recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   // Reset form when dialog opens or sequence changes
   useEffect(() => {
     if (open) {
@@ -594,8 +602,105 @@ function SequenceEditor({
       setNewStepDelay(5);
       setUploadedMediaUrl('');
       setShowPreview(false);
+      setIsRecording(false);
+      setRecordingTime(0);
     }
   }, [open, sequence]);
+
+  // Cleanup recording on unmount
+  useEffect(() => {
+    return () => {
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+    };
+  }, []);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        // Stop all tracks
+        stream.getTracks().forEach(track => track.stop());
+
+        // Clear timer
+        if (recordingIntervalRef.current) {
+          clearInterval(recordingIntervalRef.current);
+          recordingIntervalRef.current = null;
+        }
+
+        // Create blob and upload
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const file = new File([audioBlob], `recording-${Date.now()}.webm`, { type: 'audio/webm' });
+
+        setUploading(true);
+        try {
+          const result = await uploadMedia(file);
+          setUploadedMediaUrl(result.url);
+          setUploadedMediaType('audio');
+          toast.success('Recording uploaded');
+        } catch (error: any) {
+          toast.error(error.message || 'Failed to upload recording');
+        } finally {
+          setUploading(false);
+          setIsRecording(false);
+          setRecordingTime(0);
+        }
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+
+      // Start timer
+      recordingIntervalRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+
+    } catch (error: any) {
+      toast.error('Could not access microphone');
+      console.error('Recording error:', error);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+  };
+
+  const cancelRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.ondataavailable = null;
+      mediaRecorderRef.current.onstop = null;
+      mediaRecorderRef.current.stop();
+    }
+    if (recordingIntervalRef.current) {
+      clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = null;
+    }
+    setIsRecording(false);
+    setRecordingTime(0);
+  };
+
+  const formatRecordingTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   const createMutation = useMutation({
     mutationFn: createSequence,
@@ -997,6 +1102,76 @@ function SequenceEditor({
                             Supports WhatsApp formatting: *bold*, _italic_, ~strikethrough~
                           </p>
                         </div>
+                      ) : newStepType === 'AUDIO' ? (
+                        <div className="space-y-3">
+                          <Label>Record Voice Note</Label>
+
+                          {/* Recording UI */}
+                          {isRecording ? (
+                            <div className="flex items-center gap-3 p-4 bg-rose-50 dark:bg-rose-900/20 rounded-lg border border-rose-200 dark:border-rose-800">
+                              <div className="flex items-center gap-2 flex-1">
+                                <div className="h-3 w-3 bg-rose-500 rounded-full animate-pulse" />
+                                <span className="text-sm font-medium text-rose-600 dark:text-rose-400">
+                                  Recording... {formatRecordingTime(recordingTime)}
+                                </span>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-rose-400 hover:text-rose-600"
+                                onClick={cancelRecording}
+                                title="Cancel"
+                              >
+                                <X className="h-5 w-5" />
+                              </Button>
+                              <Button
+                                variant="default"
+                                size="icon"
+                                className="h-8 w-8 bg-rose-500 hover:bg-rose-600"
+                                onClick={stopRecording}
+                                title="Stop and save"
+                              >
+                                <Square className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ) : uploadedMediaUrl ? (
+                            <div className="relative border rounded-lg overflow-hidden p-3">
+                              <audio src={uploadedMediaUrl} className="w-full" controls />
+                              <Button
+                                variant="destructive"
+                                size="icon"
+                                className="absolute top-2 right-2 h-6 w-6"
+                                onClick={() => setUploadedMediaUrl('')}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              <Button
+                                variant="outline"
+                                className="w-full h-20 flex flex-col gap-2"
+                                onClick={startRecording}
+                                disabled={uploading}
+                              >
+                                {uploading ? (
+                                  <>
+                                    <Loader2 className="h-6 w-6 animate-spin" />
+                                    <span className="text-sm">Uploading...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Mic className="h-6 w-6 text-rose-500" />
+                                    <span className="text-sm">Tap to Record</span>
+                                  </>
+                                )}
+                              </Button>
+                              <p className="text-xs text-muted-foreground text-center">
+                                Click to start recording your voice message
+                              </p>
+                            </div>
+                          )}
+                        </div>
                       ) : (
                         <div className="space-y-3">
                           <Label>Upload {stepTypeLabels[newStepType]}</Label>
@@ -1037,8 +1212,6 @@ function SequenceEditor({
                                 <img src={uploadedMediaUrl} alt="Preview" className="w-full h-40 object-cover" />
                               ) : newStepType === 'VIDEO' ? (
                                 <video src={uploadedMediaUrl} className="w-full h-40 object-cover" controls />
-                              ) : newStepType === 'AUDIO' ? (
-                                <audio src={uploadedMediaUrl} className="w-full" controls />
                               ) : (
                                 <div className="p-4 flex items-center gap-2">
                                   <FileText className="h-8 w-8 text-muted-foreground" />

@@ -75,8 +75,10 @@ import { useAuthStore } from '@/stores/auth-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useKeyboardShortcuts, KeyboardShortcut } from '@/hooks/use-keyboard-shortcuts';
 import { SlashCommand, SlashCommandItem } from '@/components/slash-command';
+import { startSequenceExecution } from '@/lib/api/sequences';
 import { ScheduleMessageDialog } from '@/components/schedule-message-dialog';
 import { QuickReply } from '@/lib/api/quick-replies';
+import { listScheduledMessages, cancelScheduledMessage, ScheduledMessage } from '@/lib/api/scheduled-messages';
 import {
   listConversations,
   getMessages,
@@ -442,6 +444,26 @@ export default function InboxPage() {
     enabled: !!selectedConversationId && !!selectedConversation && isGroupContact(selectedConversation.contact),
   });
 
+  // Fetch scheduled messages
+  const { data: scheduledMessages } = useQuery({
+    queryKey: ['scheduledMessages', selectedConversationId],
+    queryFn: () => selectedConversationId ? listScheduledMessages(selectedConversationId) : null,
+    enabled: !!selectedConversationId,
+    refetchInterval: 30000, // Refresh every 30 seconds to update times
+  });
+
+  // Cancel scheduled message mutation
+  const cancelScheduledMutation = useMutation({
+    mutationFn: cancelScheduledMessage,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scheduledMessages', selectedConversationId] });
+      toast.success('Scheduled message cancelled');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to cancel scheduled message');
+    },
+  });
+
   // Handle editing contact name
   const handleEditContact = () => {
     if (selectedConversation) {
@@ -758,18 +780,8 @@ export default function InboxPage() {
       const newText = messageText.substring(0, slashStart) + quickReply.content.text;
       setMessageText(newText);
     } else {
-      // Sequence: send all steps immediately (TEXT, IMAGE, VIDEO, AUDIO, DOCUMENT)
+      // Sequence: start execution (worker handles sending all steps)
       const sequence = item.data;
-      const steps = sequence.steps || [];
-
-      if (steps.length === 0) {
-        toast.error('This sequence has no steps');
-        const newText = messageText.substring(0, slashStart);
-        setMessageText(newText);
-        setSlashCommandOpen(false);
-        setSlashSearchTerm('');
-        return;
-      }
 
       // Clear the slash command from input
       const newText = messageText.substring(0, slashStart);
@@ -782,65 +794,14 @@ export default function InboxPage() {
         return;
       }
 
-      // Send each step in order
-      toast.info(`Sending sequence "${sequence.name}"...`);
-
-      for (const step of steps) {
-        try {
-          if (step.type === 'DELAY') {
-            // Wait for the delay duration
-            const delayMinutes = step.content?.delayMinutes || 0;
-            if (delayMinutes > 0) {
-              toast.info(`Waiting ${delayMinutes} minute(s)...`);
-              await new Promise(resolve => setTimeout(resolve, delayMinutes * 60 * 1000));
-            }
-          } else if (step.type === 'TEXT') {
-            // Send text message
-            if (step.content?.text) {
-              await sendMessageMutation.mutateAsync({
-                conversationId: selectedConversationId,
-                text: step.content.text,
-              });
-            }
-          } else if (['IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT'].includes(step.type)) {
-            // Send media message
-            const mediaUrl = step.content?.mediaUrl;
-            const mediaFilename = step.content?.mediaFilename || 'file';
-            if (mediaUrl) {
-              // Determine mimetype based on step type
-              let mimetype = 'application/octet-stream';
-              let mediaType: 'image' | 'video' | 'audio' | 'document' = 'document';
-
-              if (step.type === 'IMAGE') {
-                mimetype = 'image/jpeg';
-                mediaType = 'image';
-              } else if (step.type === 'VIDEO') {
-                mimetype = 'video/mp4';
-                mediaType = 'video';
-              } else if (step.type === 'AUDIO') {
-                mimetype = 'audio/mpeg';
-                mediaType = 'audio';
-              }
-
-              await sendMessageMutation.mutateAsync({
-                conversationId: selectedConversationId,
-                text: step.content?.text || undefined, // Caption for media
-                media: {
-                  type: mediaType,
-                  url: mediaUrl,
-                  mimetype,
-                  filename: mediaFilename,
-                },
-              });
-            }
-          }
-        } catch (error) {
-          console.error(`Failed to send step:`, error);
-          toast.error(`Failed to send step: ${step.type}`);
-        }
+      try {
+        // Start sequence execution - worker will send all steps
+        await startSequenceExecution(sequence.id, selectedConversationId);
+        toast.success(`Started sequence: ${sequence.name}`);
+      } catch (error: any) {
+        console.error('Failed to start sequence:', error);
+        toast.error(error.message || 'Failed to start sequence');
       }
-
-      toast.success(`Sequence "${sequence.name}" sent!`);
     }
 
     setSlashCommandOpen(false);
@@ -848,7 +809,7 @@ export default function InboxPage() {
 
     // Focus the input
     messageInputRef.current?.focus();
-  }, [messageText, selectedConversationId, sendMessageMutation]);
+  }, [messageText, selectedConversationId]);
 
   // Handle message input change with slash command detection
   const handleMessageInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1593,6 +1554,56 @@ export default function InboxPage() {
                 </div>
               )}
             </ScrollArea>
+
+            {/* Scheduled Messages Banner */}
+            {scheduledMessages && scheduledMessages.filter(m => m.status === 'PENDING').length > 0 && (
+              <div className="px-4 py-2 border-t bg-blue-50/50 dark:bg-blue-900/10">
+                <div className="flex items-center gap-2 mb-2">
+                  <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                  <span className="text-sm font-medium text-blue-600 dark:text-blue-400">
+                    Scheduled ({scheduledMessages.filter(m => m.status === 'PENDING').length})
+                  </span>
+                </div>
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {scheduledMessages
+                    .filter(m => m.status === 'PENDING')
+                    .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime())
+                    .map((scheduled) => (
+                      <div
+                        key={scheduled.id}
+                        className="flex-shrink-0 bg-white dark:bg-gray-800 rounded-lg px-3 py-2 text-sm border border-blue-200 dark:border-blue-800 shadow-sm max-w-[250px]"
+                      >
+                        <div className="flex items-start gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="truncate text-foreground text-xs">
+                              {scheduled.content.text || (
+                                scheduled.content.mediaType === 'image' ? '📷 Image' :
+                                scheduled.content.mediaType === 'video' ? '🎬 Video' :
+                                scheduled.content.mediaType === 'audio' ? '🎵 Audio' :
+                                scheduled.content.mediaType === 'document' ? '📄 Document' :
+                                'Message'
+                              )}
+                            </p>
+                            <p className="text-[10px] text-blue-600 dark:text-blue-400 mt-0.5">
+                              {format(new Date(scheduled.scheduledAt), 'MMM d, h:mm a')}
+                            </p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5 flex-shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => cancelScheduledMutation.mutate(scheduled.id)}
+                            disabled={cancelScheduledMutation.isPending}
+                            title="Cancel"
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
 
             {/* Message Input */}
             <div className="p-4 border-t">

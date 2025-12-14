@@ -27,6 +27,8 @@ import {
   getOrCreateConversation,
   storeLidMapping,
 } from '../shared/utils/identifier';
+import { sequenceService, SequenceStepContent } from '../modules/sequence/sequence.service';
+import { SequenceStepType } from '@prisma/client';
 
 // BullMQ queues
 let messageQueue: Queue;
@@ -271,6 +273,7 @@ async function setupCommandSubscriber() {
 
   // Subscribe to command channels
   await redisSubscriber.psubscribe('whatsapp:cmd:*');
+  await redisSubscriber.subscribe('sequence:execute');
 
   redisSubscriber.on('pmessage', async (pattern, channel, message) => {
     try {
@@ -320,6 +323,19 @@ async function setupCommandSubscriber() {
       }
     } catch (error) {
       logger.error({ channel, error }, 'Error processing command');
+    }
+  });
+
+  // Handle sequence:execute messages (non-pattern subscription)
+  redisSubscriber.on('message', async (channel, message) => {
+    if (channel === 'sequence:execute') {
+      try {
+        const data = JSON.parse(message);
+        logger.info({ executionId: data.executionId }, 'Processing sequence execution immediately');
+        await processSequenceExecution(data.executionId);
+      } catch (error) {
+        logger.error({ channel, error }, 'Error processing sequence execution');
+      }
     }
   });
 
@@ -687,6 +703,7 @@ async function main() {
       logger.info(stats, 'Session health check');
     }, 60000);
 
+
     // Graceful shutdown handlers
     const shutdown = async (signal: string) => {
       logger.info({ signal }, 'Received shutdown signal');
@@ -1032,6 +1049,252 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
     { channelId, contactsProcessed, chatsProcessed, messagesProcessed },
     'Direct history sync completed'
   );
+}
+
+
+/**
+ * Process a single sequence execution immediately (all steps)
+ * Called when sequence:execute Redis message is received
+ */
+async function processSequenceExecution(executionId: string) {
+  const { MessageDirection, MessageStatus, MessageType } = await import('@prisma/client');
+
+  // Fetch the execution with full data
+  const execution = await prisma.sequenceExecution.findUnique({
+    where: { id: executionId },
+    include: {
+      sequence: {
+        include: {
+          steps: { orderBy: { order: 'asc' } },
+        },
+      },
+      conversation: {
+        select: {
+          id: true,
+          channelId: true,
+          contact: {
+            select: { id: true, identifier: true },
+          },
+        },
+      },
+    },
+  });
+
+  if (!execution || execution.status !== 'running') {
+    logger.warn({ executionId }, 'Execution not found or not running');
+    return;
+  }
+
+  const { sequence, conversation } = execution;
+  const channelId = conversation.channelId;
+  const recipient = conversation.contact.identifier;
+
+  // Check if channel is connected
+  const session = sessionManager.getAllSessions().get(channelId);
+  if (!session || session.status !== 'CONNECTED') {
+    logger.warn({ executionId, channelId }, 'Channel not connected, sequence will be retried by polling worker');
+    return;
+  }
+
+  // Get channel for WebSocket broadcasts
+  const channel = await prisma.channel.findUnique({
+    where: { id: channelId },
+    select: { organizationId: true },
+  });
+
+  logger.info({ executionId, sequenceName: sequence.name, stepCount: sequence.steps.length }, 'Starting immediate sequence execution');
+
+  // Process all steps starting from currentStep
+  let currentStepIndex = execution.currentStep;
+
+  while (currentStepIndex < sequence.steps.length) {
+    const step = sequence.steps[currentStepIndex];
+    const content = step.content as SequenceStepContent;
+
+    // Handle DELAY steps - actually wait
+    if (step.type === SequenceStepType.DELAY) {
+      const delaySeconds = content.delaySeconds || (content.delayMinutes ? content.delayMinutes * 60 : 10);
+      logger.info({ executionId, delaySeconds, step: currentStepIndex }, 'Sequence delay step - waiting');
+
+      // Actually wait for the delay
+      await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
+
+      // Update execution to next step
+      await prisma.sequenceExecution.update({
+        where: { id: executionId },
+        data: {
+          currentStep: currentStepIndex + 1,
+        },
+      });
+
+      currentStepIndex++;
+      logger.info({ executionId, delaySeconds }, 'Delay complete, continuing sequence');
+      continue;
+    }
+
+    // Determine message type and content for DB
+    let messageType: typeof MessageType[keyof typeof MessageType] = MessageType.TEXT;
+    let messageContent: any = {};
+
+    if (content.mediaUrl && content.mediaType) {
+      const typeMap: Record<string, typeof MessageType[keyof typeof MessageType]> = {
+        image: MessageType.IMAGE,
+        video: MessageType.VIDEO,
+        audio: MessageType.AUDIO,
+        document: MessageType.DOCUMENT,
+      };
+      messageType = typeMap[content.mediaType] || MessageType.TEXT;
+      messageContent = {
+        mediaUrl: content.mediaUrl,
+        mediaType: content.mediaType,
+        mimeType: getMimeType(content.mediaType, content.mediaFilename),
+        fileName: content.mediaFilename,
+        caption: content.text,
+      };
+    } else if (content.text) {
+      messageContent = { text: content.text };
+    } else {
+      // Skip empty steps
+      currentStepIndex++;
+      continue;
+    }
+
+    // Create message record (PENDING status)
+    const message = await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        channelId,
+        direction: MessageDirection.OUTBOUND,
+        type: messageType,
+        content: messageContent,
+        status: MessageStatus.PENDING,
+        metadata: { sequenceId: sequence.id, sequenceName: sequence.name, stepIndex: currentStepIndex },
+      },
+    });
+
+    // Send the message
+    let success = false;
+    let errorMessage: string | undefined;
+    let externalId: string | undefined;
+
+    try {
+      if (step.type === SequenceStepType.TEXT && content.text) {
+        const result = await sessionManager.sendTextMessage(channelId, recipient, content.text);
+        externalId = result?.key?.id;
+        success = true;
+      } else if (content.mediaUrl && content.mediaType) {
+        const media = {
+          type: content.mediaType as 'image' | 'video' | 'audio' | 'document',
+          url: content.mediaUrl,
+          filename: content.mediaFilename,
+          caption: content.text,
+          mimetype: getMimeType(content.mediaType, content.mediaFilename),
+        };
+        const result = await sessionManager.sendMediaMessage(channelId, recipient, media);
+        externalId = result?.key?.id;
+        success = true;
+      } else if (content.text) {
+        const result = await sessionManager.sendTextMessage(channelId, recipient, content.text);
+        externalId = result?.key?.id;
+        success = true;
+      }
+    } catch (sendError: any) {
+      errorMessage = sendError.message || 'Failed to send message';
+      logger.error({ executionId, step: currentStepIndex, error: sendError }, 'Sequence step send failed');
+    }
+
+    // Update message status
+    const updatedMessage = await prisma.message.update({
+      where: { id: message.id },
+      data: {
+        externalId,
+        status: success ? MessageStatus.SENT : MessageStatus.FAILED,
+        sentAt: success ? new Date() : undefined,
+        failedReason: errorMessage,
+      },
+    });
+
+    // Update conversation lastMessageAt
+    if (success) {
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { lastMessageAt: new Date() },
+      });
+    }
+
+    // Publish to Redis for WebSocket broadcast
+    if (channel) {
+      await redisClient.publish(`org:${channel.organizationId}:message`, JSON.stringify({
+        message: updatedMessage,
+        conversationId: conversation.id,
+      }));
+    }
+
+    logger.info({
+      executionId,
+      messageId: message.id,
+      externalId,
+      success,
+      step: currentStepIndex,
+      sequenceName: sequence.name,
+    }, 'Sequence step sent');
+
+    // Small delay between messages to avoid rate limiting
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    currentStepIndex++;
+  }
+
+  // All steps completed - mark execution as completed
+  await prisma.sequenceExecution.update({
+    where: { id: executionId },
+    data: {
+      status: 'completed',
+      completedAt: new Date(),
+      currentStep: sequence.steps.length,
+    },
+  });
+
+  logger.info({ executionId, sequenceName: sequence.name }, 'Sequence execution completed');
+}
+
+/**
+ * Get MIME type from media type and filename
+ */
+function getMimeType(mediaType: string, filename?: string): string {
+  // Try to get from filename extension first
+  if (filename) {
+    const ext = filename.split('.').pop()?.toLowerCase();
+    const mimeMap: Record<string, string> = {
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      gif: 'image/gif',
+      webp: 'image/webp',
+      mp4: 'video/mp4',
+      webm: 'video/webm',
+      mp3: 'audio/mpeg',
+      ogg: 'audio/ogg',
+      wav: 'audio/wav',
+      pdf: 'application/pdf',
+      doc: 'application/msword',
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      xls: 'application/vnd.ms-excel',
+      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    };
+    if (ext && mimeMap[ext]) {
+      return mimeMap[ext];
+    }
+  }
+
+  // Fallback to type-based defaults
+  const defaultMimes: Record<string, string> = {
+    image: 'image/jpeg',
+    video: 'video/mp4',
+    audio: 'audio/mpeg',
+    document: 'application/octet-stream',
+  };
+  return defaultMimes[mediaType] || 'application/octet-stream';
 }
 
 main();

@@ -7,6 +7,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { MessageSequenceStatus } from '@prisma/client';
 import { sequenceService } from './sequence.service';
+import { redisClient } from '../../core/cache/redis.client';
 
 export class SequenceController {
   /**
@@ -252,6 +253,11 @@ export class SequenceController {
       const { conversationId } = req.body;
 
       const execution = await sequenceService.startExecution(id, conversationId, organizationId);
+
+      // Trigger immediate processing via Redis pub/sub
+      await redisClient.publish('sequence:execute', JSON.stringify({
+        executionId: execution.id,
+      }));
 
       res.status(201).json({
         success: true,
