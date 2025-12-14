@@ -73,8 +73,14 @@ export default function DashboardLayout({
   // Show loading while checking auth
   if (isLoading || (!isAuthenticated && tokens)) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-pink-50 via-white to-lavender-50 dark:from-purple-950 dark:via-purple-900 dark:to-pink-950">
+        <div className="flex flex-col items-center gap-4">
+          <div className="relative">
+            <Loader2 className="h-10 w-10 animate-spin text-pink-500" />
+            <div className="absolute inset-0 h-10 w-10 animate-ping opacity-30 rounded-full bg-pink-400" />
+          </div>
+          <p className="text-pink-600 dark:text-pink-400 font-medium animate-pulse">Loading...</p>
+        </div>
       </div>
     );
   }

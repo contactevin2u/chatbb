@@ -111,15 +111,15 @@ function getStatusIcon(status: string, direction: string) {
 function getStatusColor(status: string): string {
   switch (status) {
     case 'OPEN':
-      return 'bg-green-500';
+      return 'bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.3)]';
     case 'PENDING':
-      return 'bg-yellow-500';
+      return 'bg-amber-400 shadow-[0_0_0_3px_rgba(251,191,36,0.3)]';
     case 'RESOLVED':
-      return 'bg-blue-500';
+      return 'bg-sky-400 shadow-[0_0_0_3px_rgba(56,189,248,0.3)]';
     case 'CLOSED':
-      return 'bg-gray-400';
+      return 'bg-pink-300 shadow-[0_0_0_3px_rgba(244,114,182,0.2)]';
     default:
-      return 'bg-gray-400';
+      return 'bg-pink-300';
   }
 }
 
@@ -144,23 +144,23 @@ export const ConversationListItem = memo(function ConversationListItem({
   return (
     <button
       className={cn(
-        'w-full flex items-start gap-3 p-3 hover:bg-muted/50 transition-colors text-left',
-        isSelected && 'bg-muted',
-        conversation.isPinned && 'border-l-2 border-l-primary'
+        'w-full flex items-start gap-3 p-3 hover:bg-pink-100/50 dark:hover:bg-purple-900/30 transition-all duration-200 text-left rounded-xl mx-1 my-0.5',
+        isSelected && 'bg-gradient-to-r from-pink-100 to-lavender-100 dark:from-purple-900/50 dark:to-pink-900/50 shadow-pink-sm',
+        conversation.isPinned && 'border-l-3 border-l-pink-500'
       )}
       onClick={() => onClick(conversation.id)}
     >
       {/* Avatar */}
       <div className="relative flex-shrink-0">
-        <Avatar>
+        <Avatar className="ring-2 ring-pink-200/50 dark:ring-purple-700/50">
           <AvatarImage src={conversation.contact.avatarUrl || undefined} />
-          <AvatarFallback className={isGroup ? 'bg-green-500/10 text-green-600' : ''}>
+          <AvatarFallback className={isGroup ? 'bg-gradient-to-br from-emerald-400 to-teal-400 text-white' : 'bg-gradient-to-br from-pink-400 to-purple-400 text-white'}>
             {isGroup ? <Users className="h-4 w-4" /> : getContactInitials(conversation.contact)}
           </AvatarFallback>
         </Avatar>
         <span
           className={cn(
-            'absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-background',
+            'absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white dark:border-purple-900',
             getStatusColor(conversation.status)
           )}
         />

@@ -66,6 +66,7 @@ export interface ContactPanelNote {
 export interface GroupParticipant {
   id: string;
   identifier: string;
+  displayName?: string | null;
   admin?: string | null;
 }
 
@@ -354,10 +355,7 @@ export const ContactInfoPanel = memo(function ContactInfoPanel({
                 {groupParticipants.participants.slice(0, 20).map((participant) => (
                   <div key={participant.id} className="flex items-center gap-2 text-sm">
                     <Avatar className="h-6 w-6">
-                      {participant.avatarUrl && (
-                        <AvatarImage src={participant.avatarUrl} className="object-cover" />
-                      )}
-                      <AvatarFallback className="text-[10px]">
+                      <AvatarFallback className="text-[10px] bg-gradient-to-br from-pink-400 to-purple-400 text-white">
                         {(participant.displayName || participant.identifier).slice(-2).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
@@ -365,7 +363,7 @@ export const ContactInfoPanel = memo(function ContactInfoPanel({
                       {participant.displayName || `+${participant.identifier}`}
                     </span>
                     {participant.admin && (
-                      <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded">
+                      <span className="text-[10px] bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400 px-1.5 py-0.5 rounded-full">
                         {participant.admin === 'superadmin' ? 'Owner' : 'Admin'}
                       </span>
                     )}

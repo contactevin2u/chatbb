@@ -74,7 +74,8 @@ import { useWebSocket } from '@/providers/websocket-provider';
 import { useAuthStore } from '@/stores/auth-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useKeyboardShortcuts, KeyboardShortcut } from '@/hooks/use-keyboard-shortcuts';
-import { SlashCommand } from '@/components/slash-command';
+import { SlashCommand, SlashCommandItem } from '@/components/slash-command';
+import { startSequenceExecution } from '@/lib/api/sequences';
 import { ScheduleMessageDialog } from '@/components/schedule-message-dialog';
 import { QuickReply } from '@/lib/api/quick-replies';
 import {
@@ -749,17 +750,36 @@ export default function InboxPage() {
   }, [selectedConversationId, startTyping, stopTyping]);
 
   // Handle slash command selection
-  const handleSlashCommandSelect = useCallback((quickReply: QuickReply) => {
-    // Replace the slash command with the quick reply text
+  const handleSlashCommandSelect = useCallback(async (item: SlashCommandItem) => {
     const slashStart = messageText.lastIndexOf('/');
-    const newText = messageText.substring(0, slashStart) + quickReply.content.text;
-    setMessageText(newText);
+
+    if (item.type === 'quickReply') {
+      // Replace the slash command with the quick reply text
+      const quickReply = item.data as QuickReply;
+      const newText = messageText.substring(0, slashStart) + quickReply.content.text;
+      setMessageText(newText);
+    } else {
+      // Sequence: start execution
+      const sequence = item.data;
+      try {
+        if (selectedConversation) {
+          await startSequenceExecution(sequence.id, selectedConversation.id);
+          toast.success(`Started sequence: ${sequence.name}`);
+        }
+        // Clear the slash command text
+        const newText = messageText.substring(0, slashStart);
+        setMessageText(newText);
+      } catch (error: any) {
+        toast.error(error.message || 'Failed to start sequence');
+      }
+    }
+
     setSlashCommandOpen(false);
     setSlashSearchTerm('');
 
     // Focus the input
     messageInputRef.current?.focus();
-  }, [messageText]);
+  }, [messageText, selectedConversation]);
 
   // Handle message input change with slash command detection
   const handleMessageInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {

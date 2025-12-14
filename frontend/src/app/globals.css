@@ -4,48 +4,57 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    /* Feminine Pink/Lavender Theme - Light Mode */
+    --background: 330 100% 99%; /* Soft cream-pink */
+    --foreground: 330 30% 20%; /* Warm dark brown-pink */
+    --card: 330 60% 99%; /* Soft pink-white */
+    --card-foreground: 330 30% 20%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
-    --radius: 0.5rem;
+    --popover-foreground: 330 30% 20%;
+    --primary: 330 85% 60%; /* Beautiful rose pink */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 280 60% 95%; /* Soft lavender */
+    --secondary-foreground: 280 40% 30%;
+    --muted: 330 40% 96%; /* Soft pink-gray */
+    --muted-foreground: 330 15% 45%;
+    --accent: 280 70% 92%; /* Light purple accent */
+    --accent-foreground: 280 50% 30%;
+    --destructive: 0 72% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 330 30% 90%; /* Soft pink border */
+    --input: 330 30% 92%;
+    --ring: 330 85% 60%;
+    --radius: 1rem; /* More rounded corners */
+
+    /* Custom cute colors */
+    --peach: 20 100% 92%;
+    --mint: 160 60% 90%;
+    --lavender: 280 60% 92%;
+    --blush: 350 80% 94%;
+    --cream: 40 60% 97%;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    /* Feminine Dark Mode - Soft, warm dark */
+    --background: 280 30% 8%; /* Deep purple-black */
+    --foreground: 330 20% 95%; /* Soft pink-white */
+    --card: 280 25% 12%; /* Dark purple card */
+    --card-foreground: 330 20% 95%;
+    --popover: 280 25% 10%;
+    --popover-foreground: 330 20% 95%;
+    --primary: 330 80% 65%; /* Brighter pink for dark mode */
+    --primary-foreground: 280 30% 8%;
+    --secondary: 280 40% 20%; /* Deep lavender */
+    --secondary-foreground: 280 20% 90%;
+    --muted: 280 30% 15%;
+    --muted-foreground: 330 15% 65%;
+    --accent: 280 50% 25%;
+    --accent-foreground: 280 20% 95%;
+    --destructive: 0 62% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 280 30% 18%;
+    --input: 280 30% 18%;
+    --ring: 330 80% 60%;
   }
 }
 
@@ -55,25 +64,28 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
 
-/* Custom scrollbar */
+/* Cute custom scrollbar with pink theme */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-transparent;
+  @apply bg-pink-50 dark:bg-purple-950 rounded-full;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-muted-foreground/20 rounded-full;
+  @apply bg-gradient-to-b from-pink-300 to-pink-400 dark:from-pink-600 dark:to-purple-600 rounded-full;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-muted-foreground/30;
+  @apply from-pink-400 to-pink-500 dark:from-pink-500 dark:to-purple-500;
 }
 
 /* Hide scrollbar for chat container but keep functionality */
@@ -84,4 +96,343 @@
 
 .hide-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* Cute gradient backgrounds */
+.gradient-pink {
+  background: linear-gradient(135deg, hsl(330, 80%, 95%) 0%, hsl(280, 60%, 95%) 100%);
+}
+
+.gradient-lavender {
+  background: linear-gradient(135deg, hsl(280, 60%, 95%) 0%, hsl(330, 80%, 95%) 100%);
+}
+
+.gradient-peach {
+  background: linear-gradient(135deg, hsl(20, 100%, 95%) 0%, hsl(330, 80%, 95%) 100%);
+}
+
+/* Soft pink glow effect */
+.glow-pink {
+  box-shadow: 0 0 20px rgba(236, 72, 153, 0.15),
+              0 0 40px rgba(236, 72, 153, 0.1),
+              0 0 60px rgba(236, 72, 153, 0.05);
+}
+
+/* Cute button hover effects */
+.btn-cute {
+  @apply transition-all duration-300 ease-out;
+  @apply hover:scale-105 hover:shadow-lg;
+  @apply active:scale-95;
+}
+
+.btn-cute:hover {
+  box-shadow: 0 4px 20px rgba(236, 72, 153, 0.3);
+}
+
+/* Floating animation for cute elements */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Sparkle animation */
+@keyframes sparkle {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
+}
+
+.animate-sparkle {
+  animation: sparkle 2s ease-in-out infinite;
+}
+
+/* Bounce in animation */
+@keyframes bounce-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  70% {
+    transform: scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-bounce-in {
+  animation: bounce-in 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+/* Slide up with fade */
+@keyframes slide-up-fade {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up-fade 0.3s ease-out;
+}
+
+/* Wiggle animation for notifications */
+@keyframes wiggle {
+  0%, 100% {
+    transform: rotate(-3deg);
+  }
+  50% {
+    transform: rotate(3deg);
+  }
+}
+
+.animate-wiggle {
+  animation: wiggle 0.3s ease-in-out;
+}
+
+/* Heart beat animation */
+@keyframes heartbeat {
+  0%, 100% {
+    transform: scale(1);
+  }
+  25% {
+    transform: scale(1.1);
+  }
+  50% {
+    transform: scale(1);
+  }
+  75% {
+    transform: scale(1.1);
+  }
+}
+
+.animate-heartbeat {
+  animation: heartbeat 1s ease-in-out infinite;
+}
+
+/* Soft card shadow */
+.card-cute {
+  @apply rounded-2xl;
+  box-shadow: 0 4px 6px -1px rgba(236, 72, 153, 0.1),
+              0 2px 4px -1px rgba(236, 72, 153, 0.06);
+}
+
+.card-cute:hover {
+  box-shadow: 0 10px 15px -3px rgba(236, 72, 153, 0.15),
+              0 4px 6px -2px rgba(236, 72, 153, 0.1);
+}
+
+/* Glass morphism with pink tint */
+.glass-pink {
+  background: rgba(253, 242, 248, 0.8);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(236, 72, 153, 0.1);
+}
+
+.dark .glass-pink {
+  background: rgba(88, 28, 135, 0.3);
+  border: 1px solid rgba(236, 72, 153, 0.2);
+}
+
+/* Gradient text */
+.text-gradient-pink {
+  background: linear-gradient(135deg, #ec4899 0%, #a855f7 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Selection color */
+::selection {
+  background: rgba(236, 72, 153, 0.3);
+  color: inherit;
+}
+
+/* Focus ring with pink color */
+.focus-ring-pink:focus {
+  @apply outline-none ring-2 ring-pink-400 ring-offset-2 ring-offset-background;
+}
+
+/* Cute input styling */
+.input-cute {
+  @apply rounded-xl border-2 border-pink-200 dark:border-pink-800;
+  @apply focus:border-pink-400 focus:ring-2 focus:ring-pink-200;
+  @apply transition-all duration-200;
+  @apply placeholder:text-pink-300 dark:placeholder:text-pink-700;
+}
+
+/* Status indicators with cute colors */
+.status-online {
+  @apply bg-emerald-400;
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.3);
+}
+
+.status-away {
+  @apply bg-amber-400;
+  box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.3);
+}
+
+.status-busy {
+  @apply bg-rose-400;
+  box-shadow: 0 0 0 3px rgba(251, 113, 133, 0.3);
+}
+
+/* Tooltip with cute styling */
+.tooltip-cute {
+  @apply bg-gradient-to-r from-pink-500 to-purple-500;
+  @apply text-white rounded-xl px-3 py-1.5;
+  @apply text-sm font-medium;
+  box-shadow: 0 4px 12px rgba(236, 72, 153, 0.3);
+}
+
+/* Avatar ring with gradient */
+.avatar-ring {
+  @apply ring-2 ring-offset-2 ring-offset-background;
+  @apply ring-gradient-to-r from-pink-400 to-purple-400;
+}
+
+/* Notification badge */
+.badge-cute {
+  @apply bg-gradient-to-r from-pink-500 to-rose-500;
+  @apply text-white text-xs font-bold;
+  @apply rounded-full px-2 py-0.5;
+  @apply shadow-lg;
+  box-shadow: 0 2px 8px rgba(236, 72, 153, 0.4);
+}
+
+/* Message bubble styling */
+.bubble-outbound {
+  @apply bg-gradient-to-br from-pink-500 to-pink-600;
+  @apply text-white rounded-2xl rounded-br-md;
+}
+
+.bubble-inbound {
+  @apply bg-gradient-to-br from-white to-pink-50 dark:from-purple-900 dark:to-purple-950;
+  @apply rounded-2xl rounded-bl-md;
+  @apply border border-pink-100 dark:border-purple-800;
+}
+
+/* Sidebar item hover effect */
+.sidebar-item {
+  @apply transition-all duration-200 ease-out;
+  @apply hover:bg-pink-100 dark:hover:bg-purple-900/50;
+  @apply rounded-xl;
+}
+
+.sidebar-item.active {
+  @apply bg-gradient-to-r from-pink-100 to-purple-100;
+  @apply dark:from-pink-900/30 dark:to-purple-900/30;
+  @apply border-l-4 border-pink-500;
+}
+
+/* Tab styling */
+.tab-cute {
+  @apply rounded-full px-4 py-2;
+  @apply transition-all duration-200;
+  @apply hover:bg-pink-100 dark:hover:bg-purple-900/50;
+}
+
+.tab-cute.active {
+  @apply bg-gradient-to-r from-pink-500 to-purple-500;
+  @apply text-white shadow-lg;
+  box-shadow: 0 4px 12px rgba(236, 72, 153, 0.3);
+}
+
+/* Progress bar cute */
+.progress-cute {
+  @apply h-2 bg-pink-100 dark:bg-purple-900 rounded-full overflow-hidden;
+}
+
+.progress-cute-bar {
+  @apply h-full bg-gradient-to-r from-pink-500 to-purple-500 rounded-full;
+  @apply transition-all duration-500 ease-out;
+}
+
+/* Divider with cute styling */
+.divider-cute {
+  @apply border-t border-dashed border-pink-200 dark:border-purple-800;
+}
+
+/* Table row hover */
+.table-row-cute {
+  @apply transition-colors duration-150;
+  @apply hover:bg-pink-50 dark:hover:bg-purple-900/30;
+}
+
+/* Checkbox cute styling override */
+.checkbox-cute {
+  @apply rounded-lg border-2 border-pink-300;
+  @apply checked:bg-gradient-to-r checked:from-pink-500 checked:to-purple-500;
+  @apply checked:border-transparent;
+  @apply focus:ring-pink-400;
+}
+
+/* Switch cute styling */
+.switch-cute {
+  @apply bg-pink-200 dark:bg-purple-800;
+}
+
+.switch-cute[data-state="checked"] {
+  @apply bg-gradient-to-r from-pink-500 to-purple-500;
+}
+
+/* Dropdown cute */
+.dropdown-cute {
+  @apply rounded-2xl border border-pink-100 dark:border-purple-800;
+  @apply shadow-xl;
+  box-shadow: 0 10px 40px rgba(236, 72, 153, 0.15);
+}
+
+/* Modal cute */
+.modal-cute {
+  @apply rounded-3xl;
+  @apply border border-pink-100 dark:border-purple-800;
+  box-shadow: 0 25px 50px -12px rgba(236, 72, 153, 0.25);
+}
+
+/* Tag cute */
+.tag-cute {
+  @apply inline-flex items-center gap-1;
+  @apply px-3 py-1 rounded-full;
+  @apply bg-gradient-to-r from-pink-100 to-purple-100;
+  @apply dark:from-pink-900/30 dark:to-purple-900/30;
+  @apply text-sm font-medium;
+  @apply text-pink-700 dark:text-pink-300;
+  @apply border border-pink-200 dark:border-pink-800;
+}
+
+/* Empty state cute */
+.empty-state-cute {
+  @apply text-center py-12;
+  @apply text-pink-400 dark:text-pink-600;
+}
+
+/* Loading spinner cute */
+.spinner-cute {
+  @apply border-4 border-pink-200 dark:border-purple-800;
+  @apply border-t-pink-500 dark:border-t-pink-400;
+  @apply rounded-full animate-spin;
 }

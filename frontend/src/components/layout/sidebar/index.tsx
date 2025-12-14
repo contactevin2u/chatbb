@@ -16,6 +16,8 @@ import {
   ChevronRight,
   PanelLeftClose,
   PanelLeft,
+  Heart,
+  Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { Button } from '@/components/ui/button';
@@ -73,7 +75,11 @@ export function Sidebar() {
       {/* Sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 bg-card border-r flex flex-col transition-all duration-200 ease-in-out',
+          'fixed inset-y-0 left-0 z-50 flex flex-col transition-all duration-300 ease-out',
+          'bg-gradient-to-b from-pink-50 via-white to-lavender-50',
+          'dark:from-purple-950 dark:via-purple-900/95 dark:to-pink-950/90',
+          'border-r border-pink-200/50 dark:border-purple-800/50',
+          'shadow-pink-sm',
           // Desktop: collapsed = icon-only (w-16), expanded = full (w-64)
           sidebarCollapsed ? 'lg:w-16' : 'lg:w-64',
           // Mobile: controlled by mobileMenuOpen
@@ -82,13 +88,16 @@ export function Sidebar() {
       >
         {/* Logo */}
         <div className={cn(
-          'h-16 flex items-center border-b transition-all duration-200',
+          'h-16 flex items-center border-b border-pink-200/30 dark:border-purple-800/30 transition-all duration-200',
           sidebarCollapsed ? 'lg:justify-center lg:px-2 px-4' : 'justify-between px-4'
         )}>
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <MessageSquare className="h-7 w-7 text-primary flex-shrink-0" />
+          <Link href="/dashboard" className="flex items-center gap-2 group">
+            <div className="relative">
+              <Heart className="h-7 w-7 text-pink-500 fill-pink-500 flex-shrink-0 group-hover:animate-heartbeat transition-all" />
+              <Sparkles className="h-3 w-3 text-pink-400 absolute -top-1 -right-1 animate-sparkle" />
+            </div>
             <span className={cn(
-              'text-xl font-bold transition-all duration-200',
+              'text-xl font-bold transition-all duration-200 text-gradient-pink',
               sidebarCollapsed ? 'lg:hidden' : ''
             )}>
               ChatBaby
@@ -119,11 +128,11 @@ export function Sidebar() {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  'flex items-center gap-3 rounded-lg text-sm font-medium transition-colors',
+                  'flex items-center gap-3 rounded-xl text-sm font-medium transition-all duration-200',
                   sidebarCollapsed ? 'lg:justify-center lg:px-0 lg:py-2.5 px-3 py-2.5' : 'px-3 py-2.5',
                   isActive
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                    ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-pink-md'
+                    : 'text-pink-700 dark:text-pink-200 hover:bg-pink-100 dark:hover:bg-purple-900/50 hover:text-pink-900 dark:hover:text-pink-100 hover:scale-[1.02]'
                 )}
                 onClick={() => {
                   // Close sidebar on mobile after navigation
@@ -132,7 +141,11 @@ export function Sidebar() {
                   }
                 }}
               >
-                <Icon className={cn('h-5 w-5 flex-shrink-0', sidebarCollapsed && 'lg:h-5 lg:w-5')} />
+                <Icon className={cn(
+                  'h-5 w-5 flex-shrink-0 transition-transform',
+                  sidebarCollapsed && 'lg:h-5 lg:w-5',
+                  !isActive && 'group-hover:scale-110'
+                )} />
                 <span className={cn(
                   'transition-all duration-200',
                   sidebarCollapsed ? 'lg:hidden' : ''
@@ -149,7 +162,7 @@ export function Sidebar() {
                   <TooltipTrigger asChild>
                     {linkContent}
                   </TooltipTrigger>
-                  <TooltipContent side="right" className="hidden lg:block">
+                  <TooltipContent side="right" className="hidden lg:block tooltip-cute">
                     {item.title}
                   </TooltipContent>
                 </Tooltip>
@@ -162,7 +175,7 @@ export function Sidebar() {
 
         {/* Collapse Toggle (Desktop only) */}
         <div className={cn(
-          'hidden lg:flex border-t p-2',
+          'hidden lg:flex border-t border-pink-200/30 dark:border-purple-800/30 p-2',
           sidebarCollapsed ? 'justify-center' : 'justify-end'
         )}>
           <Tooltip>
@@ -171,7 +184,7 @@ export function Sidebar() {
                 variant="ghost"
                 size="icon"
                 onClick={toggleSidebar}
-                className="h-8 w-8"
+                className="h-8 w-8 text-pink-600 dark:text-pink-400 hover:bg-pink-100 dark:hover:bg-purple-900/50 hover:text-pink-700 dark:hover:text-pink-300 transition-all duration-200 rounded-lg"
               >
                 {sidebarCollapsed ? (
                   <PanelLeft className="h-4 w-4" />
@@ -180,7 +193,7 @@ export function Sidebar() {
                 )}
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="right">
+            <TooltipContent side="right" className="tooltip-cute">
               {sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} <kbd className="ml-2 text-xs opacity-60">[</kbd>
             </TooltipContent>
           </Tooltip>
