@@ -211,12 +211,19 @@ export async function storeLidMapping(channelId: string, lid: string, phoneNumbe
       return;
     }
 
-    // Store in the standard LID hash
-    await redisClient.hset(`lid:${channelId}`, normalizedLid, normalizedPhone);
-    await redisClient.hset(`pn:${channelId}`, normalizedPhone, normalizedLid);
+    // Store in the standard LID hash with 7-day expiry
+    // Use pipeline for atomic operation
+    const lidKey = `lid:${channelId}`;
+    const pnKey = `pn:${channelId}`;
 
-    // Also store in a contact-specific key for quick lookup
-    await redisClient.set(`lid-contact:${channelId}:${normalizedLid}`, normalizedPhone);
+    await redisClient.hset(lidKey, normalizedLid, normalizedPhone);
+    await redisClient.expire(lidKey, 604800); // 7 days
+
+    await redisClient.hset(pnKey, normalizedPhone, normalizedLid);
+    await redisClient.expire(pnKey, 604800); // 7 days
+
+    // Also store in a contact-specific key with 7-day expiry
+    await redisClient.setex(`lid-contact:${channelId}:${normalizedLid}`, 604800, normalizedPhone);
 
     logger.info({
       channelId,

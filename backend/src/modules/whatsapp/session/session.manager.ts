@@ -355,9 +355,13 @@ export class SessionManager extends EventEmitter {
     socket.ev.on('lid-mapping.update', async (mapping) => {
       for (const [lid, pn] of Object.entries(mapping)) {
         try {
-          // Store bidirectional mapping in Redis
-          await redisClient.hset(`lid:${channelId}`, lid, pn as string);
-          await redisClient.hset(`pn:${channelId}`, pn as string, lid);
+          // Store bidirectional mapping in Redis with 7-day TTL
+          const lidKey = `lid:${channelId}`;
+          const pnKey = `pn:${channelId}`;
+          await redisClient.hset(lidKey, lid, pn as string);
+          await redisClient.expire(lidKey, 604800);
+          await redisClient.hset(pnKey, pn as string, lid);
+          await redisClient.expire(pnKey, 604800);
         } catch (e) {
           this.logger.debug({ channelId, lid, pn, error: e }, 'Failed to store LID mapping');
         }
