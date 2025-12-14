@@ -406,45 +406,21 @@ async function processHistorySync(job: Job) {
         }
       }
 
-      let contact = await prisma.contact.findFirst({
-        where: { organizationId: orgId, channelType: ChannelType.WHATSAPP, identifier },
+      // Use shared upsert helper for consistent contact creation
+      const contact = await getOrCreateContact({
+        organizationId: orgId,
+        channelType: ChannelType.WHATSAPP,
+        identifier,
+        displayName,
       });
 
-      if (!contact) {
-        contact = await prisma.contact.create({
-          data: {
-            organizationId: orgId,
-            channelType: ChannelType.WHATSAPP,
-            identifier,
-            displayName,
-          },
-        });
-      } else if (displayName && !contact.displayName) {
-        // Update contact if we have a name and it's currently empty
-        contact = await prisma.contact.update({
-          where: { id: contact.id },
-          data: { displayName },
-        });
-      }
-
-      const existingConvo = await prisma.conversation.findFirst({
-        where: { channelId, contactId: contact.id },
+      // Use shared upsert helper for consistent conversation creation
+      await getOrCreateConversation({
+        organizationId: orgId,
+        channelId,
+        contactId: contact.id,
+        isFromMe: false,
       });
-
-      if (!existingConvo) {
-        await prisma.conversation.create({
-          data: {
-            organizationId: orgId,
-            channelId,
-            contactId: contact.id,
-            status: 'OPEN',
-            unreadCount: chat.unreadCount || 0,
-            lastMessageAt: chat.conversationTimestamp
-              ? new Date(Number(chat.conversationTimestamp) * 1000)
-              : new Date(),
-          },
-        });
-      }
     } catch (error) {
       // Skip errors
     }
