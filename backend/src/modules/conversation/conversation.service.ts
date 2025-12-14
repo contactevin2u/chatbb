@@ -857,8 +857,20 @@ export class ConversationService {
   /**
    * Get group participants for a conversation
    * Only works for group conversations
-   * Looks up participants in contacts DB to get display names and avatars
-   * Handles LID resolution for participants stored with LID format
+   *
+   * Baileys GroupParticipant structure:
+   * - id: string (LID or JID format)
+   * - lid?: string (LID format @lid)
+   * - phoneNumber?: string (PN format @s.whatsapp.net)
+   * - name?: string (name you saved)
+   * - notify?: string (name they set on WhatsApp)
+   * - admin?: 'admin' | 'superadmin' | null
+   *
+   * Priority for display name:
+   * 1. Our Contact database (user may have edited)
+   * 2. Baileys name field (from your WhatsApp contacts)
+   * 3. Baileys notify field (their WhatsApp profile name)
+   * 4. Phone number (fallback)
    */
   async getGroupParticipants(conversationId: string, organizationId: string) {
     const conversation = await prisma.conversation.findFirst({
@@ -885,32 +897,45 @@ export class ConversationService {
     // Try to get from Redis cache
     const groupJid = `${conversation.contact.identifier}@g.us`;
     const { redisClient } = await import('../../core/cache/redis.client.js');
-    const { normalizeIdentifier, resolveIdentifier } = await import('../../shared/utils/identifier.js');
+    const { normalizeIdentifier } = await import('../../shared/utils/identifier.js');
 
     try {
       const cached = await redisClient.get(`group:${groupJid}:metadata`);
       if (cached) {
         const metadata = JSON.parse(cached);
         const rawParticipants = metadata.participants || [];
-        const channelId = conversation.channel.id;
 
-        // Resolve all participant identifiers (handles LID to phone number resolution)
-        const resolvedIdentifiers: Map<string, string> = new Map();
+        // Extract phone numbers - prefer phoneNumber field, fallback to id
+        // Baileys v7: phoneNumber field contains @s.whatsapp.net format if available
+        const phoneNumbers: string[] = [];
+        const participantPhoneMap = new Map<string, string>(); // original id -> normalized phone
+
         for (const p of rawParticipants) {
-          if (!p.id) continue;
-          // Resolve LID to phone number if needed
-          const resolved = await resolveIdentifier(channelId, p.id);
-          resolvedIdentifiers.set(p.id, resolved);
+          // Get phone number: prefer phoneNumber field, then extract from id
+          let phoneNumber: string | null = null;
+
+          if (p.phoneNumber) {
+            // phoneNumber is in format like "1234567890@s.whatsapp.net"
+            phoneNumber = normalizeIdentifier(p.phoneNumber);
+          } else if (p.id && !p.id.includes('@lid')) {
+            // id is in phone format (not LID)
+            phoneNumber = normalizeIdentifier(p.id);
+          } else if (p.id) {
+            // id is LID - normalize it (we'll try to match in DB)
+            phoneNumber = normalizeIdentifier(p.id);
+          }
+
+          if (phoneNumber) {
+            phoneNumbers.push(phoneNumber);
+            participantPhoneMap.set(p.id || '', phoneNumber);
+          }
         }
 
-        // Get unique normalized identifiers for DB lookup
-        const uniqueIdentifiers = [...new Set(resolvedIdentifiers.values())];
-
-        // Look up participants in contacts database to get displayName and avatarUrl
+        // Look up participants in contacts database
         const existingContacts = await prisma.contact.findMany({
           where: {
             organizationId,
-            identifier: { in: uniqueIdentifiers },
+            identifier: { in: [...new Set(phoneNumbers)] },
           },
           select: {
             identifier: true,
@@ -927,15 +952,23 @@ export class ConversationService {
         // Build enriched participants list
         const enrichedParticipants = rawParticipants.map((p: any) => {
           const originalId = p.id || '';
-          const resolvedIdentifier = resolvedIdentifiers.get(originalId) || normalizeIdentifier(originalId);
-          const existingContact = contactMap.get(resolvedIdentifier);
+          const phoneNumber = participantPhoneMap.get(originalId) || normalizeIdentifier(originalId);
+          const existingContact = contactMap.get(phoneNumber);
+
+          // Priority: DB contact name > Baileys name > Baileys notify > null
+          const displayName =
+            existingContact?.displayName ||
+            p.name ||
+            p.notify ||
+            p.verifiedName ||
+            null;
 
           return {
             id: originalId,
-            identifier: resolvedIdentifier,
+            identifier: phoneNumber,
             admin: p.admin || null,
-            displayName: existingContact?.displayName || null,
-            avatarUrl: existingContact?.avatarUrl || null,
+            displayName,
+            avatarUrl: existingContact?.avatarUrl || p.imgUrl || null,
           };
         });
 
