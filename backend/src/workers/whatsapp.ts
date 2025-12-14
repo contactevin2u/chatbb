@@ -44,8 +44,58 @@ function setupEventHandlers() {
   sessionManager.on('message:received', async (channelId, waMessage) => {
     let mediaUrl: string | undefined;
 
-    // For group messages, ensure group metadata is cached
+    // CRITICAL: Handle LID to Phone Number resolution using remoteJidAlt
+    // Baileys v7 provides remoteJidAlt which contains the alternate JID format
+    // If remoteJid is LID format, remoteJidAlt contains the phone number (and vice versa)
+    const originalRemoteJid = waMessage.key?.remoteJid;
+    const remoteJidAlt = (waMessage.key as any)?.remoteJidAlt;
+    const participantAlt = (waMessage.key as any)?.participantAlt;
+
+    // Resolve LID to phone number if possible
+    if (originalRemoteJid?.includes('@lid') && remoteJidAlt && !remoteJidAlt.includes('@lid')) {
+      // remoteJid is LID, remoteJidAlt is phone number - use phone number
+      logger.info({
+        channelId,
+        lid: originalRemoteJid,
+        phoneJid: remoteJidAlt,
+      }, 'Resolved LID to phone number using remoteJidAlt');
+
+      // Store the mapping for future use
+      try {
+        const lidPart = originalRemoteJid.split('@')[0];
+        const phonePart = remoteJidAlt.split('@')[0];
+        await redisClient.hset(`lid:${channelId}`, lidPart, phonePart);
+        await redisClient.hset(`pn:${channelId}`, phonePart, lidPart);
+        logger.debug({ channelId, lid: lidPart, phone: phonePart }, 'Stored LID-phone mapping from remoteJidAlt');
+      } catch (e) {
+        logger.warn({ error: e }, 'Failed to store LID mapping');
+      }
+
+      // Replace LID with phone number in the message key
+      waMessage.key.remoteJid = remoteJidAlt;
+    }
+
+    // Also handle participant LIDs for group messages
+    if (waMessage.key?.participant?.includes('@lid') && participantAlt && !participantAlt.includes('@lid')) {
+      logger.info({
+        channelId,
+        participantLid: waMessage.key.participant,
+        participantPhone: participantAlt,
+      }, 'Resolved participant LID to phone number');
+
+      try {
+        const lidPart = waMessage.key.participant.split('@')[0];
+        const phonePart = participantAlt.split('@')[0];
+        await redisClient.hset(`lid:${channelId}`, lidPart, phonePart);
+        await redisClient.hset(`pn:${channelId}`, phonePart, lidPart);
+      } catch (e) {
+        logger.warn({ error: e }, 'Failed to store participant LID mapping');
+      }
+    }
+
     const remoteJid = waMessage.key?.remoteJid;
+
+    // For group messages, ensure group metadata is cached
     if (remoteJid?.endsWith('@g.us')) {
       try {
         // This will fetch and cache if not already cached
