@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, isToday, isYesterday, format, isSameDay } from 'date-fns';
 import {
   Search,
   Filter,
@@ -118,6 +118,13 @@ function getContactInitials(contact: Conversation['contact']): string {
     return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
   }
   return name.slice(0, 2).toUpperCase();
+}
+
+// Format date header for message groups
+function formatDateHeader(date: Date): string {
+  if (isToday(date)) return 'Today';
+  if (isYesterday(date)) return 'Yesterday';
+  return format(date, 'MMMM d, yyyy');
 }
 
 // Format message preview
@@ -648,14 +655,31 @@ export default function InboxPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {messagesData?.messages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={cn(
-                        'flex gap-3',
-                        message.direction === 'OUTBOUND' && 'flex-row-reverse'
-                      )}
-                    >
+                  {messagesData?.messages.map((message, index) => {
+                    const messageDate = new Date(message.createdAt);
+                    const prevMessage = index > 0 ? messagesData.messages[index - 1] : null;
+                    const showDateSeparator = !prevMessage || !isSameDay(messageDate, new Date(prevMessage.createdAt));
+
+                    // Debug logging for media messages
+                    if (['IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT', 'STICKER'].includes(message.type)) {
+                      console.log('Media message:', message.type, 'content:', message.content);
+                    }
+
+                    return (
+                      <div key={message.id}>
+                        {showDateSeparator && (
+                          <div className="flex items-center justify-center my-4">
+                            <div className="bg-muted px-3 py-1 rounded-full text-xs text-muted-foreground font-medium">
+                              {formatDateHeader(messageDate)}
+                            </div>
+                          </div>
+                        )}
+                        <div
+                          className={cn(
+                            'flex gap-3',
+                            message.direction === 'OUTBOUND' && 'flex-row-reverse'
+                          )}
+                        >
                       {message.direction === 'INBOUND' && (
                         <Avatar className="h-8 w-8">
                           <AvatarFallback className="text-xs">
@@ -699,7 +723,20 @@ export default function InboxPage() {
                               <video
                                 src={message.content.mediaUrl}
                                 controls
-                                className="max-w-[300px] max-h-[300px] rounded"
+                                preload="metadata"
+                                playsInline
+                                className="max-w-[300px] max-h-[300px] rounded cursor-pointer"
+                                onClick={(e) => {
+                                  // If video fails to play inline, open in new tab
+                                  const video = e.currentTarget;
+                                  if (video.error) {
+                                    window.open(message.content.mediaUrl, '_blank');
+                                  }
+                                }}
+                                onError={(e) => {
+                                  // Log video load errors
+                                  console.error('Video load error:', message.content.mediaUrl);
+                                }}
                               />
                             ) : (
                               <div className="h-48 w-48 bg-black/10 rounded flex items-center justify-center">
@@ -776,7 +813,9 @@ export default function InboxPage() {
                         </div>
                       </div>
                     </div>
-                  ))}
+                  </div>
+                    );
+                  })}
                   <div ref={messagesEndRef} />
                 </div>
               )}
