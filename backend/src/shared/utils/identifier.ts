@@ -269,6 +269,9 @@ export async function getOrCreateContact(options: {
   const isValidGroupName = displayName && displayName !== 'Group Chat';
   const shouldUpdateGroupName = isGroupContact && isValidGroupName && existing?.displayName !== displayName;
 
+  // For individuals: update if we have a new displayName and the contact doesn't have one
+  const shouldUpdateIndividualName = !isGroupContact && displayName && !existing?.displayName;
+
   try {
     const contact = await prisma.contact.upsert({
       where: {
@@ -285,9 +288,9 @@ export async function getOrCreateContact(options: {
         displayName,
       },
       update: {
-        // For groups: always update to real name (not fallback)
-        // For individuals: only update if they don't have a name
-        ...(shouldUpdateGroupName ? { displayName } : {}),
+        // For groups: update to real name (not fallback)
+        // For individuals: update if they don't have a name yet
+        ...(shouldUpdateGroupName || shouldUpdateIndividualName ? { displayName } : {}),
       },
       select: {
         id: true,
@@ -296,21 +299,6 @@ export async function getOrCreateContact(options: {
         avatarUrl: true,
       },
     });
-
-    // Update displayName for individual contacts if provided and current is empty
-    if (!isGroupContact && displayName && !contact.displayName) {
-      const updated = await prisma.contact.update({
-        where: { id: contact.id },
-        data: { displayName },
-        select: {
-          id: true,
-          identifier: true,
-          displayName: true,
-          avatarUrl: true,
-        },
-      });
-      return { ...updated, isNew };
-    }
 
     return { ...contact, isNew };
   } catch (error: any) {
@@ -334,8 +322,12 @@ export async function getOrCreateContact(options: {
       });
 
       if (fetched) {
-        // For groups, update the name if we have a real one
-        if (isGroupContact && isValidGroupName && fetched.displayName !== displayName) {
+        // Update displayName if: groups with real name, or individuals without name
+        const shouldUpdateFetched =
+          (isGroupContact && isValidGroupName && fetched.displayName !== displayName) ||
+          (!isGroupContact && displayName && !fetched.displayName);
+
+        if (shouldUpdateFetched) {
           const updated = await prisma.contact.update({
             where: { id: fetched.id },
             data: { displayName },
