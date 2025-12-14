@@ -142,6 +142,11 @@ export class SessionManager extends EventEmitter {
       // Set to false to receive phone notifications
       markOnlineOnConnect: false,
       msgRetryCounterCache: this.msgRetryCache,
+      // Timeout and retry settings for better reliability
+      connectTimeoutMs: 60000, // 60 seconds connection timeout
+      defaultQueryTimeoutMs: 60000, // 60 seconds for queries
+      keepAliveIntervalMs: 30000, // 30 seconds keep alive
+      retryRequestDelayMs: 500, // 500ms delay between retries
       // Cache group metadata to prevent rate limiting
       cachedGroupMetadata: async (jid) => {
         const cached = await redisClient.get(`group:${jid}:metadata`);
@@ -269,6 +274,7 @@ export class SessionManager extends EventEmitter {
       await session.saveCreds();
       this.logger.debug({ channelId }, 'Credentials updated and saved');
     });
+
 
     // Incoming messages (both from contacts and sent from own phone)
     socket.ev.on('messages.upsert', async ({ messages, type }) => {
