@@ -327,6 +327,7 @@ export class SequenceService {
 
   /**
    * Start a sequence execution for a conversation
+   * If the same sequence is already running, it will be stopped and restarted
    */
   async startExecution(sequenceId: string, conversationId: string, organizationId: string) {
     const sequence = await prisma.messageSequence.findFirst({
@@ -340,14 +341,11 @@ export class SequenceService {
       throw new Error('Sequence not found or not active');
     }
 
-    // Check if already running for this conversation
-    const existing = await prisma.sequenceExecution.findFirst({
+    // Stop any existing execution of the SAME sequence for this conversation (restart behavior)
+    await prisma.sequenceExecution.updateMany({
       where: { sequenceId, conversationId, status: 'running' },
+      data: { status: 'stopped' },
     });
-
-    if (existing) {
-      throw new Error('Sequence already running for this conversation');
-    }
 
     // Calculate next step time based on first step
     let nextStepAt: Date | null = new Date();
