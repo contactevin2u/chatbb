@@ -222,16 +222,18 @@ function SequenceEditor({
   const [newStepContent, setNewStepContent] = useState('');
   const [newStepDelay, setNewStepDelay] = useState(5);
 
-  // Reset form when sequence changes
+  // Reset form when dialog opens or sequence changes
   useEffect(() => {
-    setName(sequence?.name || '');
-    setShortcut(sequence?.shortcut || '');
-    setDescription(sequence?.description || '');
-    setSteps(sequence?.steps || []);
-    setAddingStep(false);
-    setNewStepContent('');
-    setNewStepDelay(5);
-  }, [sequence]);
+    if (open) {
+      setName(sequence?.name || '');
+      setShortcut(sequence?.shortcut || '');
+      setDescription(sequence?.description || '');
+      setSteps(sequence?.steps || []);
+      setAddingStep(false);
+      setNewStepContent('');
+      setNewStepDelay(5);
+    }
+  }, [open, sequence]);
 
   const createMutation = useMutation({
     mutationFn: createSequence,
