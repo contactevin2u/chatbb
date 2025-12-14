@@ -78,17 +78,25 @@ export async function resolveIdentifier(channelId: string, jidOrId: string): Pro
       // Extract the LID part (before @)
       const lidPart = jidOrId.split('@')[0];
 
+      // Log LID lookup attempt
+      logger.info({
+        channelId,
+        originalJid: jidOrId,
+        lidPart,
+        redisKey: `lid:${channelId}`,
+      }, 'Attempting LID lookup');
+
       // Try to get the phone number from LID mapping
       const phoneNumber = await redisClient.hget(`lid:${channelId}`, lidPart);
       if (phoneNumber) {
         const resolvedNormalized = normalizeIdentifier(phoneNumber);
-        logger.debug({
+        logger.info({
           channelId,
           originalJid: jidOrId,
           lid: lidPart,
           resolvedPhone: phoneNumber,
           normalized: resolvedNormalized,
-        }, 'Resolved LID to phone number');
+        }, 'SUCCESS: Resolved LID to phone number');
         return resolvedNormalized;
       }
 
@@ -98,18 +106,32 @@ export async function resolveIdentifier(channelId: string, jidOrId: string): Pro
         const phoneNumber2 = await redisClient.hget(`lid:${channelId}`, lidWithoutSuffix);
         if (phoneNumber2) {
           const resolvedNormalized = normalizeIdentifier(phoneNumber2);
-          logger.debug({
+          logger.info({
             channelId,
             originalJid: jidOrId,
             lid: lidWithoutSuffix,
             resolvedPhone: phoneNumber2,
             normalized: resolvedNormalized,
-          }, 'Resolved LID (without suffix) to phone number');
+          }, 'SUCCESS: Resolved LID (without suffix) to phone number');
           return resolvedNormalized;
         }
       }
+
+      // Log all keys in this LID hash for debugging
+      const allLidMappings = await redisClient.hgetall(`lid:${channelId}`);
+      const mappingCount = Object.keys(allLidMappings || {}).length;
+
+      logger.warn({
+        channelId,
+        originalJid: jidOrId,
+        lidPart,
+        lidWithoutSuffix,
+        mappingCount,
+        sampleMappings: Object.entries(allLidMappings || {}).slice(0, 5),
+      }, 'FAILED: LID not found in Redis - creating contact with LID as identifier');
+
     } catch (error) {
-      logger.warn({ channelId, jidOrId, error }, 'Failed to lookup LID mapping');
+      logger.error({ channelId, jidOrId, error }, 'ERROR: Failed to lookup LID mapping');
     }
   }
 
