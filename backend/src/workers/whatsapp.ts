@@ -274,12 +274,19 @@ async function setupCommandSubscriber() {
 
 async function handleConnectCommand(channelId: string, data: { organizationId: string }) {
   try {
+    logger.info({ channelId, organizationId: data.organizationId }, 'Starting connect command');
+
     const session = await sessionManager.createSession(channelId, data.organizationId);
+
+    logger.info({ channelId, status: session.status }, 'Session created, publishing status');
+
     await redisClient.publish(`whatsapp:${channelId}:status`, JSON.stringify({
       status: 'connecting',
       channelId,
     }));
   } catch (error) {
+    logger.error({ channelId, error: (error as Error).message, stack: (error as Error).stack }, 'Connect command failed');
+
     await redisClient.publish(`whatsapp:${channelId}:error`, JSON.stringify({
       error: (error as Error).message,
     }));

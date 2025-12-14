@@ -117,7 +117,9 @@ export class SessionManager extends EventEmitter {
     await this.updateChannelStatus(channelId, 'CONNECTING');
 
     // Load auth state from PostgreSQL
+    this.logger.info({ channelId }, 'Loading auth state from PostgreSQL...');
     const { state, saveCreds, deleteState } = await usePostgresAuthState(channelId);
+    this.logger.info({ channelId, hasExistingCreds: !!state.creds.me }, 'Auth state loaded');
 
     // NOTE: Do NOT use fetchLatestBaileysVersion() - it can cause incompatibility issues
     // Let Baileys use its built-in default version
