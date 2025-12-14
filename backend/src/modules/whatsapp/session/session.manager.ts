@@ -9,7 +9,6 @@ import makeWASocket, {
   DisconnectReason,
   WASocket,
   ConnectionState,
-  fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
   Browsers,
   WAMessageKey,
@@ -120,14 +119,12 @@ export class SessionManager extends EventEmitter {
     // Load auth state from PostgreSQL
     const { state, saveCreds, deleteState } = await usePostgresAuthState(channelId);
 
-    // Get latest Baileys version
-    const { version, isLatest } = await fetchLatestBaileysVersion();
-    this.logger.info({ version, isLatest }, 'Using Baileys version');
+    // NOTE: Do NOT use fetchLatestBaileysVersion() - it can cause incompatibility issues
+    // Let Baileys use its built-in default version
 
     // Create socket connection
     // Use macOS Desktop browser for full historical message sync
     const socket = makeWASocket({
-      version,
       logger: this.logger.child({ channelId }),
       auth: {
         creds: state.creds,
@@ -237,10 +234,24 @@ export class SessionManager extends EventEmitter {
         session.status = 'DISCONNECTED';
 
         // Handle different disconnect reasons
+        // 401 = loggedOut, 405 = already registered, 408 = request timeout
+        // 411 = multidevice mismatch, 428 = precondition required (session issue)
+        // 440 = connection replaced, 500+ = server errors
         const shouldReconnect =
           statusCode !== DisconnectReason.loggedOut &&
           statusCode !== DisconnectReason.badSession &&
-          statusCode !== DisconnectReason.multideviceMismatch;
+          statusCode !== DisconnectReason.multideviceMismatch &&
+          statusCode !== 428; // 428 = session corrupted, need fresh QR
+
+        // For 428 (precondition required), clear session and require new QR
+        if (statusCode === 428) {
+          this.logger.warn({ channelId }, 'Session corrupted (428), clearing auth state');
+          await session.deleteState();
+          await this.updateChannelStatus(channelId, 'DISCONNECTED');
+          this.sessions.delete(channelId);
+          this.emit('disconnected', channelId, 'Session corrupted - please scan QR code again');
+          return;
+        }
 
         if (shouldReconnect && session.retryCount < MAX_RETRY_COUNT) {
           session.retryCount++;
