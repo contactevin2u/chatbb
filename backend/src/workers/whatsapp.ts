@@ -276,6 +276,31 @@ async function handleConnectCommand(channelId: string, data: { organizationId: s
   try {
     logger.info({ channelId, organizationId: data.organizationId }, 'Starting connect command');
 
+    // Check if session already exists
+    const existingSession = sessionManager.getSession(channelId);
+    if (existingSession) {
+      // If session exists but not connected, close it and create fresh
+      if (existingSession.status !== 'CONNECTED') {
+        logger.info({ channelId, status: existingSession.status }, 'Closing existing non-connected session for fresh QR');
+        try {
+          existingSession.socket.end(undefined);
+        } catch (e) {
+          // Ignore close errors
+        }
+        sessionManager.removeSession(channelId);
+        // Small delay before recreating
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } else {
+        // Already connected, just publish status
+        logger.info({ channelId }, 'Session already connected');
+        await redisClient.publish(`whatsapp:${channelId}:status`, JSON.stringify({
+          status: 'connected',
+          channelId,
+        }));
+        return;
+      }
+    }
+
     const session = await sessionManager.createSession(channelId, data.organizationId);
 
     logger.info({ channelId, status: session.status }, 'Session created, publishing status');
