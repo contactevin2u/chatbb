@@ -25,6 +25,8 @@ import {
   Loader2,
   Check,
   CheckCheck,
+  Reply,
+  Hash,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { uploadMedia } from '@/lib/api/conversations';
@@ -72,6 +74,14 @@ import {
   type SequenceStepType,
   type SequenceStatus,
 } from '@/lib/api/sequences';
+import {
+  listQuickReplies,
+  createQuickReply,
+  updateQuickReply,
+  deleteQuickReply,
+  type QuickReply,
+  type CreateQuickReplyInput,
+} from '@/lib/api/quick-replies';
 
 const stepTypeIcons: Record<SequenceStepType, React.ReactNode> = {
   TEXT: <MessageSquare className="h-4 w-4" />,
@@ -97,6 +107,248 @@ const statusColors: Record<SequenceStatus, string> = {
   PAUSED: 'bg-yellow-500',
   ARCHIVED: 'bg-gray-400',
 };
+
+// ============== QUICK REPLY COMPONENTS ==============
+
+function QuickReplyCard({
+  quickReply,
+  onEdit,
+  onDelete,
+}: {
+  quickReply: QuickReply;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <Card className="hover:shadow-md transition-shadow">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-lg truncate">{quickReply.name}</CardTitle>
+              {quickReply.category && (
+                <Badge variant="secondary" className="text-[10px]">
+                  {quickReply.category}
+                </Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-1 mt-1">
+              <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">/{quickReply.shortcut}</span>
+            </div>
+          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={onEdit}>
+                <Edit className="h-4 w-4 mr-2" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={onDelete} className="text-destructive">
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm text-muted-foreground line-clamp-2">
+          {quickReply.content.text}
+        </p>
+        <div className="flex items-center gap-2 mt-3 text-xs text-muted-foreground">
+          <span>{quickReply.usageCount} uses</span>
+          {quickReply.content.media && (
+            <span className="flex items-center gap-1">
+              {quickReply.content.media.type === 'image' && <Image className="h-3 w-3" />}
+              {quickReply.content.media.type === 'video' && <Video className="h-3 w-3" />}
+              {quickReply.content.media.type === 'audio' && <Mic className="h-3 w-3" />}
+              {quickReply.content.media.type === 'document' && <FileText className="h-3 w-3" />}
+              + Media
+            </span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function QuickReplyEditor({
+  quickReply,
+  open,
+  onOpenChange,
+  onSave,
+}: {
+  quickReply?: QuickReply | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSave: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const isEditing = !!quickReply;
+
+  const [name, setName] = useState('');
+  const [shortcut, setShortcut] = useState('');
+  const [text, setText] = useState('');
+  const [category, setCategory] = useState('');
+
+  useEffect(() => {
+    if (open) {
+      setName(quickReply?.name || '');
+      setShortcut(quickReply?.shortcut || '');
+      setText(quickReply?.content.text || '');
+      setCategory(quickReply?.category || '');
+    }
+  }, [open, quickReply]);
+
+  const createMutation = useMutation({
+    mutationFn: createQuickReply,
+    onSuccess: () => {
+      toast.success('Quick reply created');
+      queryClient.invalidateQueries({ queryKey: ['quickReplies'] });
+      onSave();
+      onOpenChange(false);
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to create quick reply');
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => updateQuickReply(id, data),
+    onSuccess: () => {
+      toast.success('Quick reply updated');
+      queryClient.invalidateQueries({ queryKey: ['quickReplies'] });
+      onSave();
+      onOpenChange(false);
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to update quick reply');
+    },
+  });
+
+  const handleSave = () => {
+    if (!name.trim()) {
+      toast.error('Please enter a name');
+      return;
+    }
+    if (!shortcut.trim()) {
+      toast.error('Please enter a shortcut');
+      return;
+    }
+    if (!text.trim()) {
+      toast.error('Please enter the reply text');
+      return;
+    }
+
+    if (isEditing && quickReply) {
+      updateMutation.mutate({
+        id: quickReply.id,
+        data: {
+          name: name.trim(),
+          shortcut: shortcut.trim(),
+          content: { text: text.trim() },
+          category: category.trim() || null,
+        },
+      });
+    } else {
+      createMutation.mutate({
+        name: name.trim(),
+        shortcut: shortcut.trim(),
+        content: { text: text.trim() },
+        category: category.trim() || undefined,
+      });
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{isEditing ? 'Edit Quick Reply' : 'Create Quick Reply'}</DialogTitle>
+          <DialogDescription>
+            Quick replies fill the chat box when triggered with /shortcut. You can edit before sending.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="qr-name">Name</Label>
+            <Input
+              id="qr-name"
+              placeholder="e.g., Greeting"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="qr-shortcut">Shortcut</Label>
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">/</span>
+              <Input
+                id="qr-shortcut"
+                placeholder="e.g., hello"
+                value={shortcut}
+                onChange={(e) => setShortcut(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
+                className="flex-1"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="qr-text">Reply Text</Label>
+            <Textarea
+              id="qr-text"
+              placeholder="Enter the reply text..."
+              value={text}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setText(e.target.value)}
+              rows={4}
+            />
+            <p className="text-xs text-muted-foreground">
+              Supports WhatsApp formatting: *bold*, _italic_, ~strikethrough~
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="qr-category">Category (optional)</Label>
+            <Input
+              id="qr-category"
+              placeholder="e.g., Greetings, Sales, Support"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSave}
+            disabled={createMutation.isPending || updateMutation.isPending}
+          >
+            {createMutation.isPending || updateMutation.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              'Save'
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ============== SEQUENCE COMPONENTS ==============
 
 function SequenceCard({
   sequence,
@@ -543,7 +795,7 @@ function SequenceEditor({
             <div>
               <DialogTitle>{isEditing ? 'Edit Sequence' : 'Create Sequence'}</DialogTitle>
               <DialogDescription>
-                Build an automated message sequence with multiple steps.
+                Sequences send all steps immediately when triggered. Use for multi-message flows.
               </DialogDescription>
             </div>
             <Button
@@ -880,17 +1132,33 @@ function SequenceEditor({
   );
 }
 
+// ============== MAIN PAGE ==============
+
 export default function AutomationPage() {
   const queryClient = useQueryClient();
-  const [editorOpen, setEditorOpen] = useState(false);
+  const [mainTab, setMainTab] = useState<'sequences' | 'quickReplies'>('sequences');
+
+  // Sequence state
+  const [sequenceEditorOpen, setSequenceEditorOpen] = useState(false);
   const [editingSequence, setEditingSequence] = useState<MessageSequence | null>(null);
 
-  const { data: sequences, isLoading } = useQuery({
+  // Quick reply state
+  const [quickReplyEditorOpen, setQuickReplyEditorOpen] = useState(false);
+  const [editingQuickReply, setEditingQuickReply] = useState<QuickReply | null>(null);
+
+  // Queries
+  const { data: sequences, isLoading: loadingSequences } = useQuery({
     queryKey: ['sequences'],
     queryFn: () => listSequences(),
   });
 
-  const updateStatusMutation = useMutation({
+  const { data: quickReplies, isLoading: loadingQuickReplies } = useQuery({
+    queryKey: ['quickReplies'],
+    queryFn: () => listQuickReplies(),
+  });
+
+  // Sequence mutations
+  const updateSequenceStatusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: SequenceStatus }) =>
       updateSequence(id, { status }),
     onSuccess: () => {
@@ -902,7 +1170,7 @@ export default function AutomationPage() {
     },
   });
 
-  const deleteMutation = useMutation({
+  const deleteSequenceMutation = useMutation({
     mutationFn: deleteSequence,
     onSuccess: () => {
       toast.success('Sequence deleted');
@@ -913,20 +1181,41 @@ export default function AutomationPage() {
     },
   });
 
-  const handleEdit = (sequence: MessageSequence) => {
+  // Quick reply mutations
+  const deleteQuickReplyMutation = useMutation({
+    mutationFn: deleteQuickReply,
+    onSuccess: () => {
+      toast.success('Quick reply deleted');
+      queryClient.invalidateQueries({ queryKey: ['quickReplies'] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to delete quick reply');
+    },
+  });
+
+  const handleEditSequence = (sequence: MessageSequence) => {
     setEditingSequence(sequence);
-    setEditorOpen(true);
+    setSequenceEditorOpen(true);
   };
 
-  const handleCreate = () => {
+  const handleCreateSequence = () => {
     setEditingSequence(null);
-    setEditorOpen(true);
+    setSequenceEditorOpen(true);
+  };
+
+  const handleEditQuickReply = (quickReply: QuickReply) => {
+    setEditingQuickReply(quickReply);
+    setQuickReplyEditorOpen(true);
+  };
+
+  const handleCreateQuickReply = () => {
+    setEditingQuickReply(null);
+    setQuickReplyEditorOpen(true);
   };
 
   const activeSequences = sequences?.filter((s) => s.status === 'ACTIVE') || [];
   const draftSequences = sequences?.filter((s) => s.status === 'DRAFT') || [];
   const pausedSequences = sequences?.filter((s) => s.status === 'PAUSED') || [];
-  const archivedSequences = sequences?.filter((s) => s.status === 'ARCHIVED') || [];
 
   return (
     <div className="p-6 space-y-6">
@@ -934,135 +1223,214 @@ export default function AutomationPage() {
         <div>
           <h1 className="text-3xl font-bold">Automation</h1>
           <p className="text-muted-foreground mt-1">
-            Create message sequences and automated workflows
+            Manage quick replies and message sequences
           </p>
         </div>
-        <Button onClick={handleCreate}>
-          <Plus className="h-4 w-4 mr-2" />
-          New Sequence
-        </Button>
       </div>
 
-      <Tabs defaultValue="all" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="all">
-            All ({sequences?.length || 0})
-          </TabsTrigger>
-          <TabsTrigger value="active">
-            Active ({activeSequences.length})
-          </TabsTrigger>
-          <TabsTrigger value="draft">
-            Draft ({draftSequences.length})
-          </TabsTrigger>
-          <TabsTrigger value="paused">
-            Paused ({pausedSequences.length})
-          </TabsTrigger>
-        </TabsList>
+      {/* Main Tabs: Sequences vs Quick Replies */}
+      <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as any)} className="space-y-4">
+        <div className="flex items-center justify-between">
+          <TabsList>
+            <TabsTrigger value="sequences" className="gap-2">
+              <Zap className="h-4 w-4" />
+              Sequences ({sequences?.length || 0})
+            </TabsTrigger>
+            <TabsTrigger value="quickReplies" className="gap-2">
+              <Reply className="h-4 w-4" />
+              Quick Replies ({quickReplies?.length || 0})
+            </TabsTrigger>
+          </TabsList>
 
-        {isLoading ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {[1, 2, 3].map((i) => (
-              <Card key={i} className="animate-pulse">
-                <CardHeader>
-                  <div className="h-5 w-32 bg-muted rounded" />
-                  <div className="h-4 w-48 bg-muted rounded mt-2" />
-                </CardHeader>
-                <CardContent>
-                  <div className="h-4 w-24 bg-muted rounded" />
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        ) : (
-          <>
-            <TabsContent value="all" className="space-y-4">
-              {sequences?.length === 0 ? (
-                <Card>
-                  <CardContent className="flex flex-col items-center justify-center py-16">
-                    <Bot className="h-16 w-16 text-muted-foreground mb-4" />
-                    <h2 className="text-xl font-semibold mb-2">No sequences yet</h2>
-                    <p className="text-muted-foreground text-center max-w-md mb-4">
-                      Create your first message sequence to automate customer engagement.
-                    </p>
-                    <Button onClick={handleCreate}>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Create Sequence
-                    </Button>
+          {mainTab === 'sequences' ? (
+            <Button onClick={handleCreateSequence}>
+              <Plus className="h-4 w-4 mr-2" />
+              New Sequence
+            </Button>
+          ) : (
+            <Button onClick={handleCreateQuickReply}>
+              <Plus className="h-4 w-4 mr-2" />
+              New Quick Reply
+            </Button>
+          )}
+        </div>
+
+        {/* Sequences Tab */}
+        <TabsContent value="sequences" className="space-y-4">
+          <Tabs defaultValue="all" className="space-y-4">
+            <TabsList>
+              <TabsTrigger value="all">
+                All ({sequences?.length || 0})
+              </TabsTrigger>
+              <TabsTrigger value="active">
+                Active ({activeSequences.length})
+              </TabsTrigger>
+              <TabsTrigger value="draft">
+                Draft ({draftSequences.length})
+              </TabsTrigger>
+              <TabsTrigger value="paused">
+                Paused ({pausedSequences.length})
+              </TabsTrigger>
+            </TabsList>
+
+            {loadingSequences ? (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {[1, 2, 3].map((i) => (
+                  <Card key={i} className="animate-pulse">
+                    <CardHeader>
+                      <div className="h-5 w-32 bg-muted rounded" />
+                      <div className="h-4 w-48 bg-muted rounded mt-2" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="h-4 w-24 bg-muted rounded" />
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <>
+                <TabsContent value="all" className="space-y-4">
+                  {sequences?.length === 0 ? (
+                    <Card>
+                      <CardContent className="flex flex-col items-center justify-center py-16">
+                        <Zap className="h-16 w-16 text-muted-foreground mb-4" />
+                        <h2 className="text-xl font-semibold mb-2">No sequences yet</h2>
+                        <p className="text-muted-foreground text-center max-w-md mb-4">
+                          Sequences send multiple messages at once. Great for welcome flows, product info, etc.
+                        </p>
+                        <Button onClick={handleCreateSequence}>
+                          <Plus className="h-4 w-4 mr-2" />
+                          Create Sequence
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                      {sequences?.map((sequence) => (
+                        <SequenceCard
+                          key={sequence.id}
+                          sequence={sequence}
+                          onEdit={() => handleEditSequence(sequence)}
+                          onDelete={() => deleteSequenceMutation.mutate(sequence.id)}
+                          onStatusChange={(status) =>
+                            updateSequenceStatusMutation.mutate({ id: sequence.id, status })
+                          }
+                        />
+                      ))}
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="active">
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    {activeSequences.map((sequence) => (
+                      <SequenceCard
+                        key={sequence.id}
+                        sequence={sequence}
+                        onEdit={() => handleEditSequence(sequence)}
+                        onDelete={() => deleteSequenceMutation.mutate(sequence.id)}
+                        onStatusChange={(status) =>
+                          updateSequenceStatusMutation.mutate({ id: sequence.id, status })
+                        }
+                      />
+                    ))}
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="draft">
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    {draftSequences.map((sequence) => (
+                      <SequenceCard
+                        key={sequence.id}
+                        sequence={sequence}
+                        onEdit={() => handleEditSequence(sequence)}
+                        onDelete={() => deleteSequenceMutation.mutate(sequence.id)}
+                        onStatusChange={(status) =>
+                          updateSequenceStatusMutation.mutate({ id: sequence.id, status })
+                        }
+                      />
+                    ))}
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="paused">
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    {pausedSequences.map((sequence) => (
+                      <SequenceCard
+                        key={sequence.id}
+                        sequence={sequence}
+                        onEdit={() => handleEditSequence(sequence)}
+                        onDelete={() => deleteSequenceMutation.mutate(sequence.id)}
+                        onStatusChange={(status) =>
+                          updateSequenceStatusMutation.mutate({ id: sequence.id, status })
+                        }
+                      />
+                    ))}
+                  </div>
+                </TabsContent>
+              </>
+            )}
+          </Tabs>
+        </TabsContent>
+
+        {/* Quick Replies Tab */}
+        <TabsContent value="quickReplies" className="space-y-4">
+          {loadingQuickReplies ? (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {[1, 2, 3].map((i) => (
+                <Card key={i} className="animate-pulse">
+                  <CardHeader>
+                    <div className="h-5 w-32 bg-muted rounded" />
+                    <div className="h-4 w-48 bg-muted rounded mt-2" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-4 w-24 bg-muted rounded" />
                   </CardContent>
                 </Card>
-              ) : (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {sequences?.map((sequence) => (
-                    <SequenceCard
-                      key={sequence.id}
-                      sequence={sequence}
-                      onEdit={() => handleEdit(sequence)}
-                      onDelete={() => deleteMutation.mutate(sequence.id)}
-                      onStatusChange={(status) =>
-                        updateStatusMutation.mutate({ id: sequence.id, status })
-                      }
-                    />
-                  ))}
-                </div>
-              )}
-            </TabsContent>
-
-            <TabsContent value="active">
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {activeSequences.map((sequence) => (
-                  <SequenceCard
-                    key={sequence.id}
-                    sequence={sequence}
-                    onEdit={() => handleEdit(sequence)}
-                    onDelete={() => deleteMutation.mutate(sequence.id)}
-                    onStatusChange={(status) =>
-                      updateStatusMutation.mutate({ id: sequence.id, status })
-                    }
-                  />
-                ))}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="draft">
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {draftSequences.map((sequence) => (
-                  <SequenceCard
-                    key={sequence.id}
-                    sequence={sequence}
-                    onEdit={() => handleEdit(sequence)}
-                    onDelete={() => deleteMutation.mutate(sequence.id)}
-                    onStatusChange={(status) =>
-                      updateStatusMutation.mutate({ id: sequence.id, status })
-                    }
-                  />
-                ))}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="paused">
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {pausedSequences.map((sequence) => (
-                  <SequenceCard
-                    key={sequence.id}
-                    sequence={sequence}
-                    onEdit={() => handleEdit(sequence)}
-                    onDelete={() => deleteMutation.mutate(sequence.id)}
-                    onStatusChange={(status) =>
-                      updateStatusMutation.mutate({ id: sequence.id, status })
-                    }
-                  />
-                ))}
-              </div>
-            </TabsContent>
-          </>
-        )}
+              ))}
+            </div>
+          ) : quickReplies?.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-16">
+                <Reply className="h-16 w-16 text-muted-foreground mb-4" />
+                <h2 className="text-xl font-semibold mb-2">No quick replies yet</h2>
+                <p className="text-muted-foreground text-center max-w-md mb-4">
+                  Quick replies fill the chat box when triggered with /shortcut. You can edit before sending.
+                </p>
+                <Button onClick={handleCreateQuickReply}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Quick Reply
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {quickReplies?.map((quickReply) => (
+                <QuickReplyCard
+                  key={quickReply.id}
+                  quickReply={quickReply}
+                  onEdit={() => handleEditQuickReply(quickReply)}
+                  onDelete={() => deleteQuickReplyMutation.mutate(quickReply.id)}
+                />
+              ))}
+            </div>
+          )}
+        </TabsContent>
       </Tabs>
 
+      {/* Editors */}
       <SequenceEditor
         sequence={editingSequence}
-        open={editorOpen}
-        onOpenChange={setEditorOpen}
+        open={sequenceEditorOpen}
+        onOpenChange={setSequenceEditorOpen}
         onSave={() => queryClient.invalidateQueries({ queryKey: ['sequences'] })}
+      />
+
+      <QuickReplyEditor
+        quickReply={editingQuickReply}
+        open={quickReplyEditorOpen}
+        onOpenChange={setQuickReplyEditorOpen}
+        onSave={() => queryClient.invalidateQueries({ queryKey: ['quickReplies'] })}
       />
     </div>
   );

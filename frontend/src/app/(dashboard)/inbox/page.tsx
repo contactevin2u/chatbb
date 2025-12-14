@@ -753,28 +753,94 @@ export default function InboxPage() {
     const slashStart = messageText.lastIndexOf('/');
 
     if (item.type === 'quickReply') {
-      // Replace the slash command with the quick reply text
+      // Quick Reply: fill chat box with text (user can edit before sending)
       const quickReply = item.data as QuickReply;
       const newText = messageText.substring(0, slashStart) + quickReply.content.text;
       setMessageText(newText);
     } else {
-      // Sequence: fill chat box with the first TEXT step's content (like quick replies)
+      // Sequence: send all steps immediately (TEXT, IMAGE, VIDEO, AUDIO, DOCUMENT)
       const sequence = item.data;
-      const textSteps = sequence.steps?.filter(s => s.type === 'TEXT') || [];
+      const steps = sequence.steps || [];
 
-      if (textSteps.length > 0) {
-        // Get all text content from TEXT steps, separated by newlines
-        const allText = textSteps
-          .map(s => s.content?.text || '')
-          .filter(t => t)
-          .join('\n\n');
-        const newText = messageText.substring(0, slashStart) + allText;
-        setMessageText(newText);
-      } else {
-        toast.error('This sequence has no text messages');
+      if (steps.length === 0) {
+        toast.error('This sequence has no steps');
         const newText = messageText.substring(0, slashStart);
         setMessageText(newText);
+        setSlashCommandOpen(false);
+        setSlashSearchTerm('');
+        return;
       }
+
+      // Clear the slash command from input
+      const newText = messageText.substring(0, slashStart);
+      setMessageText(newText);
+
+      if (!selectedConversationId) {
+        toast.error('No conversation selected');
+        setSlashCommandOpen(false);
+        setSlashSearchTerm('');
+        return;
+      }
+
+      // Send each step in order
+      toast.info(`Sending sequence "${sequence.name}"...`);
+
+      for (const step of steps) {
+        try {
+          if (step.type === 'DELAY') {
+            // Wait for the delay duration
+            const delayMinutes = step.content?.delayMinutes || 0;
+            if (delayMinutes > 0) {
+              toast.info(`Waiting ${delayMinutes} minute(s)...`);
+              await new Promise(resolve => setTimeout(resolve, delayMinutes * 60 * 1000));
+            }
+          } else if (step.type === 'TEXT') {
+            // Send text message
+            if (step.content?.text) {
+              await sendMessageMutation.mutateAsync({
+                conversationId: selectedConversationId,
+                text: step.content.text,
+              });
+            }
+          } else if (['IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT'].includes(step.type)) {
+            // Send media message
+            const mediaUrl = step.content?.mediaUrl;
+            const mediaFilename = step.content?.mediaFilename || 'file';
+            if (mediaUrl) {
+              // Determine mimetype based on step type
+              let mimetype = 'application/octet-stream';
+              let mediaType: 'image' | 'video' | 'audio' | 'document' = 'document';
+
+              if (step.type === 'IMAGE') {
+                mimetype = 'image/jpeg';
+                mediaType = 'image';
+              } else if (step.type === 'VIDEO') {
+                mimetype = 'video/mp4';
+                mediaType = 'video';
+              } else if (step.type === 'AUDIO') {
+                mimetype = 'audio/mpeg';
+                mediaType = 'audio';
+              }
+
+              await sendMessageMutation.mutateAsync({
+                conversationId: selectedConversationId,
+                text: step.content?.text || undefined, // Caption for media
+                media: {
+                  type: mediaType,
+                  url: mediaUrl,
+                  mimetype,
+                  filename: mediaFilename,
+                },
+              });
+            }
+          }
+        } catch (error) {
+          console.error(`Failed to send step:`, error);
+          toast.error(`Failed to send step: ${step.type}`);
+        }
+      }
+
+      toast.success(`Sequence "${sequence.name}" sent!`);
     }
 
     setSlashCommandOpen(false);
@@ -782,7 +848,7 @@ export default function InboxPage() {
 
     // Focus the input
     messageInputRef.current?.focus();
-  }, [messageText]);
+  }, [messageText, selectedConversationId, sendMessageMutation]);
 
   // Handle message input change with slash command detection
   const handleMessageInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
