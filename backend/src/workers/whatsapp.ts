@@ -1163,6 +1163,11 @@ async function processSequenceExecution(executionId: string) {
       continue;
     }
 
+    // NOTE: Sequence messages use DIRECT sessionManager path, NOT messageService.sendMessage
+    // This is different from inbox sendMessage which uses parallel DB + Redis optimization
+    // Path: Worker -> sessionManager.sendTextMessage/sendMediaMessage -> Baileys
+    // If optimizing in future, consider aligning with messageService.sendMessage pattern
+
     // Create message record (PENDING status)
     const message = await prisma.message.create({
       data: {
@@ -1176,7 +1181,7 @@ async function processSequenceExecution(executionId: string) {
       },
     });
 
-    // Send the message
+    // Send the message via sessionManager directly (not through Redis command)
     let success = false;
     let errorMessage: string | undefined;
     let externalId: string | undefined;
@@ -1329,6 +1334,11 @@ async function processScheduledMessages() {
           continue;
         }
 
+        // NOTE: Scheduled messages use DIRECT sessionManager path, NOT messageService.sendMessage
+        // This is different from inbox sendMessage which uses parallel DB + Redis optimization
+        // Path: Worker -> sessionManager.sendTextMessage/sendMediaMessage -> Baileys
+        // If optimizing in future, consider aligning with messageService.sendMessage pattern
+
         // Determine message type
         let messageType: typeof MessageType[keyof typeof MessageType] = MessageType.TEXT;
         let messageContent: any = {};
@@ -1356,7 +1366,7 @@ async function processScheduledMessages() {
           continue;
         }
 
-        // Create message record
+        // Create message record (PENDING status)
         const message = await prisma.message.create({
           data: {
             conversationId: conversation.id,
