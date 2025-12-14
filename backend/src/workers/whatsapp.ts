@@ -21,25 +21,7 @@ import { connectRedis, disconnectRedis, redisClient } from '../core/cache/redis.
 import { logger } from '../shared/utils/logger';
 import { redisConfig } from '../config/redis';
 import { isMediaMessage, uploadToCloudinary, uploadFromUrlToCloudinary } from '../shared/services/media.service';
-
-/**
- * Normalize WhatsApp JID to consistent contact identifier
- * Handles various formats:
- * - 1234567890@s.whatsapp.net -> 1234567890
- * - +1234567890@s.whatsapp.net -> 1234567890
- * - 1234567890:0@lid -> 1234567890
- * - 1234567890:0@s.whatsapp.net -> 1234567890
- */
-function normalizeIdentifier(jidOrId: string): string {
-  let identifier = jidOrId.split('@')[0];
-  // Remove lid suffix (e.g., "1234567890:0" -> "1234567890")
-  if (identifier.includes(':')) {
-    identifier = identifier.split(':')[0];
-  }
-  // Remove leading + sign
-  identifier = identifier.replace(/^\+/, '');
-  return identifier;
-}
+import { normalizeIdentifier } from '../shared/utils/identifier';
 
 // BullMQ queues
 let messageQueue: Queue;

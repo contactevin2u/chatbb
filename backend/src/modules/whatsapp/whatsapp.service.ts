@@ -21,6 +21,7 @@ import { hasAuthState, deleteAuthState } from './session/session.store';
 import { socketServer } from '../../core/websocket/server';
 import { redisClient } from '../../core/cache/redis.client';
 import { redisConfig } from '../../config/redis';
+import { normalizeIdentifier, getOrCreateContact, getOrCreateConversation } from '../../shared/utils/identifier';
 
 export interface CreateChannelInput {
   organizationId: string;
@@ -557,44 +558,25 @@ export class WhatsAppService {
     // Note: We don't check channel.status here because the DB may be out of sync
     // The WhatsApp Worker will return an error if the session is not connected
 
-    // Get or create contact
-    const contactIdentifier = input.to.replace(/\D/g, '');
-    let contact = await prisma.contact.findFirst({
-      where: {
-        organizationId: channel.organizationId,
-        channelType: ChannelType.WHATSAPP,
-        identifier: contactIdentifier,
-      },
+    // Get or create contact using consistent normalization
+    const contactIdentifier = normalizeIdentifier(input.to);
+
+    // Use upsert helpers for atomic operations (prevents race conditions)
+    const contact = await getOrCreateContact({
+      organizationId: channel.organizationId,
+      channelType: ChannelType.WHATSAPP,
+      identifier: contactIdentifier,
     });
 
-    if (!contact) {
-      contact = await prisma.contact.create({
-        data: {
-          organizationId: channel.organizationId,
-          channelType: ChannelType.WHATSAPP,
-          identifier: contactIdentifier,
-        },
-      });
-    }
-
-    // Get or create conversation
-    let conversation = await prisma.conversation.findFirst({
-      where: {
-        channelId: input.channelId,
-        contactId: contact.id,
-      },
+    // Get or create conversation using upsert
+    const conversationResult = await getOrCreateConversation({
+      organizationId: channel.organizationId,
+      channelId: input.channelId,
+      contactId: contact.id,
+      isFromMe: true, // Outbound message
     });
 
-    if (!conversation) {
-      conversation = await prisma.conversation.create({
-        data: {
-          organizationId: channel.organizationId,
-          channelId: input.channelId,
-          contactId: contact.id,
-          status: 'OPEN',
-        },
-      });
-    }
+    const conversation = { id: conversationResult.id };
 
     // Create message record with PENDING status
     const message = await prisma.message.create({

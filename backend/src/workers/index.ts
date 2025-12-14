@@ -15,6 +15,12 @@ import { connectRedis, disconnectRedis, redisClient } from '../core/cache/redis.
 import { logger } from '../shared/utils/logger';
 import { redisConfig } from '../config/redis';
 import { isMediaMessage, getMediaMessageInfo, processWhatsAppMedia } from '../shared/services/media.service';
+import {
+  normalizeIdentifier,
+  resolveIdentifier,
+  getOrCreateContact,
+  getOrCreateConversation,
+} from '../shared/utils/identifier';
 
 // Queue names
 const QUEUES = {
@@ -24,25 +30,6 @@ const QUEUES = {
   ANALYTICS: 'analytics-queue',
   HISTORY_SYNC: 'history-sync-queue',
 };
-
-/**
- * Normalize WhatsApp JID to consistent contact identifier
- * Handles various formats:
- * - 1234567890@s.whatsapp.net -> 1234567890
- * - +1234567890@s.whatsapp.net -> 1234567890
- * - 1234567890:0@lid -> 1234567890
- * - 1234567890:0@s.whatsapp.net -> 1234567890
- */
-function normalizeIdentifier(jidOrId: string): string {
-  let identifier = jidOrId.split('@')[0];
-  // Remove lid suffix (e.g., "1234567890:0" -> "1234567890")
-  if (identifier.includes(':')) {
-    identifier = identifier.split(':')[0];
-  }
-  // Remove leading + sign
-  identifier = identifier.replace(/^\+/, '');
-  return identifier;
-}
 
 // Message queue processor - handles incoming messages and status updates
 async function processMessage(job: Job) {
@@ -64,7 +51,10 @@ async function processMessage(job: Job) {
 
     // Check if this is a group message
     const isGroup = remoteJid.endsWith('@g.us');
-    const contactIdentifier = normalizeIdentifier(remoteJid);
+
+    // Resolve identifier with LID lookup for consistent contact matching
+    const contactIdentifier = await resolveIdentifier(channelId, remoteJid);
+    logger.debug({ remoteJid, contactIdentifier, isGroup }, 'Resolved contact identifier');
 
     // For individual contacts: use pushName from message
     // For groups: check Redis cache (populated by historical sync/group updates)
@@ -74,7 +64,6 @@ async function processMessage(job: Job) {
     if (isGroup) {
       // Try to get group name from Redis cache (fast)
       try {
-        const { redisClient } = await import('../core/cache/redis.client.js');
         const cached = await redisClient.get(`group:${remoteJid}:metadata`);
         if (cached) {
           const metadata = JSON.parse(cached);
@@ -89,89 +78,58 @@ async function processMessage(job: Job) {
       displayName = pushName;
     }
 
-    // Get or create contact (for groups, this represents the group itself)
-    let contact = await prisma.contact.findFirst({
-      where: {
-        organizationId: channel.organizationId,
-        channelType: ChannelType.WHATSAPP,
-        identifier: contactIdentifier,
-      },
+    // Get or create contact using upsert (atomic, prevents race conditions)
+    const contact = await getOrCreateContact({
+      organizationId: channel.organizationId,
+      channelType: ChannelType.WHATSAPP,
+      identifier: contactIdentifier,
+      displayName,
     });
 
-    if (!contact) {
-      // Create new contact with displayName
-      contact = await prisma.contact.create({
-        data: {
-          organizationId: channel.organizationId,
-          channelType: ChannelType.WHATSAPP,
-          identifier: contactIdentifier,
-          displayName: displayName,
-        },
-      });
+    if (contact.isNew) {
       logger.info({ contactId: contact.id, identifier: contactIdentifier, displayName, isGroup }, 'Created new contact');
 
       // Request avatar fetch for new non-group contacts (async, don't wait)
       if (!isGroup) {
-        const { redisClient } = await import('../core/cache/redis.client.js');
         redisClient.publish(`whatsapp:cmd:fetch-avatar:${channelId}`, JSON.stringify({
           jid: remoteJid,
           contactId: contact.id,
           organizationId: channel.organizationId,
         })).catch(() => {}); // Fire and forget
       }
-    } else {
-      // Update existing contact's displayName if available and different
-      if (displayName && (!contact.displayName || contact.displayName !== displayName)) {
-        contact = await prisma.contact.update({
-          where: { id: contact.id },
-          data: { displayName: displayName },
-        });
-        logger.info({ contactId: contact.id, displayName, isGroup }, 'Updated contact displayName');
-      }
-
-      // Request avatar fetch for existing contacts without avatar (async, don't wait)
-      if (!isGroup && !contact.avatarUrl) {
-        const { redisClient } = await import('../core/cache/redis.client.js');
-        redisClient.publish(`whatsapp:cmd:fetch-avatar:${channelId}`, JSON.stringify({
-          jid: remoteJid,
-          contactId: contact.id,
-          organizationId: channel.organizationId,
-        })).catch(() => {}); // Fire and forget
-      }
+    } else if (!isGroup && !contact.avatarUrl) {
+      // Request avatar fetch for existing contacts without avatar
+      redisClient.publish(`whatsapp:cmd:fetch-avatar:${channelId}`, JSON.stringify({
+        jid: remoteJid,
+        contactId: contact.id,
+        organizationId: channel.organizationId,
+      })).catch(() => {}); // Fire and forget
     }
 
     // Determine if this message is from us (sent from phone/other device)
     // Need this early to decide whether to increment unread count
     const isFromMe = waMessage.key?.fromMe === true;
 
-    // Get or create conversation
-    let conversation = await prisma.conversation.findFirst({
-      where: { channelId, contactId: contact.id },
+    // Get or create conversation using upsert (atomic, prevents race conditions)
+    const conversationResult = await getOrCreateConversation({
+      organizationId: channel.organizationId,
+      channelId,
+      contactId: contact.id,
+      isFromMe,
     });
 
-    if (!conversation) {
-      conversation = await prisma.conversation.create({
-        data: {
-          organizationId: channel.organizationId,
-          channelId,
-          contactId: contact.id,
-          status: 'OPEN',
-          lastMessageAt: new Date(),
-          // Don't set unread count for our own messages
-          unreadCount: isFromMe ? 0 : 1,
-        },
-      });
-    } else {
-      await prisma.conversation.update({
-        where: { id: conversation.id },
-        data: {
-          lastMessageAt: new Date(),
-          // Only increment unread count for incoming messages, not our own
-          ...(isFromMe ? {} : { unreadCount: { increment: 1 } }),
-          status: conversation.status === 'CLOSED' ? 'OPEN' : conversation.status,
-        },
-      });
-    }
+    const conversation = { id: conversationResult.id };
+
+    // Log identifier trace for debugging duplicate conversation issues
+    logger.info({
+      channelId,
+      remoteJid,
+      contactIdentifier,
+      isFromMe,
+      contactId: contact.id,
+      conversationId: conversation.id,
+      isNewConversation: conversationResult.isNew,
+    }, 'Message processed - identifier trace');
 
     // Parse message content
     const msgContent = waMessage.message || {};
@@ -273,7 +231,6 @@ async function processMessage(job: Job) {
     const assignedUserId = conversationWithAssignment?.assignedUserId;
 
     // Publish to Redis for real-time WebSocket updates
-    const { redisClient } = await import('../core/cache/redis.client.js');
     const messagePayload = JSON.stringify({
       type: 'new',
       conversationId: conversation.id,
@@ -439,7 +396,6 @@ async function processHistorySync(job: Job) {
       let displayName = chat.name || null;
       if (isGroup && !displayName) {
         try {
-          const { redisClient } = await import('../core/cache/redis.client.js');
           const cached = await redisClient.get(`group:${remoteJid}:metadata`);
           if (cached) {
             const metadata = JSON.parse(cached);
