@@ -11,6 +11,8 @@ import { authRoutes } from './modules/auth/auth.routes.js';
 import { userRoutes } from './modules/user/user.routes.js';
 import { organizationRoutes } from './modules/organization/organization.routes.js';
 import { teamRoutes } from './modules/team/team.routes.js';
+// Queue routes disabled - channel-based access model used instead
+// import { queueRoutes } from './modules/queue/queue.routes.js';
 import { channelRoutes } from './modules/channel/channel.routes.js';
 import { whatsappRoutes } from './modules/whatsapp/whatsapp.routes.js';
 import { conversationRoutes } from './modules/conversation/conversation.routes.js';
@@ -87,6 +89,7 @@ export function createApp(): Express {
   app.use(`${apiPrefix}/users`, userRoutes);
   app.use(`${apiPrefix}/organization`, organizationRoutes);
   app.use(`${apiPrefix}/teams`, teamRoutes);
+  // app.use(`${apiPrefix}/queue`, queueRoutes);
   // IMPORTANT: More specific routes must come first
   app.use(`${apiPrefix}/channels/whatsapp`, whatsappRoutes);
   app.use(`${apiPrefix}/channels`, channelRoutes);

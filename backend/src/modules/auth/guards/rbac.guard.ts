@@ -48,7 +48,11 @@ export type Permission =
   | 'analytics:export'
   | 'organization:read'
   | 'organization:update'
-  | 'organization:delete';
+  | 'organization:delete'
+  | 'team:view'
+  | 'team:edit'
+  | 'team:invite'
+  | 'team:remove';
 
 const resourcePermissions: Record<string, Record<string, UserRole[]>> = {
   users: {
@@ -104,6 +108,12 @@ const resourcePermissions: Record<string, Record<string, UserRole[]>> = {
     read: ['OWNER', 'ADMIN', 'SUPERVISOR', 'AGENT'],
     update: ['OWNER', 'ADMIN'],
     delete: ['OWNER'],
+  },
+  team: {
+    view: ['OWNER', 'ADMIN', 'SUPERVISOR', 'AGENT'],
+    edit: ['OWNER', 'ADMIN', 'SUPERVISOR'],
+    invite: ['OWNER', 'ADMIN', 'SUPERVISOR'],
+    remove: ['OWNER', 'ADMIN', 'SUPERVISOR'],
   },
 };
 
