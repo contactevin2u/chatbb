@@ -94,8 +94,11 @@ export class MessageService {
       },
     });
 
+    // Enrich group sender metadata with contact info
+    const enrichedMessages = await this.enrichGroupSenderInfo(messages, organizationId);
+
     // Reverse to get chronological order
-    const sortedMessages = messages.reverse();
+    const sortedMessages = enrichedMessages.reverse();
 
     return {
       messages: sortedMessages,
@@ -103,6 +106,64 @@ export class MessageService {
       oldestId: sortedMessages[0]?.id,
       newestId: sortedMessages[sortedMessages.length - 1]?.id,
     };
+  }
+
+  /**
+   * Enrich group sender metadata with contact info (displayName, avatarUrl)
+   */
+  private async enrichGroupSenderInfo(messages: any[], organizationId: string) {
+    // Extract unique group sender identifiers
+    const senderIdentifiers = new Set<string>();
+    for (const msg of messages) {
+      const groupSender = (msg.metadata as any)?.groupSender;
+      if (groupSender?.identifier) {
+        senderIdentifiers.add(groupSender.identifier);
+      }
+    }
+
+    if (senderIdentifiers.size === 0) {
+      return messages;
+    }
+
+    // Look up contacts in database
+    const contacts = await prisma.contact.findMany({
+      where: {
+        organizationId,
+        identifier: { in: Array.from(senderIdentifiers) },
+      },
+      select: {
+        identifier: true,
+        displayName: true,
+        avatarUrl: true,
+      },
+    });
+
+    // Create lookup map
+    const contactMap = new Map(
+      contacts.map(c => [c.identifier, c])
+    );
+
+    // Enrich messages with contact info
+    return messages.map(msg => {
+      const metadata = msg.metadata as any;
+      if (metadata?.groupSender?.identifier) {
+        const contact = contactMap.get(metadata.groupSender.identifier);
+        if (contact) {
+          return {
+            ...msg,
+            metadata: {
+              ...metadata,
+              groupSender: {
+                ...metadata.groupSender,
+                displayName: contact.displayName,
+                avatarUrl: contact.avatarUrl,
+              },
+            },
+          };
+        }
+      }
+      return msg;
+    });
   }
 
   /**

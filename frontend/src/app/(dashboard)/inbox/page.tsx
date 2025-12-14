@@ -1190,8 +1190,16 @@ export default function InboxPage() {
                         >
                           {message.direction === 'INBOUND' && (
                             <Avatar className="h-7 w-7 flex-shrink-0">
+                              {/* For group messages, show sender's avatar if available */}
+                              {isGroupContact(selectedConversation.contact) && message.metadata?.groupSender?.avatarUrl ? (
+                                <AvatarImage src={message.metadata.groupSender.avatarUrl} className="object-cover" />
+                              ) : selectedConversation.contact.avatarUrl ? (
+                                <AvatarImage src={selectedConversation.contact.avatarUrl} className="object-cover" />
+                              ) : null}
                               <AvatarFallback className="text-xs">
-                                {getContactInitials(selectedConversation.contact)}
+                                {isGroupContact(selectedConversation.contact) && message.metadata?.groupSender
+                                  ? (message.metadata.groupSender.displayName || message.metadata.groupSender.pushName || message.metadata.groupSender.identifier || '').slice(0, 2).toUpperCase()
+                                  : getContactInitials(selectedConversation.contact)}
                               </AvatarFallback>
                             </Avatar>
                           )}
@@ -1257,7 +1265,7 @@ export default function InboxPage() {
                                 <p className="text-[11px] font-medium text-foreground/70 mb-1">
                                   {/* For group messages, show the actual sender from metadata */}
                                   {isGroupContact(selectedConversation.contact) && message.metadata?.groupSender
-                                    ? message.metadata.groupSender.pushName || `+${message.metadata.groupSender.identifier}`
+                                    ? message.metadata.groupSender.displayName || message.metadata.groupSender.pushName || `+${message.metadata.groupSender.identifier}`
                                     : getContactName(selectedConversation.contact)}
                                 </p>
                               )}

@@ -41,6 +41,14 @@ export interface MessageReaction {
   timestamp: number;
 }
 
+export interface GroupSender {
+  jid: string;
+  identifier: string;
+  pushName?: string | null;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+}
+
 export interface QuotedMessage {
   stanzaId: string;
   participant: string;
@@ -65,6 +73,7 @@ export interface Message {
   failedReason?: string;
   metadata?: {
     reactions?: MessageReaction[];
+    groupSender?: GroupSender;
     [key: string]: any;
   };
   createdAt: string;
