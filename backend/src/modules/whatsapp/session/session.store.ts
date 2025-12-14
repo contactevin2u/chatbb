@@ -218,6 +218,29 @@ export async function hasAuthState(channelId: string): Promise<boolean> {
 }
 
 /**
+ * Delete auth state for a channel (direct DB operation)
+ * Use this when you need to clear corrupted session data
+ */
+export async function deleteAuthState(channelId: string): Promise<void> {
+  // First find the auth state to get its ID for deleting sync keys
+  const authState = await prisma.whatsAppAuthState.findUnique({
+    where: { channelId },
+  });
+
+  if (authState) {
+    // Delete sync keys first (foreign key constraint)
+    await prisma.whatsAppSyncKey.deleteMany({
+      where: { authStateId: authState.id },
+    });
+
+    // Then delete the auth state
+    await prisma.whatsAppAuthState.delete({
+      where: { channelId },
+    });
+  }
+}
+
+/**
  * Get auth state metadata without full credentials
  */
 export async function getAuthStateInfo(channelId: string): Promise<{

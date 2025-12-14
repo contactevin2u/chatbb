@@ -238,6 +238,13 @@ export class WhatsAppController {
         // Ignore disconnect errors
       }
 
+      // Clear session/auth state first (avoid foreign key issues)
+      try {
+        await whatsappService.clearSession(channelId, organizationId);
+      } catch {
+        // Ignore if no session exists
+      }
+
       // Delete from database
       const { prisma } = await import('../../core/database/prisma.js');
       await prisma.channel.delete({

@@ -17,7 +17,7 @@ import { v4 as uuidv4 } from 'uuid';
 import Redis from 'ioredis';
 
 import { prisma } from '../../core/database/prisma';
-import { hasAuthState, usePostgresAuthState } from './session/session.store';
+import { hasAuthState, deleteAuthState } from './session/session.store';
 import { socketServer } from '../../core/websocket/server';
 import { redisClient } from '../../core/cache/redis.client';
 import { redisConfig } from '../../config/redis';
@@ -404,9 +404,8 @@ export class WhatsAppService {
       // Ignore disconnect errors
     }
 
-    // Delete auth state from database
-    const authState = await usePostgresAuthState(channelId);
-    await authState.deleteState();
+    // Delete auth state from database (direct DB operation - safe for API context)
+    await deleteAuthState(channelId);
 
     // Update channel status and clear identifier
     await prisma.channel.update({
