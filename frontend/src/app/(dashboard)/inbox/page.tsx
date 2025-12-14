@@ -708,13 +708,16 @@ export default function InboxPage() {
     const items = e.clipboardData?.items;
     if (!items) return;
 
-    for (const item of items) {
+    // Convert DataTransferItemList to array for iteration
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
       if (item.type.startsWith('image/')) {
         e.preventDefault();
         const file = item.getAsFile();
         if (file) {
           // Create a named file for better UX
-          const namedFile = new File([file], `pasted-image-${Date.now()}.png`, { type: file.type });
+          const FileConstructor = window.File;
+          const namedFile = new FileConstructor([file], `pasted-image-${Date.now()}.png`, { type: file.type });
           handleFileSelect(namedFile);
           toast.success('Image pasted');
         }

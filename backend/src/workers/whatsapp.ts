@@ -708,6 +708,11 @@ async function main() {
     setInterval(processScheduledMessages, 10000);
     logger.info('Scheduled message processor started (10s interval)');
 
+    // Scheduled sequence processor - check every 10 seconds
+    // Sequences can be scheduled to START at a future time (not just DELAY steps)
+    setInterval(processScheduledSequences, 10000);
+    logger.info('Scheduled sequence processor started (10s interval)');
+
     // Graceful shutdown handlers
     const shutdown = async (signal: string) => {
       logger.info({ signal }, 'Received shutdown signal');
@@ -1469,6 +1474,69 @@ async function processScheduledMessages() {
     }
   } catch (error) {
     logger.error({ error }, 'Error in scheduled message processor');
+  }
+}
+
+/**
+ * Process scheduled sequences that are due to START
+ * This handles sequences scheduled for future execution (not DELAY steps within sequences)
+ * When scheduledAt time arrives, the sequence is started and runs through all its steps
+ * (including any DELAY steps which will use setTimeout as usual)
+ */
+async function processScheduledSequences() {
+  try {
+    // Get scheduled sequences that are due
+    const dueExecutions = await sequenceService.getScheduledExecutionsDue();
+
+    if (dueExecutions.length === 0) return;
+
+    logger.info({ count: dueExecutions.length }, 'Processing scheduled sequences');
+
+    for (const execution of dueExecutions) {
+      try {
+        const channelId = execution.conversation.channelId;
+
+        // Check if channel is connected
+        const session = sessionManager.getAllSessions().get(channelId);
+        if (!session || session.status !== 'CONNECTED') {
+          logger.warn({ executionId: execution.id, channelId }, 'Channel not connected for scheduled sequence, will retry');
+          continue;
+        }
+
+        // Mark the execution as running (transitions from 'scheduled' to 'running')
+        const started = await sequenceService.startScheduledExecution(execution.id);
+        if (!started) {
+          logger.warn({ executionId: execution.id }, 'Could not start scheduled sequence');
+          continue;
+        }
+
+        logger.info({
+          executionId: execution.id,
+          sequenceName: execution.sequence.name,
+          scheduledAt: execution.scheduledAt,
+        }, 'Starting scheduled sequence execution');
+
+        // Process the sequence execution (all steps including any DELAY steps)
+        await processSequenceExecution(execution.id);
+
+      } catch (execError) {
+        logger.error({ executionId: execution.id, error: execError }, 'Error processing scheduled sequence');
+        // Mark as failed
+        try {
+          await prisma.sequenceExecution.update({
+            where: { id: execution.id },
+            data: {
+              status: 'failed',
+              errorMessage: (execError as Error).message,
+            },
+          });
+        } catch {
+          // Ignore update errors
+        }
+      }
+    }
+  } catch (error) {
+    logger.error({ error }, 'Error in scheduled sequence processor');
   }
 }
 

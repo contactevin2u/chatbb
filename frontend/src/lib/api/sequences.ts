@@ -13,6 +13,7 @@ export interface SequenceStepContent {
   mediaFilename?: string;
   mediaType?: 'image' | 'video' | 'audio' | 'document';
   delayMinutes?: number;
+  delaySeconds?: number;
 }
 
 export interface SequenceStep {
@@ -48,7 +49,8 @@ export interface SequenceExecution {
   sequenceId: string;
   conversationId: string;
   currentStep: number;
-  status: 'running' | 'completed' | 'stopped' | 'failed';
+  status: 'scheduled' | 'running' | 'completed' | 'stopped' | 'failed';
+  scheduledAt: string | null;  // When sequence is scheduled to START (null = immediate)
   startedAt: string;
   completedAt: string | null;
   nextStepAt: string | null;
@@ -203,14 +205,25 @@ export async function reorderSequenceSteps(
 
 /**
  * Start sequence execution
+ *
+ * @param sequenceId - The sequence to execute
+ * @param conversationId - The conversation to execute the sequence on
+ * @param scheduledAt - Optional ISO date string for when to START the sequence
+ *                      If provided and in future, sequence will be scheduled (not executed immediately)
+ *                      The sequence will start at the scheduled time, then run through all steps
+ *                      (including any DELAY steps which work normally once execution starts)
  */
 export async function startSequenceExecution(
   sequenceId: string,
-  conversationId: string
+  conversationId: string,
+  scheduledAt?: Date
 ): Promise<SequenceExecution> {
   const response = await apiClient.post<{ success: boolean; data: SequenceExecution }>(
     `/sequences/${sequenceId}/execute`,
-    { conversationId }
+    {
+      conversationId,
+      scheduledAt: scheduledAt?.toISOString(),
+    }
   );
   return response.data.data;
 }

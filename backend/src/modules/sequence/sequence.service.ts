@@ -329,8 +329,18 @@ export class SequenceService {
   /**
    * Start a sequence execution for a conversation
    * If the same sequence is already running, it will be stopped and restarted
+   *
+   * @param scheduledAt - Optional future time to START the sequence. If provided and in future,
+   *                      sequence will be created with status "scheduled" and processed by worker
+   *                      when the scheduled time arrives. DELAY steps within the sequence still work
+   *                      normally once execution starts.
    */
-  async startExecution(sequenceId: string, conversationId: string, organizationId: string) {
+  async startExecution(
+    sequenceId: string,
+    conversationId: string,
+    organizationId: string,
+    scheduledAt?: Date
+  ) {
     const sequence = await prisma.messageSequence.findFirst({
       where: { id: sequenceId, organizationId, status: MessageSequenceStatus.ACTIVE },
       include: {
@@ -344,16 +354,21 @@ export class SequenceService {
 
     // Stop any existing execution of the SAME sequence for this conversation (restart behavior)
     await prisma.sequenceExecution.updateMany({
-      where: { sequenceId, conversationId, status: 'running' },
+      where: { sequenceId, conversationId, status: { in: ['running', 'scheduled'] } },
       data: { status: 'stopped' },
     });
 
-    // Calculate next step time based on first step
-    let nextStepAt: Date | null = new Date();
-    const firstStep = sequence.steps[0];
-    if (firstStep?.type === SequenceStepType.DELAY) {
-      const content = firstStep.content as any;
-      nextStepAt = new Date(Date.now() + (content.delayMinutes || 1) * 60 * 1000);
+    // Determine if this is a scheduled execution or immediate
+    const isScheduled = scheduledAt && scheduledAt > new Date();
+
+    // Calculate next step time based on first step (only for immediate execution)
+    let nextStepAt: Date | null = isScheduled ? null : new Date();
+    if (!isScheduled) {
+      const firstStep = sequence.steps[0];
+      if (firstStep?.type === SequenceStepType.DELAY) {
+        const content = firstStep.content as any;
+        nextStepAt = new Date(Date.now() + (content.delayMinutes || 1) * 60 * 1000);
+      }
     }
 
     const execution = await prisma.sequenceExecution.create({
@@ -361,7 +376,8 @@ export class SequenceService {
         sequenceId,
         conversationId,
         currentStep: 0,
-        status: 'running',
+        status: isScheduled ? 'scheduled' : 'running',
+        scheduledAt: isScheduled ? scheduledAt : null,
         nextStepAt,
       },
     });
@@ -376,7 +392,81 @@ export class SequenceService {
   }
 
   /**
-   * Stop a sequence execution
+   * Get scheduled sequence executions that are due to start
+   * Used by worker to pick up and start scheduled sequences
+   */
+  async getScheduledExecutionsDue() {
+    const now = new Date();
+
+    const executions = await prisma.sequenceExecution.findMany({
+      where: {
+        status: 'scheduled',
+        scheduledAt: { lte: now },
+      },
+      include: {
+        sequence: {
+          include: {
+            steps: { orderBy: { order: 'asc' } },
+          },
+        },
+        conversation: {
+          select: {
+            id: true,
+            channelId: true,
+            contact: {
+              select: { id: true, identifier: true },
+            },
+            channel: {
+              select: { id: true, type: true, config: true },
+            },
+          },
+        },
+      },
+      take: 100,
+    });
+
+    return executions;
+  }
+
+  /**
+   * Mark a scheduled execution as running (when scheduled time arrives)
+   */
+  async startScheduledExecution(executionId: string) {
+    const execution = await prisma.sequenceExecution.findUnique({
+      where: { id: executionId },
+      include: {
+        sequence: {
+          include: { steps: { orderBy: { order: 'asc' }, take: 1 } },
+        },
+      },
+    });
+
+    if (!execution || execution.status !== 'scheduled') {
+      return null;
+    }
+
+    // Calculate next step time based on first step
+    let nextStepAt: Date | null = new Date();
+    const firstStep = execution.sequence.steps[0];
+    if (firstStep?.type === SequenceStepType.DELAY) {
+      const content = firstStep.content as any;
+      nextStepAt = new Date(Date.now() + (content.delayMinutes || 1) * 60 * 1000);
+    }
+
+    const updated = await prisma.sequenceExecution.update({
+      where: { id: executionId },
+      data: {
+        status: 'running',
+        startedAt: new Date(),
+        nextStepAt,
+      },
+    });
+
+    return updated;
+  }
+
+  /**
+   * Stop a sequence execution (works for both running and scheduled)
    */
   async stopExecution(executionId: string, organizationId: string) {
     const execution = await prisma.sequenceExecution.findFirst({
@@ -390,8 +480,8 @@ export class SequenceService {
       throw new Error('Execution not found');
     }
 
-    if (execution.status !== 'running') {
-      throw new Error('Execution is not running');
+    if (execution.status !== 'running' && execution.status !== 'scheduled') {
+      throw new Error('Execution is not running or scheduled');
     }
 
     await prisma.sequenceExecution.update({

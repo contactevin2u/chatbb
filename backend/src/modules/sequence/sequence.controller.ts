@@ -245,19 +245,37 @@ export class SequenceController {
   /**
    * Start sequence execution
    * POST /api/v1/sequences/:id/execute
+   *
+   * Body params:
+   * - conversationId: The conversation to execute sequence on
+   * - scheduledAt: (optional) ISO date string for when to START the sequence
+   *                If provided and in future, sequence will be scheduled (not executed immediately)
+   *                The sequence will start at the scheduled time, then run through all steps
+   *                (including any DELAY steps which work normally once execution starts)
    */
   async startExecution(req: Request, res: Response, next: NextFunction) {
     try {
       const { organizationId } = req.user!;
       const { id } = req.params;
-      const { conversationId } = req.body;
+      const { conversationId, scheduledAt } = req.body;
 
-      const execution = await sequenceService.startExecution(id, conversationId, organizationId);
+      // Parse scheduledAt if provided
+      const scheduledDate = scheduledAt ? new Date(scheduledAt) : undefined;
 
-      // Trigger immediate processing via Redis pub/sub
-      await redisClient.publish('sequence:execute', JSON.stringify({
-        executionId: execution.id,
-      }));
+      const execution = await sequenceService.startExecution(
+        id,
+        conversationId,
+        organizationId,
+        scheduledDate
+      );
+
+      // Only trigger immediate processing if NOT scheduled for future
+      // Scheduled sequences will be picked up by the worker's scheduled sequence processor
+      if (execution.status === 'running') {
+        await redisClient.publish('sequence:execute', JSON.stringify({
+          executionId: execution.id,
+        }));
+      }
 
       res.status(201).json({
         success: true,
