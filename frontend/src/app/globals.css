@@ -308,10 +308,9 @@
   box-shadow: 0 4px 12px rgba(236, 72, 153, 0.3);
 }
 
-/* Avatar ring with gradient */
+/* Avatar ring with pink color */
 .avatar-ring {
-  @apply ring-2 ring-offset-2 ring-offset-background;
-  @apply ring-gradient-to-r from-pink-400 to-purple-400;
+  @apply ring-2 ring-offset-2 ring-offset-background ring-pink-400;
 }
 
 /* Notification badge */
