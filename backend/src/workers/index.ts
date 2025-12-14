@@ -10,7 +10,7 @@
  */
 
 import { Worker, Job } from 'bullmq';
-import { connectDatabase, disconnectDatabase } from '../core/database/prisma';
+import { connectDatabase, disconnectDatabase, prisma } from '../core/database/prisma';
 import { connectRedis, disconnectRedis, redisClient } from '../core/cache/redis.client';
 import { logger } from '../shared/utils/logger';
 import { redisConfig } from '../config/redis';
@@ -21,6 +21,7 @@ import {
   getOrCreateContact,
   getOrCreateConversation,
 } from '../shared/utils/identifier';
+import { ChannelType, MessageDirection, MessageStatus, MessageType } from '@prisma/client';
 
 // Queue names
 const QUEUES = {
@@ -36,14 +37,15 @@ async function processMessage(job: Job) {
   const jobName = job.name;
   logger.info({ jobId: job.id, jobName }, 'Processing message job');
 
-  const { prisma } = await import('../core/database/prisma.js');
-  const { ChannelType, MessageDirection, MessageStatus, MessageType } = await import('@prisma/client');
-
   if (jobName === 'incoming') {
     // Process incoming WhatsApp message
     const { channelId, waMessage, mediaUrl } = job.data;
 
-    const channel = await prisma.channel.findUnique({ where: { id: channelId } });
+    // Only fetch organizationId - reduces payload significantly
+    const channel = await prisma.channel.findUnique({
+      where: { id: channelId },
+      select: { organizationId: true },
+    });
     if (!channel) return;
 
     const remoteJid = waMessage.key?.remoteJid;
@@ -278,10 +280,11 @@ async function processMessage(job: Job) {
     const direction = isFromMe ? MessageDirection.OUTBOUND : MessageDirection.INBOUND;
 
     // Idempotency check: skip if message already exists (prevents duplicates on retry/reconnect)
+    // Uses composite unique index [channelId, externalId] for fast O(1) lookup
     const externalId = waMessage.key?.id;
     if (externalId) {
-      const existingMessage = await prisma.message.findFirst({
-        where: { externalId, channelId },
+      const existingMessage = await prisma.message.findUnique({
+        where: { channelId_externalId: { channelId, externalId } },
         select: { id: true },
       });
 
@@ -401,8 +404,6 @@ async function processWebhook(job: Job) {
   const { webhookId, event, payload } = job.data;
   logger.info({ jobId: job.id, webhookId, event }, 'Processing webhook job');
 
-  const { prisma } = await import('../core/database/prisma.js');
-
   try {
     const webhook = await prisma.webhook.findUnique({
       where: { id: webhookId },
@@ -462,10 +463,11 @@ async function processHistorySync(job: Job) {
   const { channelId, chats, contacts, messages } = job.data;
   logger.info({ jobId: job.id, channelId, chats: chats?.length, contacts: contacts?.length }, 'Processing history sync');
 
-  const { prisma } = await import('../core/database/prisma.js');
-  const { ChannelType, MessageDirection, MessageStatus, MessageType } = await import('@prisma/client');
-
-  const channel = await prisma.channel.findUnique({ where: { id: channelId } });
+  // Only fetch organizationId - reduces payload
+  const channel = await prisma.channel.findUnique({
+    where: { id: channelId },
+    select: { organizationId: true },
+  });
   if (!channel) return;
 
   const orgId = channel.organizationId;
@@ -663,10 +665,10 @@ async function main() {
     // Create workers
     const workers: Worker[] = [];
 
-    // Message worker
+    // Message worker - high concurrency for I/O-bound operations
     const messageWorker = new Worker(QUEUES.MESSAGE, processMessage, {
       connection,
-      concurrency: 10,
+      concurrency: 50,  // Increased from 10 - safe for I/O-bound workloads (DB, Redis)
     });
     workers.push(messageWorker);
     logger.info('Message worker started');

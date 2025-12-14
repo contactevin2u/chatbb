@@ -463,9 +463,8 @@ model Message {
   sentByUser   User?               @relation("SentByUser", fields: [sentByUserId], references: [id])
   attachments  MessageAttachment[]
 
+  @@unique([channelId, externalId])  // Composite unique for fast idempotency check + enables findUnique
   @@index([conversationId])
-  @@index([channelId])
-  @@index([externalId])
   @@index([createdAt(sort: Desc)])
   @@map("messages")
 }

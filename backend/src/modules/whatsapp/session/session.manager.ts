@@ -162,11 +162,13 @@ export class SessionManager extends EventEmitter {
       shouldSyncHistoryMessage: () => true,
       getMessage: async (key) => {
         // Retrieve message from database for retry
-        const message = await prisma.message.findFirst({
+        // Uses composite unique index [channelId, externalId] for O(1) lookup
+        if (!key.id) return undefined;
+        const message = await prisma.message.findUnique({
           where: {
-            externalId: key.id,
-            channelId,
+            channelId_externalId: { channelId, externalId: key.id },
           },
+          select: { content: true },  // Only fetch content field (reduces payload)
         });
         if (message?.content) {
           return (message.content as any).message;
@@ -407,7 +409,7 @@ export class SessionManager extends EventEmitter {
           if (update.subject) {
             try {
               const { ChannelType } = await import('@prisma/client');
-              const groupIdentifier = update.id.split('@')[0]; // Remove @g.us
+              const groupIdentifier = update.id!.split('@')[0]; // Remove @g.us
 
               // Get the channel to find the organization
               const channel = await prisma.channel.findUnique({
@@ -434,6 +436,23 @@ export class SessionManager extends EventEmitter {
             }
           }
         }
+      }
+    });
+
+    // Group participants update - refresh full metadata when members change
+    socket.ev.on('group-participants.update', async ({ id, participants, action }) => {
+      this.logger.info({ channelId, groupId: id, action, count: participants.length }, 'Group participants updated');
+
+      try {
+        // Fetch fresh metadata from WhatsApp
+        const metadata = await socket.groupMetadata(id);
+        if (metadata) {
+          // Update Redis cache with fresh data
+          await redisClient.setex(`group:${id}:metadata`, 3600, JSON.stringify(metadata));
+          this.logger.debug({ channelId, groupId: id }, 'Group metadata refreshed after participant change');
+        }
+      } catch (error) {
+        this.logger.warn({ channelId, groupId: id, error }, 'Failed to refresh group metadata after participant change');
       }
     });
 
