@@ -599,8 +599,23 @@ export class SessionManager extends EventEmitter {
     // Format recipient JID
     const jid = this.formatJid(to);
 
+    // Show typing indicator before sending (improves perceived speed)
+    try {
+      await session.socket.sendPresenceUpdate('composing', jid);
+    } catch (e) {
+      // Ignore presence errors - not critical
+    }
+
     const options = quotedMessage ? { quoted: quotedMessage } : undefined;
     const result = await session.socket.sendMessage(jid, { text }, options);
+
+    // Clear typing indicator
+    try {
+      await session.socket.sendPresenceUpdate('paused', jid);
+    } catch (e) {
+      // Ignore presence errors
+    }
+
     this.logger.info({ channelId, to: jid, messageId: result?.key?.id, isReply: !!quotedMessage }, 'Message sent');
 
     return result;
@@ -631,6 +646,15 @@ export class SessionManager extends EventEmitter {
     await this.checkRateLimit(channelId);
 
     const jid = this.formatJid(to);
+
+    // Show typing/recording indicator before sending
+    try {
+      // Use 'recording' for audio, 'composing' for others
+      const presenceType = media.type === 'audio' ? 'recording' : 'composing';
+      await session.socket.sendPresenceUpdate(presenceType, jid);
+    } catch (e) {
+      // Ignore presence errors - not critical
+    }
 
     let content: any;
 
@@ -668,6 +692,14 @@ export class SessionManager extends EventEmitter {
 
     const options = quotedMessage ? { quoted: quotedMessage } : undefined;
     const result = await session.socket.sendMessage(jid, content, options);
+
+    // Clear presence indicator
+    try {
+      await session.socket.sendPresenceUpdate('paused', jid);
+    } catch (e) {
+      // Ignore presence errors
+    }
+
     this.logger.info({ channelId, to: jid, type: media.type, messageId: result?.key?.id, isReply: !!quotedMessage }, 'Media sent');
 
     return result;
