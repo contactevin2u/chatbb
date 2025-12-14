@@ -51,10 +51,68 @@ async function processMessage(job: Job) {
 
     // Check if this is a group message
     const isGroup = remoteJid.endsWith('@g.us');
+    const isFromMe = waMessage.key?.fromMe === true;
+    const isLidFormat = remoteJid.includes('@lid') || (remoteJid.includes(':') && !isGroup);
 
     // Resolve identifier with LID lookup for consistent contact matching
-    const contactIdentifier = await resolveIdentifier(channelId, remoteJid);
-    logger.debug({ remoteJid, contactIdentifier, isGroup }, 'Resolved contact identifier');
+    let contactIdentifier = await resolveIdentifier(channelId, remoteJid);
+
+    // SPECIAL HANDLING: For fromMe messages with LID that couldn't be resolved,
+    // try to find the contact by looking at recent outbound messages
+    if (isFromMe && isLidFormat && !isGroup) {
+      // Check if this identifier looks like an LID (numeric but different from typical phone numbers)
+      // Malaysian numbers start with 60, this LID starts with 24... so it's likely unresolved
+      const couldBeUnresolvedLid = contactIdentifier.length > 10 && !contactIdentifier.startsWith('60');
+
+      if (couldBeUnresolvedLid) {
+        logger.info({
+          channelId,
+          remoteJid,
+          possibleLid: contactIdentifier,
+        }, 'Detected possible unresolved LID for fromMe message, searching for matching contact');
+
+        // Try to find a recent conversation where we sent a message
+        // This helps match when we can't resolve the LID
+        const recentOutboundConversation = await prisma.conversation.findFirst({
+          where: {
+            channelId,
+            messages: {
+              some: {
+                direction: MessageDirection.OUTBOUND,
+                createdAt: {
+                  gte: new Date(Date.now() - 24 * 60 * 60 * 1000), // Last 24 hours
+                },
+              },
+            },
+          },
+          include: {
+            contact: true,
+          },
+          orderBy: {
+            lastMessageAt: 'desc',
+          },
+        });
+
+        if (recentOutboundConversation?.contact) {
+          const matchedContact = recentOutboundConversation.contact;
+          logger.info({
+            channelId,
+            lid: contactIdentifier,
+            matchedIdentifier: matchedContact.identifier,
+            contactId: matchedContact.id,
+          }, 'Found matching contact from recent outbound conversation');
+
+          // Store the LID mapping for future use
+          const { storeLidMapping } = await import('../shared/utils/identifier.js');
+          await storeLidMapping(channelId, contactIdentifier, matchedContact.identifier);
+
+          // Use the matched contact's identifier
+          contactIdentifier = matchedContact.identifier;
+        }
+      }
+    }
+
+    logger.debug({ remoteJid, contactIdentifier, isGroup, isFromMe, isLidFormat }, 'Resolved contact identifier');
 
     // For individual contacts: use pushName from message
     // For groups: check Redis cache (populated by historical sync/group updates)
@@ -106,11 +164,8 @@ async function processMessage(job: Job) {
       })).catch(() => {}); // Fire and forget
     }
 
-    // Determine if this message is from us (sent from phone/other device)
-    // Need this early to decide whether to increment unread count
-    const isFromMe = waMessage.key?.fromMe === true;
-
     // Get or create conversation using upsert (atomic, prevents race conditions)
+    // Note: isFromMe was determined earlier when resolving the identifier
     const conversationResult = await getOrCreateConversation({
       organizationId: channel.organizationId,
       channelId,

@@ -128,7 +128,51 @@ export async function resolveIdentifier(channelId: string, jidOrId: string): Pro
         lidWithoutSuffix,
         mappingCount,
         sampleMappings: Object.entries(allLidMappings || {}).slice(0, 5),
-      }, 'FAILED: LID not found in Redis - creating contact with LID as identifier');
+      }, 'FAILED: LID not found in Redis - will try database fallback');
+
+      // DATABASE FALLBACK: Try to find an existing contact with this LID stored
+      // This helps when LID mappings weren't in Redis but we've seen this LID before
+      const channel = await prisma.channel.findUnique({
+        where: { id: channelId },
+        select: { organizationId: true },
+      });
+
+      if (channel) {
+        // First check if there's a contact with this exact LID identifier
+        const existingLidContact = await prisma.contact.findFirst({
+          where: {
+            organizationId: channel.organizationId,
+            channelType: ChannelType.WHATSAPP,
+            identifier: normalized,
+          },
+          select: { id: true, identifier: true },
+        });
+
+        if (existingLidContact) {
+          logger.info({
+            channelId,
+            lid: lidPart,
+            contactId: existingLidContact.id,
+          }, 'Found existing contact with LID identifier');
+          // Contact already exists with this LID, use it as-is
+          return normalized;
+        }
+
+        // Check if we have metadata stored that maps this LID to a phone
+        // This is stored when we successfully resolve an LID and save the contact
+        const lidMetadataKey = `lid-contact:${channelId}:${lidPart}`;
+        const storedPhoneNumber = await redisClient.get(lidMetadataKey);
+        if (storedPhoneNumber) {
+          const resolvedNormalized = normalizeIdentifier(storedPhoneNumber);
+          logger.info({
+            channelId,
+            lid: lidPart,
+            storedPhone: storedPhoneNumber,
+            normalized: resolvedNormalized,
+          }, 'SUCCESS: Resolved LID from stored metadata');
+          return resolvedNormalized;
+        }
+      }
 
     } catch (error) {
       logger.error({ channelId, jidOrId, error }, 'ERROR: Failed to lookup LID mapping');
@@ -136,6 +180,32 @@ export async function resolveIdentifier(channelId: string, jidOrId: string): Pro
   }
 
   return normalized;
+}
+
+/**
+ * Store LID-to-phone mapping for future lookups
+ * Call this when you know the relationship between an LID and a phone number
+ */
+export async function storeLidMapping(channelId: string, lid: string, phoneNumber: string): Promise<void> {
+  try {
+    const normalizedPhone = normalizeIdentifier(phoneNumber);
+    const normalizedLid = normalizeIdentifier(lid);
+
+    // Store in the standard LID hash
+    await redisClient.hset(`lid:${channelId}`, normalizedLid, normalizedPhone);
+    await redisClient.hset(`pn:${channelId}`, normalizedPhone, normalizedLid);
+
+    // Also store in a contact-specific key for quick lookup
+    await redisClient.set(`lid-contact:${channelId}:${normalizedLid}`, normalizedPhone);
+
+    logger.info({
+      channelId,
+      lid: normalizedLid,
+      phone: normalizedPhone,
+    }, 'Stored LID-to-phone mapping');
+  } catch (error) {
+    logger.warn({ channelId, lid, phoneNumber, error }, 'Failed to store LID mapping');
+  }
 }
 
 /**
