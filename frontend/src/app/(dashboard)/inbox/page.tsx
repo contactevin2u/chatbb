@@ -23,6 +23,18 @@ import {
   Tag,
   MessageSquare,
   Edit,
+  Reply,
+  Heart,
+  ThumbsUp,
+  Download,
+  Play,
+  Pause,
+  Mic,
+  FileText,
+  FileSpreadsheet,
+  FileImage,
+  File,
+  Square,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -60,10 +72,12 @@ import {
   setActiveAgent,
   clearActiveAgent,
   uploadMedia,
+  reactToMessage,
   type Conversation,
   type Message,
   type ConversationStatus,
   type UploadedMedia,
+  type MessageReaction,
 } from '@/lib/api/conversations';
 
 // Status badge component
@@ -154,6 +168,45 @@ function getMessagePreview(message?: Message): string {
   }
 }
 
+// Get icon for document type
+function getDocumentIcon(filename?: string, mimeType?: string) {
+  const ext = filename?.split('.').pop()?.toLowerCase();
+  const mime = mimeType?.toLowerCase();
+
+  if (ext === 'pdf' || mime?.includes('pdf')) {
+    return <FileText className="h-8 w-8 text-red-500" />;
+  }
+  if (['xls', 'xlsx', 'csv'].includes(ext || '') || mime?.includes('spreadsheet') || mime?.includes('csv')) {
+    return <FileSpreadsheet className="h-8 w-8 text-green-600" />;
+  }
+  if (['doc', 'docx'].includes(ext || '') || mime?.includes('word')) {
+    return <FileText className="h-8 w-8 text-blue-600" />;
+  }
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '') || mime?.startsWith('image/')) {
+    return <FileImage className="h-8 w-8 text-purple-500" />;
+  }
+  return <File className="h-8 w-8 text-gray-500" />;
+}
+
+// Format duration in mm:ss
+function formatDuration(seconds?: number): string {
+  if (!seconds) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Download file helper
+function downloadFile(url: string, filename: string) {
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.target = '_blank';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
 export default function InboxPage() {
   const queryClient = useQueryClient();
   const { socket, joinConversation, leaveConversation, startTyping, stopTyping } = useWebSocket();
@@ -171,8 +224,16 @@ export default function InboxPage() {
   const [otherActiveAgent, setOtherActiveAgent] = useState<{ id: string; name: string } | null>(null);
   const [selectedMedia, setSelectedMedia] = useState<{ file: File; preview: string; type: 'image' | 'video' | 'audio' | 'document' } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null); // messageId to show picker for
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const previousConversationRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -232,6 +293,19 @@ export default function InboxPage() {
     },
   });
 
+  // React to message mutation
+  const reactToMessageMutation = useMutation({
+    mutationFn: ({ messageId, emoji }: { messageId: string; emoji: string }) =>
+      reactToMessage(messageId, emoji),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages', selectedConversationId] });
+      setShowEmojiPicker(null);
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to send reaction');
+    },
+  });
+
   // Update contact mutation
   const updateContactMutation = useMutation({
     mutationFn: ({ contactId, displayName }: { contactId: string; displayName: string }) =>
@@ -263,6 +337,80 @@ export default function InboxPage() {
       });
     }
   };
+
+  // Voice recording functions
+  const startRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+          ? 'audio/webm;codecs=opus'
+          : 'audio/webm',
+      });
+
+      audioChunksRef.current = [];
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        // Create File object with proper typing
+        const audioFile = new globalThis.File([audioBlob], 'voice-note.webm', { type: 'audio/webm' });
+
+        // Set as selected media
+        const preview = URL.createObjectURL(audioBlob);
+        setSelectedMedia({ file: audioFile, preview, type: 'audio' });
+
+        // Stop all tracks
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+
+      // Start timer
+      recordingIntervalRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+    } catch (error) {
+      toast.error('Could not access microphone');
+      console.error('Microphone error:', error);
+    }
+  }, []);
+
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+        recordingIntervalRef.current = null;
+      }
+    }
+  }, [isRecording]);
+
+  const cancelRecording = useCallback(() => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      audioChunksRef.current = [];
+
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+        recordingIntervalRef.current = null;
+      }
+
+      // Stop the stream
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+    }
+  }, [isRecording]);
 
   // Handle selecting a conversation
   const handleSelectConversation = useCallback(async (conversationId: string) => {
@@ -359,14 +507,16 @@ export default function InboxPage() {
         conversationId: selectedConversationId,
         text: messageText.trim() || undefined,
         media: mediaData,
+        quotedMessageId: replyToMessage?.externalId || undefined,
       });
 
-      // Clear media after sending
+      // Clear media and reply after sending
       clearSelectedMedia();
+      setReplyToMessage(null);
     } catch (error) {
       toast.error('Failed to send message');
     }
-  }, [messageText, selectedMedia, selectedConversationId, sendMessageMutation, clearSelectedMedia]);
+  }, [messageText, selectedMedia, selectedConversationId, sendMessageMutation, clearSelectedMedia, replyToMessage]);
 
   // Handle typing
   const handleTyping = useCallback(() => {
@@ -394,15 +544,18 @@ export default function InboxPage() {
   useEffect(() => {
     if (!socket) return;
 
-    // New message - skip if we sent it (already shown via optimistic UI)
-    const handleNewMessage = (data: { message: Message; conversationId: string }) => {
-      // Deduplicate: skip if current user sent this message
-      // The message is already in UI from mutation's onSuccess
-      if (data.message.sentByUser?.id === user?.id) {
+    // New message handler
+    const handleNewMessage = (data: { message?: Message; conversationId: string }) => {
+      // Deduplicate: skip if current user sent this message (already shown via optimistic UI)
+      // Only skip if we have a message object AND it was sent by current user
+      if (data.message?.sentByUser?.id === user?.id) {
         return;
       }
 
-      queryClient.invalidateQueries({ queryKey: ['messages', data.conversationId] });
+      // Invalidate queries to refetch - server handles deduplication
+      if (data.conversationId) {
+        queryClient.invalidateQueries({ queryKey: ['messages', data.conversationId] });
+      }
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
     };
 
@@ -443,12 +596,18 @@ export default function InboxPage() {
       }
     };
 
+    // Reaction updates
+    const handleReaction = (data: { messageId: string; emoji: string; reactions: MessageReaction[] }) => {
+      queryClient.invalidateQueries({ queryKey: ['messages', selectedConversationId] });
+    };
+
     socket.on('message:new', handleNewMessage);
     socket.on('typing:start', handleTypingStart);
     socket.on('typing:stop', handleTypingStop);
     socket.on('conversation:updated', handleConversationUpdated);
     socket.on('agent:active', handleAgentActive);
     socket.on('agent:left', handleAgentLeft);
+    socket.on('message:reaction', handleReaction);
 
     return () => {
       socket.off('message:new', handleNewMessage);
@@ -457,6 +616,7 @@ export default function InboxPage() {
       socket.off('conversation:updated', handleConversationUpdated);
       socket.off('agent:active', handleAgentActive);
       socket.off('agent:left', handleAgentLeft);
+      socket.off('message:reaction', handleReaction);
     };
   }, [socket, selectedConversationId, queryClient, user?.id, otherActiveAgent?.id]);
 
@@ -687,26 +847,98 @@ export default function InboxPage() {
                           </AvatarFallback>
                         </Avatar>
                       )}
-                      <div
-                        className={cn(
-                          'max-w-[70%] rounded-lg p-3',
-                          message.direction === 'OUTBOUND'
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted'
+                      <div className="group relative">
+                        {/* Message actions (hover) */}
+                        <div className={cn(
+                          'absolute top-0 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 z-10',
+                          message.direction === 'OUTBOUND' ? 'left-0 -translate-x-full pr-2' : 'right-0 translate-x-full pl-2'
+                        )}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 bg-background shadow-sm"
+                            onClick={() => setReplyToMessage(message)}
+                            title="Reply"
+                          >
+                            <Reply className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 bg-background shadow-sm"
+                            onClick={() => setShowEmojiPicker(showEmojiPicker === message.id ? null : message.id)}
+                            title="React"
+                          >
+                            <Smile className="h-4 w-4" />
+                          </Button>
+                        </div>
+
+                        {/* Quick reaction picker */}
+                        {showEmojiPicker === message.id && (
+                          <div className={cn(
+                            'absolute bottom-full mb-1 bg-background border rounded-lg shadow-lg p-1 flex gap-1 z-20',
+                            message.direction === 'OUTBOUND' ? 'right-0' : 'left-0'
+                          )}>
+                            {['👍', '❤️', '😂', '😮', '😢', '🙏'].map((emoji) => (
+                              <button
+                                key={emoji}
+                                className="text-lg hover:bg-muted rounded p-1 transition-colors"
+                                onClick={() => message.externalId && reactToMessageMutation.mutate({ messageId: message.id, emoji })}
+                              >
+                                {emoji}
+                              </button>
+                            ))}
+                          </div>
                         )}
-                      >
-                        {message.type === 'TEXT' && (
-                          <p className="text-sm whitespace-pre-wrap">{message.content.text}</p>
-                        )}
+
+                        <div
+                          className={cn(
+                            'max-w-[70%] rounded-lg p-3',
+                            message.direction === 'OUTBOUND'
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-muted'
+                          )}
+                        >
+                          {/* Quoted message (reply) */}
+                          {message.content.quotedMessage && (
+                            <div className={cn(
+                              'mb-2 pl-2 border-l-2 text-xs',
+                              message.direction === 'OUTBOUND'
+                                ? 'border-primary-foreground/50 text-primary-foreground/70'
+                                : 'border-muted-foreground/50 text-muted-foreground'
+                            )}>
+                              <p className="font-medium truncate">
+                                {message.content.quotedMessage.participant?.split('@')[0] || 'Unknown'}
+                              </p>
+                              <p className="truncate">{message.content.quotedMessage.text || 'Message'}</p>
+                            </div>
+                          )}
+
+                          {message.type === 'TEXT' && (
+                            <p className="text-sm whitespace-pre-wrap">{message.content.text}</p>
+                          )}
                         {message.type === 'IMAGE' && (
                           <div className="space-y-2">
                             {message.content.mediaUrl ? (
-                              <img
-                                src={message.content.mediaUrl}
-                                alt="Image"
-                                className="max-w-[300px] max-h-[300px] rounded object-cover cursor-pointer"
-                                onClick={() => window.open(message.content.mediaUrl, '_blank')}
-                              />
+                              <div className="relative group/media">
+                                <img
+                                  src={message.content.mediaUrl}
+                                  alt="Image"
+                                  className="max-w-[300px] max-h-[300px] rounded object-cover cursor-pointer"
+                                  onClick={() => window.open(message.content.mediaUrl, '_blank')}
+                                />
+                                <Button
+                                  variant="secondary"
+                                  size="icon"
+                                  className="absolute top-2 right-2 h-8 w-8 opacity-0 group-hover/media:opacity-100 transition-opacity"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    downloadFile(message.content.mediaUrl, `image-${message.id}.jpg`);
+                                  }}
+                                >
+                                  <Download className="h-4 w-4" />
+                                </Button>
+                              </div>
                             ) : (
                               <div className="h-48 w-48 bg-black/10 rounded flex items-center justify-center">
                                 <ImageIcon className="h-8 w-8 opacity-50" />
@@ -720,24 +952,23 @@ export default function InboxPage() {
                         {message.type === 'VIDEO' && (
                           <div className="space-y-2">
                             {message.content.mediaUrl ? (
-                              <video
-                                src={message.content.mediaUrl}
-                                controls
-                                preload="metadata"
-                                playsInline
-                                className="max-w-[300px] max-h-[300px] rounded cursor-pointer"
-                                onClick={(e) => {
-                                  // If video fails to play inline, open in new tab
-                                  const video = e.currentTarget;
-                                  if (video.error) {
-                                    window.open(message.content.mediaUrl, '_blank');
-                                  }
-                                }}
-                                onError={(e) => {
-                                  // Log video load errors
-                                  console.error('Video load error:', message.content.mediaUrl);
-                                }}
-                              />
+                              <div className="relative group/media">
+                                <video
+                                  src={message.content.mediaUrl}
+                                  controls
+                                  preload="metadata"
+                                  playsInline
+                                  className="max-w-[300px] max-h-[300px] rounded"
+                                />
+                                <Button
+                                  variant="secondary"
+                                  size="icon"
+                                  className="absolute top-2 right-2 h-8 w-8 opacity-0 group-hover/media:opacity-100 transition-opacity"
+                                  onClick={() => downloadFile(message.content.mediaUrl, `video-${message.id}.mp4`)}
+                                >
+                                  <Download className="h-4 w-4" />
+                                </Button>
+                              </div>
                             ) : (
                               <div className="h-48 w-48 bg-black/10 rounded flex items-center justify-center">
                                 <span className="text-2xl">🎬</span>
@@ -751,32 +982,79 @@ export default function InboxPage() {
                         {message.type === 'AUDIO' && (
                           <div className="space-y-2">
                             {message.content.mediaUrl ? (
-                              <audio
-                                src={message.content.mediaUrl}
-                                controls
-                                className="max-w-[250px]"
-                              />
+                              <div className="flex items-center gap-3 min-w-[200px]">
+                                <div className={cn(
+                                  'flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center',
+                                  message.direction === 'OUTBOUND' ? 'bg-primary-foreground/20' : 'bg-primary/20'
+                                )}>
+                                  <Mic className={cn(
+                                    'h-5 w-5',
+                                    message.direction === 'OUTBOUND' ? 'text-primary-foreground' : 'text-primary'
+                                  )} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <audio
+                                    src={message.content.mediaUrl}
+                                    controls
+                                    className="w-full h-8"
+                                    style={{ maxWidth: '200px' }}
+                                  />
+                                  <p className={cn(
+                                    'text-xs mt-1',
+                                    message.direction === 'OUTBOUND' ? 'text-primary-foreground/70' : 'text-muted-foreground'
+                                  )}>
+                                    {message.content.ptt ? 'Voice note' : 'Audio'} • {formatDuration(message.content.seconds)}
+                                  </p>
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 flex-shrink-0"
+                                  onClick={() => downloadFile(message.content.mediaUrl, `audio-${message.id}.ogg`)}
+                                >
+                                  <Download className="h-4 w-4" />
+                                </Button>
+                              </div>
                             ) : (
                               <div className="flex items-center gap-2 text-sm">
-                                <span>🎵</span>
-                                <span>Audio message</span>
+                                <Mic className="h-5 w-5" />
+                                <span>Voice message</span>
                               </div>
                             )}
                           </div>
                         )}
                         {message.type === 'DOCUMENT' && (
                           <div className="space-y-2">
-                            <a
-                              href={message.content.mediaUrl || '#'}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-2 p-2 bg-background/50 rounded hover:bg-background/80"
-                            >
-                              <span className="text-xl">📄</span>
-                              <span className="text-sm truncate max-w-[200px]">
-                                {message.content.fileName || 'Document'}
-                              </span>
-                            </a>
+                            <div className={cn(
+                              'flex items-center gap-3 p-3 rounded-lg min-w-[220px]',
+                              message.direction === 'OUTBOUND' ? 'bg-primary-foreground/10' : 'bg-background/50'
+                            )}>
+                              {getDocumentIcon(message.content.fileName, message.content.mimeType)}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">
+                                  {message.content.fileName || 'Document'}
+                                </p>
+                                <p className={cn(
+                                  'text-xs',
+                                  message.direction === 'OUTBOUND' ? 'text-primary-foreground/70' : 'text-muted-foreground'
+                                )}>
+                                  {message.content.fileName?.split('.').pop()?.toUpperCase() || 'FILE'}
+                                </p>
+                              </div>
+                              {message.content.mediaUrl && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 flex-shrink-0"
+                                  onClick={() => downloadFile(message.content.mediaUrl, message.content.fileName || `document-${message.id}`)}
+                                >
+                                  <Download className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                            {message.content.caption && (
+                              <p className="text-sm">{message.content.caption}</p>
+                            )}
                           </div>
                         )}
                         {message.type === 'STICKER' && (
@@ -811,6 +1089,26 @@ export default function InboxPage() {
                             <MessageStatusIcon status={message.status} />
                           )}
                         </div>
+
+                          {/* Reactions display */}
+                          {message.metadata?.reactions && message.metadata.reactions.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {Object.entries(
+                                message.metadata.reactions.reduce((acc: Record<string, number>, r: MessageReaction) => {
+                                  acc[r.emoji] = (acc[r.emoji] || 0) + 1;
+                                  return acc;
+                                }, {})
+                              ).map(([emoji, count]) => (
+                                <span
+                                  key={emoji}
+                                  className="inline-flex items-center gap-0.5 text-xs bg-background/80 rounded-full px-1.5 py-0.5 border"
+                                >
+                                  {emoji} {count as number > 1 && <span className="text-muted-foreground">{count as number}</span>}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -835,6 +1133,33 @@ export default function InboxPage() {
 
             {/* Message Input */}
             <div className="p-4 border-t">
+              {/* Reply Preview */}
+              {replyToMessage && (
+                <div className="mb-3 p-2 bg-muted rounded-lg border-l-4 border-primary">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-primary flex items-center gap-1">
+                        <Reply className="h-3 w-3" />
+                        Replying to
+                      </p>
+                      <p className="text-sm text-muted-foreground truncate">
+                        {replyToMessage.content.text ||
+                         replyToMessage.content.caption ||
+                         `[${replyToMessage.type}]`}
+                      </p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 flex-shrink-0"
+                      onClick={() => setReplyToMessage(null)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {/* Media Preview */}
               {selectedMedia && (
                 <div className="mb-3 p-2 bg-muted rounded-lg">
@@ -855,12 +1180,25 @@ export default function InboxPage() {
                         />
                       )}
                       {selectedMedia.type === 'audio' && (
-                        <audio src={selectedMedia.preview} controls className="w-full" />
+                        <div className="flex items-center gap-3 p-2 bg-background rounded">
+                          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                            <Mic className="h-5 w-5 text-primary" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">Voice note</p>
+                            <audio src={selectedMedia.preview} controls className="w-full h-8 mt-1" />
+                          </div>
+                        </div>
                       )}
                       {selectedMedia.type === 'document' && (
-                        <div className="flex items-center gap-2 p-2 bg-background rounded">
-                          <span className="text-2xl">📄</span>
-                          <span className="text-sm truncate">{selectedMedia.file.name}</span>
+                        <div className="flex items-center gap-3 p-2 bg-background rounded">
+                          {getDocumentIcon(selectedMedia.file.name)}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{selectedMedia.file.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {selectedMedia.file.name.split('.').pop()?.toUpperCase()} • {(selectedMedia.file.size / 1024).toFixed(1)} KB
+                            </p>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -885,44 +1223,87 @@ export default function InboxPage() {
                 onChange={handleFileSelect}
               />
 
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={selectedConversation.status === 'CLOSED'}
-                >
-                  <Paperclip className="h-5 w-5" />
-                </Button>
-                <Input
-                  placeholder={selectedMedia ? "Add a caption..." : "Type a message..."}
-                  value={messageText}
-                  onChange={(e) => {
-                    setMessageText(e.target.value);
-                    handleTyping();
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendMessage();
-                    }
-                  }}
-                  disabled={selectedConversation.status === 'CLOSED'}
-                />
-                <Button variant="ghost" size="icon">
-                  <Smile className="h-5 w-5" />
-                </Button>
-                <Button
-                  onClick={handleSendMessage}
-                  disabled={(!messageText.trim() && !selectedMedia) || sendMessageMutation.isPending || isUploading || selectedConversation.status === 'CLOSED'}
-                >
-                  {isUploading ? (
-                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              {/* Recording UI */}
+              {isRecording ? (
+                <div className="flex items-center gap-3 p-2 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
+                  <div className="flex items-center gap-2 flex-1">
+                    <div className="h-3 w-3 bg-red-500 rounded-full animate-pulse" />
+                    <span className="text-sm font-medium text-red-600 dark:text-red-400">
+                      Recording... {formatDuration(recordingTime)}
+                    </span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    onClick={cancelRecording}
+                    title="Cancel"
+                  >
+                    <X className="h-5 w-5" />
+                  </Button>
+                  <Button
+                    variant="default"
+                    size="icon"
+                    className="h-8 w-8 bg-red-500 hover:bg-red-600"
+                    onClick={stopRecording}
+                    title="Stop and send"
+                  >
+                    <Square className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={selectedConversation.status === 'CLOSED'}
+                  >
+                    <Paperclip className="h-5 w-5" />
+                  </Button>
+                  <Input
+                    placeholder={selectedMedia ? "Add a caption..." : "Type a message..."}
+                    value={messageText}
+                    onChange={(e) => {
+                      setMessageText(e.target.value);
+                      handleTyping();
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage();
+                      }
+                    }}
+                    disabled={selectedConversation.status === 'CLOSED'}
+                  />
+                  <Button variant="ghost" size="icon">
+                    <Smile className="h-5 w-5" />
+                  </Button>
+                  {/* Show mic button when no text, send button when there's text or media */}
+                  {!messageText.trim() && !selectedMedia ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={startRecording}
+                      disabled={selectedConversation.status === 'CLOSED'}
+                      title="Record voice note"
+                    >
+                      <Mic className="h-5 w-5" />
+                    </Button>
                   ) : (
-                    <Send className="h-5 w-5" />
+                    <Button
+                      onClick={handleSendMessage}
+                      disabled={(!messageText.trim() && !selectedMedia) || sendMessageMutation.isPending || isUploading || selectedConversation.status === 'CLOSED'}
+                    >
+                      {isUploading ? (
+                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                      ) : (
+                        <Send className="h-5 w-5" />
+                      )}
+                    </Button>
                   )}
-                </Button>
-              </div>
+                </div>
+              )}
               {selectedConversation.status === 'CLOSED' && (
                 <p className="text-xs text-muted-foreground mt-2 text-center">
                   This conversation is closed.{' '}

@@ -62,6 +62,7 @@ export interface SendMessageInput {
     };
     emoji: string;
   };
+  quotedMessageId?: string;
 }
 
 export class WhatsAppService {
@@ -483,6 +484,7 @@ export class WhatsAppService {
       gif?: { url?: string; buffer?: Buffer; caption?: string };
       voiceNote?: { url?: string; buffer?: Buffer };
       reaction?: { messageKey: any; emoji: string };
+      quotedMessageId?: string;
     }
   ): Promise<{ externalId: string }> {
     const channel = await prisma.channel.findUnique({
@@ -509,6 +511,7 @@ export class WhatsAppService {
           gif: options?.gif,
           voiceNote: options?.voiceNote,
           reaction: options?.reaction,
+          quotedMessageId: options?.quotedMessageId,
         }
       );
 
@@ -579,20 +582,32 @@ export class WhatsAppService {
     const conversation = { id: conversationResult.id };
 
     // Create message record with PENDING status
+    // Include quotedMessage info in content if replying
+    const messageContent: any = input.text ? { text: input.text } : { media: input.media };
+    if (input.quotedMessageId) {
+      messageContent.quotedMessageId = input.quotedMessageId;
+    }
+
     const message = await prisma.message.create({
       data: {
         conversationId: conversation.id,
         channelId: input.channelId,
         direction: MessageDirection.OUTBOUND,
         type: input.media ? this.getMessageType(input.media.type) : MessageType.TEXT,
-        content: input.text ? { text: input.text } : { media: input.media },
+        content: messageContent,
         status: MessageStatus.PENDING,
       },
     });
 
     try {
       // Send via low-level method
-      const result = await this.sendMessageRaw(input.channelId, input.to, input.text, input.media);
+      const result = await this.sendMessageRaw(
+        input.channelId,
+        input.to,
+        input.text,
+        input.media,
+        { quotedMessageId: input.quotedMessageId }
+      );
 
       // Update message with external ID and sent status
       await prisma.message.update({

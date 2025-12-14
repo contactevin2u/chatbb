@@ -481,8 +481,14 @@ export class SessionManager extends EventEmitter {
 
   /**
    * Send a text message
+   * @param quotedMessage - Optional message to reply to (pass the full WAMessage object)
    */
-  async sendTextMessage(channelId: string, to: string, text: string): Promise<WAMessage | undefined> {
+  async sendTextMessage(
+    channelId: string,
+    to: string,
+    text: string,
+    quotedMessage?: WAMessage
+  ): Promise<WAMessage | undefined> {
     const session = this.sessions.get(channelId);
     if (!session || session.status !== 'CONNECTED') {
       throw new Error('Channel not connected');
@@ -494,14 +500,16 @@ export class SessionManager extends EventEmitter {
     // Format recipient JID
     const jid = this.formatJid(to);
 
-    const result = await session.socket.sendMessage(jid, { text });
-    this.logger.info({ channelId, to: jid, messageId: result?.key?.id }, 'Message sent');
+    const options = quotedMessage ? { quoted: quotedMessage } : undefined;
+    const result = await session.socket.sendMessage(jid, { text }, options);
+    this.logger.info({ channelId, to: jid, messageId: result?.key?.id, isReply: !!quotedMessage }, 'Message sent');
 
     return result;
   }
 
   /**
    * Send a media message
+   * @param quotedMessage - Optional message to reply to
    */
   async sendMediaMessage(
     channelId: string,
@@ -513,7 +521,8 @@ export class SessionManager extends EventEmitter {
       mimetype?: string;
       filename?: string;
       caption?: string;
-    }
+    },
+    quotedMessage?: WAMessage
   ): Promise<WAMessage | undefined> {
     const session = this.sessions.get(channelId);
     if (!session || session.status !== 'CONNECTED') {
@@ -558,8 +567,9 @@ export class SessionManager extends EventEmitter {
         break;
     }
 
-    const result = await session.socket.sendMessage(jid, content);
-    this.logger.info({ channelId, to: jid, type: media.type, messageId: result?.key?.id }, 'Media sent');
+    const options = quotedMessage ? { quoted: quotedMessage } : undefined;
+    const result = await session.socket.sendMessage(jid, content, options);
+    this.logger.info({ channelId, to: jid, type: media.type, messageId: result?.key?.id, isReply: !!quotedMessage }, 'Media sent');
 
     return result;
   }

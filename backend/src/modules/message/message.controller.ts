@@ -15,7 +15,7 @@ export class MessageController {
   async sendMessage(req: Request, res: Response, next: NextFunction) {
     try {
       const { organizationId, sub: userId } = req.user!;
-      const { conversationId, text, media } = req.body;
+      const { conversationId, text, media, quotedMessageId } = req.body;
 
       if (!conversationId) {
         return res.status(400).json({
@@ -37,6 +37,7 @@ export class MessageController {
         userId,
         text,
         media,
+        quotedMessageId,
       });
 
       res.status(201).json({
@@ -82,6 +83,34 @@ export class MessageController {
       res.json({
         success: true,
         data: message,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * React to a message
+   * POST /api/v1/messages/:id/react
+   */
+  async reactToMessage(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId } = req.user!;
+      const { id } = req.params;
+      const { emoji } = req.body;
+
+      if (!emoji && emoji !== '') {
+        return res.status(400).json({
+          success: false,
+          error: 'emoji is required (use empty string to remove reaction)',
+        });
+      }
+
+      const result = await messageService.reactToMessage(id, organizationId, emoji);
+
+      res.json({
+        success: true,
+        data: result,
       });
     } catch (error) {
       next(error);

@@ -374,10 +374,30 @@ async function handleSendCommand(channelId: string, data: {
   gif?: any;
   voiceNote?: any;
   reaction?: { messageKey: any; emoji: string };
+  quotedMessageId?: string;
   requestId: string
 }) {
   try {
     let result;
+
+    // Build quoted message object if quotedMessageId is provided
+    let quotedMessage: any = undefined;
+    if (data.quotedMessageId) {
+      // Construct minimal message object for Baileys quoted option
+      // Baileys needs key (remoteJid, id, fromMe) and can work with minimal message content
+      const jid = data.to.includes('@') ? data.to : `${data.to}@s.whatsapp.net`;
+      quotedMessage = {
+        key: {
+          remoteJid: jid,
+          id: data.quotedMessageId,
+          fromMe: false, // Default to false, will be overridden if we have metadata
+        },
+        message: {
+          conversation: '', // Minimal placeholder - Baileys will use stanzaId
+        },
+      };
+      logger.debug({ channelId, quotedMessageId: data.quotedMessageId }, 'Replying to message');
+    }
 
     // Priority: media > sticker > gif > voiceNote > reaction > text
     // If media is provided, send as media message (text becomes caption)
@@ -386,7 +406,7 @@ async function handleSendCommand(channelId: string, data: {
       if (data.text && !data.media.caption) {
         data.media.caption = data.text;
       }
-      result = await sessionManager.sendMediaMessage(channelId, data.to, data.media);
+      result = await sessionManager.sendMediaMessage(channelId, data.to, data.media, quotedMessage);
     } else if (data.sticker) {
       result = await sessionManager.sendStickerMessage(channelId, data.to, data.sticker);
     } else if (data.gif) {
@@ -396,7 +416,7 @@ async function handleSendCommand(channelId: string, data: {
     } else if (data.reaction) {
       result = await sessionManager.sendReaction(channelId, data.reaction.messageKey, data.reaction.emoji);
     } else if (data.text) {
-      result = await sessionManager.sendTextMessage(channelId, data.to, data.text);
+      result = await sessionManager.sendTextMessage(channelId, data.to, data.text, quotedMessage);
     }
 
     // Publish result back to API

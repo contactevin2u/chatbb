@@ -139,6 +139,25 @@ async function processMessage(job: Job) {
     // Check if this is a media message
     const mediaInfo = getMediaMessageInfo(msgContent);
 
+    // Extract contextInfo for quoted messages (replies)
+    // contextInfo exists in extendedTextMessage, imageMessage, videoMessage, etc.
+    let quotedInfo: { stanzaId: string; participant: string; quotedMessage: any } | null = null;
+    const contextInfo = msgContent.extendedTextMessage?.contextInfo
+      || msgContent.imageMessage?.contextInfo
+      || msgContent.videoMessage?.contextInfo
+      || msgContent.audioMessage?.contextInfo
+      || msgContent.documentMessage?.contextInfo
+      || msgContent.stickerMessage?.contextInfo;
+
+    if (contextInfo?.stanzaId && contextInfo?.quotedMessage) {
+      quotedInfo = {
+        stanzaId: contextInfo.stanzaId,
+        participant: contextInfo.participant || remoteJid,
+        quotedMessage: contextInfo.quotedMessage,
+      };
+      logger.debug({ channelId, quotedStanzaId: contextInfo.stanzaId }, 'Message is a reply to another message');
+    }
+
     if (msgContent.conversation) {
       content = { text: msgContent.conversation };
     } else if (msgContent.extendedTextMessage) {
@@ -159,9 +178,88 @@ async function processMessage(job: Job) {
       type = MessageType.STICKER;
       content = { isAnimated: msgContent.stickerMessage.isAnimated };
     } else if (msgContent.reactionMessage) {
-      // Reactions are handled separately - they're updates to existing messages
-      logger.debug({ channelId, reaction: msgContent.reactionMessage }, 'Reaction received');
+      // Handle reaction - update the reacted message
+      const reactionKey = msgContent.reactionMessage.key;
+      const emoji = msgContent.reactionMessage.text;
+
+      if (reactionKey?.id) {
+        // Find the message being reacted to
+        const reactedMessage = await prisma.message.findFirst({
+          where: { externalId: reactionKey.id, channelId },
+          select: { id: true, metadata: true },
+        });
+
+        if (reactedMessage) {
+          // Update message metadata with reaction
+          const currentMetadata = (reactedMessage.metadata as any) || {};
+          const reactions = currentMetadata.reactions || [];
+
+          // Add or remove reaction (empty text = remove)
+          if (emoji) {
+            // Add reaction (remove any existing reaction from same sender first)
+            const senderId = waMessage.key?.participant || waMessage.key?.remoteJid;
+            const filteredReactions = reactions.filter((r: any) => r.senderId !== senderId);
+            filteredReactions.push({
+              emoji,
+              senderId,
+              timestamp: Number(waMessage.messageTimestamp) || Date.now(),
+            });
+
+            await prisma.message.update({
+              where: { id: reactedMessage.id },
+              data: {
+                metadata: { ...currentMetadata, reactions: filteredReactions },
+              },
+            });
+            logger.info({ channelId, messageId: reactionKey.id, emoji }, 'Reaction added to message');
+          } else {
+            // Remove reaction (empty text means unreact)
+            const senderId = waMessage.key?.participant || waMessage.key?.remoteJid;
+            const filteredReactions = reactions.filter((r: any) => r.senderId !== senderId);
+
+            await prisma.message.update({
+              where: { id: reactedMessage.id },
+              data: {
+                metadata: { ...currentMetadata, reactions: filteredReactions },
+              },
+            });
+            logger.info({ channelId, messageId: reactionKey.id }, 'Reaction removed from message');
+          }
+        } else {
+          logger.debug({ channelId, reactionKey }, 'Could not find message to react to');
+        }
+      }
       return; // Don't create a separate message for reactions
+    }
+
+    // Add quoted message info to content if this is a reply
+    if (quotedInfo) {
+      // Extract text from quoted message for display
+      let quotedText = '';
+      if (quotedInfo.quotedMessage.conversation) {
+        quotedText = quotedInfo.quotedMessage.conversation;
+      } else if (quotedInfo.quotedMessage.extendedTextMessage?.text) {
+        quotedText = quotedInfo.quotedMessage.extendedTextMessage.text;
+      } else if (quotedInfo.quotedMessage.imageMessage?.caption) {
+        quotedText = `[Image] ${quotedInfo.quotedMessage.imageMessage.caption || ''}`;
+      } else if (quotedInfo.quotedMessage.videoMessage?.caption) {
+        quotedText = `[Video] ${quotedInfo.quotedMessage.videoMessage.caption || ''}`;
+      } else if (quotedInfo.quotedMessage.documentMessage) {
+        quotedText = `[Document] ${quotedInfo.quotedMessage.documentMessage.fileName || ''}`;
+      } else if (quotedInfo.quotedMessage.audioMessage) {
+        quotedText = '[Audio]';
+      } else if (quotedInfo.quotedMessage.stickerMessage) {
+        quotedText = '[Sticker]';
+      }
+
+      content = {
+        ...content,
+        quotedMessage: {
+          stanzaId: quotedInfo.stanzaId,
+          participant: quotedInfo.participant,
+          text: quotedText,
+        },
+      };
     }
 
     // Add media info if this is a media message
@@ -193,8 +291,9 @@ async function processMessage(job: Job) {
     }
 
     // Create message with error handling for race conditions
+    let savedMessage;
     try {
-      await prisma.message.create({
+      savedMessage = await prisma.message.create({
         data: {
           conversationId: conversation.id,
           channelId,
@@ -231,11 +330,12 @@ async function processMessage(job: Job) {
     const assignedUserId = conversationWithAssignment?.assignedUserId;
 
     // Publish to Redis for real-time WebSocket updates
+    // Include full message object for frontend to display immediately
     const messagePayload = JSON.stringify({
-      type: 'new',
+      message: savedMessage,
       conversationId: conversation.id,
       channelId,
-      assignedUserId, // Include for frontend filtering / smart routing
+      assignedUserId,
     });
 
     // Smart routing: if assigned, also publish to user-specific channel

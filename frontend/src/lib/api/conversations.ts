@@ -35,6 +35,18 @@ export interface User {
   avatarUrl?: string;
 }
 
+export interface MessageReaction {
+  emoji: string;
+  senderId: string;
+  timestamp: number;
+}
+
+export interface QuotedMessage {
+  stanzaId: string;
+  participant: string;
+  text: string;
+}
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -42,13 +54,19 @@ export interface Message {
   externalId?: string;
   direction: MessageDirection;
   type: MessageType;
-  content: any;
+  content: any & {
+    quotedMessage?: QuotedMessage;
+  };
   status: MessageStatus;
   sentByUser?: User;
   sentAt?: string;
   deliveredAt?: string;
   readAt?: string;
   failedReason?: string;
+  metadata?: {
+    reactions?: MessageReaction[];
+    [key: string]: any;
+  };
   createdAt: string;
 }
 
@@ -207,6 +225,7 @@ export async function sendMessage(data: {
     filename?: string;
     caption?: string;
   };
+  quotedMessageId?: string;
 }): Promise<Message> {
   const response = await apiClient.post<{ success: boolean; data: Message }>('/messages', data);
   return response.data.data;
@@ -214,6 +233,20 @@ export async function sendMessage(data: {
 
 export async function deleteMessage(messageId: string): Promise<void> {
   await apiClient.delete(`/messages/${messageId}`);
+}
+
+export interface ReactToMessageResponse {
+  messageId: string;
+  emoji: string;
+  reactions: MessageReaction[];
+}
+
+export async function reactToMessage(messageId: string, emoji: string): Promise<ReactToMessageResponse> {
+  const response = await apiClient.post<{ success: boolean; data: ReactToMessageResponse }>(
+    `/messages/${messageId}/react`,
+    { emoji }
+  );
+  return response.data.data;
 }
 
 // Media upload

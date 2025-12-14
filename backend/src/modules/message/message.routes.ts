@@ -29,6 +29,11 @@ const sendMessageSchema = z.object({
       caption: z.string().optional(),
     })
     .optional(),
+  quotedMessageId: z.string().optional(),
+});
+
+const reactToMessageSchema = z.object({
+  emoji: z.string(), // Empty string to remove reaction
 });
 
 // Validation middleware
@@ -82,6 +87,18 @@ router.delete(
   '/:id',
   requirePermission('conversations:edit'),
   messageController.deleteMessage.bind(messageController)
+);
+
+/**
+ * @route   POST /api/v1/messages/:id/react
+ * @desc    React to a message
+ * @access  Private (conversations:reply)
+ */
+router.post(
+  '/:id/react',
+  requirePermission('conversations:reply'),
+  validate(reactToMessageSchema),
+  messageController.reactToMessage.bind(messageController)
 );
 
 export const messageRoutes = router;

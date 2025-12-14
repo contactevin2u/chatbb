@@ -168,7 +168,7 @@ export class WhatsAppController {
   async sendMessage(req: Request, res: Response, next: NextFunction) {
     try {
       const { channelId } = req.params;
-      const { to, text, media } = req.body;
+      const { to, text, media, quotedMessageId } = req.body;
 
       if (!to) {
         return res.status(400).json({
@@ -189,6 +189,7 @@ export class WhatsAppController {
         to,
         text,
         media,
+        quotedMessageId,
       });
 
       res.json({

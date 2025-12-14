@@ -30,6 +30,7 @@ export interface SendMessageInput {
     filename?: string;
     caption?: string;
   };
+  quotedMessageId?: string;
 }
 
 export class MessageService {
@@ -108,7 +109,7 @@ export class MessageService {
    * Send a message
    */
   async sendMessage(input: SendMessageInput) {
-    const { conversationId, organizationId, userId, text, media } = input;
+    const { conversationId, organizationId, userId, text, media, quotedMessageId } = input;
 
     // Get conversation with channel info
     const conversation = await prisma.conversation.findFirst({
@@ -153,6 +154,9 @@ export class MessageService {
         messageContent.caption = text;
       }
     }
+    if (quotedMessageId) {
+      messageContent.quotedMessageId = quotedMessageId;
+    }
 
     // Create message record
     const message = await prisma.message.create({
@@ -190,7 +194,8 @@ export class MessageService {
           conversation.channelId,
           recipient,
           text,
-          media
+          media,
+          { quotedMessageId }
         );
         externalId = result.externalId;
       }
@@ -362,6 +367,94 @@ export class MessageService {
     });
 
     return deletedMessage;
+  }
+
+  /**
+   * React to a message
+   * Sends reaction via WhatsApp and stores it locally
+   */
+  async reactToMessage(messageId: string, organizationId: string, emoji: string) {
+    // Find the message with its conversation and channel info
+    const message = await prisma.message.findFirst({
+      where: {
+        id: messageId,
+        conversation: {
+          organizationId,
+        },
+      },
+      include: {
+        conversation: {
+          include: {
+            channel: true,
+            contact: true,
+          },
+        },
+      },
+    });
+
+    if (!message) {
+      throw new Error('Message not found');
+    }
+
+    if (!message.externalId) {
+      throw new Error('Cannot react to this message (no external ID)');
+    }
+
+    if (message.conversation.channel.type !== 'WHATSAPP') {
+      throw new Error('Reactions are only supported for WhatsApp messages');
+    }
+
+    // Build message key for the reaction
+    const recipient = message.conversation.contact.identifier;
+    const messageKey = {
+      remoteJid: `${recipient}@s.whatsapp.net`,
+      id: message.externalId,
+      fromMe: message.direction === MessageDirection.OUTBOUND,
+    };
+
+    // Send reaction via WhatsApp
+    await whatsappService.sendMessageRaw(
+      message.conversation.channelId,
+      recipient,
+      undefined,
+      undefined,
+      { reaction: { messageKey, emoji } }
+    );
+
+    // Update local message metadata with our reaction
+    const currentMetadata = (message.metadata as any) || {};
+    const reactions = currentMetadata.reactions || [];
+
+    // Remove any existing reaction from "me" (the business/agent)
+    const filteredReactions = reactions.filter((r: any) => r.senderId !== 'me');
+
+    if (emoji) {
+      filteredReactions.push({
+        emoji,
+        senderId: 'me',
+        timestamp: Date.now(),
+      });
+    }
+
+    const updatedMessage = await prisma.message.update({
+      where: { id: messageId },
+      data: {
+        metadata: { ...currentMetadata, reactions: filteredReactions },
+      },
+    });
+
+    // Emit reaction update to conversation
+    socketServer.to(`conversation:${message.conversationId}`).emit('message:reaction', {
+      messageId: message.id,
+      emoji,
+      reactions: filteredReactions,
+    });
+
+    return {
+      messageId: message.id,
+      emoji,
+      reactions: filteredReactions,
+    };
   }
 }
 
