@@ -146,7 +146,10 @@ export class SessionManager extends EventEmitter {
       connectTimeoutMs: 60000, // 60 seconds connection timeout
       defaultQueryTimeoutMs: 60000, // 60 seconds for queries
       keepAliveIntervalMs: 30000, // 30 seconds keep alive
-      retryRequestDelayMs: 500, // 500ms delay between retries
+      retryRequestDelayMs: 250, // 250ms delay between retries
+      qrTimeout: 60000, // 60 seconds QR timeout
+      maxMsgRetryCount: 5, // Retry failed messages up to 5 times
+      fireInitQueries: true, // Fire init queries on connect
       // Cache group metadata to prevent rate limiting
       cachedGroupMetadata: async (jid) => {
         const cached = await redisClient.get(`group:${jid}:metadata`);
