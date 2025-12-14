@@ -24,6 +24,7 @@ export interface CreateSequenceStepInput {
 export interface CreateSequenceInput {
   organizationId: string;
   name: string;
+  shortcut?: string;
   description?: string;
   triggerType?: string;
   triggerConfig?: any;
@@ -32,6 +33,7 @@ export interface CreateSequenceInput {
 
 export interface UpdateSequenceInput {
   name?: string;
+  shortcut?: string | null;
   description?: string;
   status?: MessageSequenceStatus;
   triggerType?: string;
@@ -65,6 +67,29 @@ export class SequenceService {
   }
 
   /**
+   * Search sequences by shortcut prefix (for autocomplete in slash-command)
+   */
+  async searchByShortcut(organizationId: string, prefix: string, limit = 5) {
+    const sequences = await prisma.messageSequence.findMany({
+      where: {
+        organizationId,
+        shortcut: { startsWith: prefix.toLowerCase(), mode: 'insensitive' },
+        status: { in: ['ACTIVE', 'DRAFT'] }, // Only show active/draft sequences
+      },
+      include: {
+        steps: {
+          orderBy: { order: 'asc' },
+          take: 1, // Just get first step for preview
+        },
+      },
+      orderBy: [{ usageCount: 'desc' }, { shortcut: 'asc' }],
+      take: limit,
+    });
+
+    return sequences;
+  }
+
+  /**
    * Get a sequence by ID
    */
   async getSequence(id: string, organizationId: string) {
@@ -91,12 +116,26 @@ export class SequenceService {
    * Create a new sequence with steps
    */
   async createSequence(input: CreateSequenceInput) {
-    const { organizationId, name, description, triggerType, triggerConfig, steps } = input;
+    const { organizationId, name, shortcut, description, triggerType, triggerConfig, steps } = input;
+
+    // Check for duplicate shortcut if provided
+    if (shortcut) {
+      const existing = await prisma.messageSequence.findFirst({
+        where: {
+          organizationId,
+          shortcut: { equals: shortcut.toLowerCase(), mode: 'insensitive' },
+        },
+      });
+      if (existing) {
+        throw new Error(`Shortcut "${shortcut}" already exists`);
+      }
+    }
 
     const sequence = await prisma.messageSequence.create({
       data: {
         organizationId,
         name,
+        shortcut: shortcut?.toLowerCase() || null,
         description,
         triggerType: triggerType || 'manual',
         triggerConfig: triggerConfig as any,
@@ -130,10 +169,28 @@ export class SequenceService {
       throw new Error('Sequence not found');
     }
 
+    // Check for duplicate shortcut if changing
+    if (input.shortcut !== undefined && input.shortcut !== null) {
+      const shortcutLower = input.shortcut.toLowerCase();
+      if (shortcutLower !== sequence.shortcut) {
+        const existing = await prisma.messageSequence.findFirst({
+          where: {
+            organizationId,
+            shortcut: { equals: shortcutLower, mode: 'insensitive' },
+            id: { not: id },
+          },
+        });
+        if (existing) {
+          throw new Error(`Shortcut "${input.shortcut}" already exists`);
+        }
+      }
+    }
+
     const updated = await prisma.messageSequence.update({
       where: { id },
       data: {
         name: input.name,
+        shortcut: input.shortcut === null ? null : input.shortcut?.toLowerCase(),
         description: input.description,
         status: input.status,
         triggerType: input.triggerType,

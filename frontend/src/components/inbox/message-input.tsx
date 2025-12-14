@@ -15,11 +15,13 @@ import {
   File,
   Clock,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { SlashCommand } from '@/components/slash-command';
+import { SlashCommand, SlashCommandItem } from '@/components/slash-command';
 import { ScheduleMessageDialog } from '@/components/schedule-message-dialog';
 import { QuickReply } from '@/lib/api/quick-replies';
+import { startSequenceExecution } from '@/lib/api/sequences';
 import { cn } from '@/lib/utils/cn';
 
 export interface ReplyToMessage {
@@ -127,14 +129,32 @@ export const MessageInput = memo(function MessageInput({
     };
   }, [messageText, selectedMedia]);
 
-  const handleSlashCommandSelect = useCallback((quickReply: QuickReply) => {
+  const handleSlashCommandSelect = useCallback(async (item: SlashCommandItem) => {
     const slashStart = messageText.lastIndexOf('/');
-    const newText = messageText.substring(0, slashStart) + quickReply.content.text;
-    onMessageChange(newText);
+
+    if (item.type === 'quickReply') {
+      // Quick reply: insert text
+      const quickReply = item.data as QuickReply;
+      const newText = messageText.substring(0, slashStart) + quickReply.content.text;
+      onMessageChange(newText);
+    } else {
+      // Sequence: start execution
+      const sequence = item.data;
+      try {
+        await startSequenceExecution(sequence.id, conversationId);
+        toast.success(`Started sequence: ${sequence.name}`);
+        // Clear the slash command text
+        const newText = messageText.substring(0, slashStart);
+        onMessageChange(newText);
+      } catch (error: any) {
+        toast.error(error.message || 'Failed to start sequence');
+      }
+    }
+
     setSlashCommandOpen(false);
     setSlashSearchTerm('');
     actualInputRef.current?.focus();
-  }, [messageText, onMessageChange, actualInputRef]);
+  }, [messageText, onMessageChange, actualInputRef, conversationId]);
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;

@@ -29,6 +29,7 @@ export interface MessageSequence {
   id: string;
   organizationId: string;
   name: string;
+  shortcut: string | null;
   description: string | null;
   status: SequenceStatus;
   triggerType: string;
@@ -60,6 +61,7 @@ export interface SequenceExecution {
 
 export interface CreateSequenceInput {
   name: string;
+  shortcut?: string;
   description?: string;
   triggerType?: string;
   triggerConfig?: any;
@@ -72,6 +74,7 @@ export interface CreateSequenceInput {
 
 export interface UpdateSequenceInput {
   name?: string;
+  shortcut?: string | null;
   description?: string;
   status?: SequenceStatus;
   triggerType?: string;
@@ -89,6 +92,20 @@ export async function listSequences(status?: SequenceStatus): Promise<MessageSeq
 
   const response = await apiClient.get<{ success: boolean; data: MessageSequence[] }>(
     `/sequences${params.toString() ? `?${params.toString()}` : ''}`
+  );
+  return response.data.data;
+}
+
+/**
+ * Search sequences by shortcut prefix (for slash-command autocomplete)
+ */
+export async function searchSequences(prefix: string, limit = 5): Promise<MessageSequence[]> {
+  const params = new URLSearchParams();
+  params.append('prefix', prefix);
+  params.append('limit', limit.toString());
+
+  const response = await apiClient.get<{ success: boolean; data: MessageSequence[] }>(
+    `/sequences/search?${params.toString()}`
   );
   return response.data.data;
 }

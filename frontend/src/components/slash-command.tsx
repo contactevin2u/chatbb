@@ -2,16 +2,23 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { MessageSquare, FileText, Image, Video, Music } from 'lucide-react';
+import { MessageSquare, FileText, Image, Video, Music, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { searchQuickReplies, QuickReply, trackQuickReplyUsage } from '@/lib/api/quick-replies';
+import { searchSequences, MessageSequence } from '@/lib/api/sequences';
+
+// Unified item type for the slash menu
+export type SlashCommandItem =
+  | { type: 'quickReply'; data: QuickReply }
+  | { type: 'sequence'; data: MessageSequence };
 
 interface SlashCommandProps {
   isOpen: boolean;
   searchTerm: string;
   position: { top: number; left: number };
-  onSelect: (quickReply: QuickReply) => void;
+  onSelect: (item: SlashCommandItem) => void;
   onClose: () => void;
+  conversationId?: string;
 }
 
 export function SlashCommand({
@@ -20,41 +27,58 @@ export function SlashCommand({
   position,
   onSelect,
   onClose,
+  conversationId,
 }: SlashCommandProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Search quick replies based on the term after `/`
-  const { data: quickReplies, isLoading } = useQuery({
+  const { data: quickReplies, isLoading: isLoadingQuickReplies } = useQuery({
     queryKey: ['quickRepliesSearch', searchTerm],
-    queryFn: () => searchQuickReplies(searchTerm, 8),
+    queryFn: () => searchQuickReplies(searchTerm, 5),
     enabled: isOpen && searchTerm.length > 0,
     staleTime: 5000,
   });
 
+  // Search sequences based on the term after `/`
+  const { data: sequences, isLoading: isLoadingSequences } = useQuery({
+    queryKey: ['sequencesSearch', searchTerm],
+    queryFn: () => searchSequences(searchTerm, 3),
+    enabled: isOpen && searchTerm.length > 0,
+    staleTime: 5000,
+  });
+
+  const isLoading = isLoadingQuickReplies || isLoadingSequences;
+
+  // Combine quick replies and sequences into unified items
+  const items: SlashCommandItem[] = [
+    ...(quickReplies?.map((qr) => ({ type: 'quickReply' as const, data: qr })) || []),
+    ...(sequences?.map((seq) => ({ type: 'sequence' as const, data: seq })) || []),
+  ];
+
   // Reset selection when search results change
   useEffect(() => {
     setSelectedIndex(0);
-  }, [quickReplies]);
+  }, [quickReplies, sequences]);
 
   // Handle keyboard navigation
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      if (!isOpen || !quickReplies?.length) return;
+      if (!isOpen || !items.length) return;
 
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault();
-          setSelectedIndex((prev) => (prev + 1) % quickReplies.length);
+          setSelectedIndex((prev) => (prev + 1) % items.length);
           break;
         case 'ArrowUp':
           e.preventDefault();
-          setSelectedIndex((prev) => (prev - 1 + quickReplies.length) % quickReplies.length);
+          setSelectedIndex((prev) => (prev - 1 + items.length) % items.length);
           break;
         case 'Enter':
         case 'Tab':
           e.preventDefault();
-          const selected = quickReplies[selectedIndex];
+          const selected = items[selectedIndex];
           if (selected) {
             handleSelect(selected);
           }
@@ -65,7 +89,7 @@ export function SlashCommand({
           break;
       }
     },
-    [isOpen, quickReplies, selectedIndex, onClose]
+    [isOpen, items, selectedIndex, onClose]
   );
 
   useEffect(() => {
@@ -89,13 +113,15 @@ export function SlashCommand({
     }
   }, [isOpen, onClose]);
 
-  const handleSelect = async (quickReply: QuickReply) => {
-    onSelect(quickReply);
-    // Track usage asynchronously
-    trackQuickReplyUsage(quickReply.id).catch(() => {});
+  const handleSelect = async (item: SlashCommandItem) => {
+    onSelect(item);
+    // Track usage asynchronously for quick replies
+    if (item.type === 'quickReply') {
+      trackQuickReplyUsage(item.data.id).catch(() => {});
+    }
   };
 
-  const getMediaIcon = (quickReply: QuickReply) => {
+  const getQuickReplyIcon = (quickReply: QuickReply) => {
     if (!quickReply.content.media) {
       return <MessageSquare className="h-4 w-4 text-muted-foreground" />;
     }
@@ -113,6 +139,39 @@ export function SlashCommand({
     }
   };
 
+  const getItemIcon = (item: SlashCommandItem) => {
+    if (item.type === 'sequence') {
+      return <Zap className="h-4 w-4 text-yellow-500" />;
+    }
+    return getQuickReplyIcon(item.data as QuickReply);
+  };
+
+  const getItemShortcut = (item: SlashCommandItem) => {
+    if (item.type === 'sequence') {
+      return item.data.shortcut || item.data.name.toLowerCase().replace(/\s+/g, '-');
+    }
+    return item.data.shortcut;
+  };
+
+  const getItemName = (item: SlashCommandItem) => {
+    return item.data.name;
+  };
+
+  const getItemPreview = (item: SlashCommandItem) => {
+    if (item.type === 'sequence') {
+      const stepCount = item.data.steps?.length || 0;
+      return `${stepCount} step${stepCount !== 1 ? 's' : ''} sequence`;
+    }
+    return (item.data as QuickReply).content.text;
+  };
+
+  const getItemCategory = (item: SlashCommandItem) => {
+    if (item.type === 'sequence') {
+      return 'Sequence';
+    }
+    return (item.data as QuickReply).category;
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -126,38 +185,41 @@ export function SlashCommand({
     >
       {isLoading ? (
         <div className="p-3 text-sm text-muted-foreground text-center">Loading...</div>
-      ) : !quickReplies?.length ? (
+      ) : !items.length ? (
         <div className="p-3 text-sm text-muted-foreground text-center">
-          {searchTerm ? `No quick replies matching "/${searchTerm}"` : 'Type to search quick replies'}
+          {searchTerm ? `No results matching "/${searchTerm}"` : 'Type to search'}
         </div>
       ) : (
         <div className="py-1">
           <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground">
-            Quick Replies
+            Quick Replies & Sequences
           </div>
-          {quickReplies.map((quickReply, index) => (
+          {items.map((item, index) => (
             <button
-              key={quickReply.id}
+              key={`${item.type}-${item.data.id}`}
               className={cn(
                 'w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-accent transition-colors',
                 index === selectedIndex && 'bg-accent'
               )}
-              onClick={() => handleSelect(quickReply)}
+              onClick={() => handleSelect(item)}
               onMouseEnter={() => setSelectedIndex(index)}
             >
-              <div className="flex-shrink-0 mt-0.5">{getMediaIcon(quickReply)}</div>
+              <div className="flex-shrink-0 mt-0.5">{getItemIcon(item)}</div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium truncate">{quickReply.name}</span>
-                  <span className="text-xs text-muted-foreground">/{quickReply.shortcut}</span>
+                  <span className="text-sm font-medium truncate">{getItemName(item)}</span>
+                  <span className="text-xs text-muted-foreground">/{getItemShortcut(item)}</span>
                 </div>
                 <p className="text-xs text-muted-foreground truncate mt-0.5">
-                  {quickReply.content.text}
+                  {getItemPreview(item)}
                 </p>
               </div>
-              {quickReply.category && (
-                <span className="flex-shrink-0 text-[10px] bg-muted px-1.5 py-0.5 rounded">
-                  {quickReply.category}
+              {getItemCategory(item) && (
+                <span className={cn(
+                  "flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded",
+                  item.type === 'sequence' ? 'bg-yellow-100 text-yellow-800' : 'bg-muted'
+                )}>
+                  {getItemCategory(item)}
                 </span>
               )}
             </button>

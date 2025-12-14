@@ -33,6 +33,7 @@ const stepSchema = z.object({
 
 const createSequenceSchema = z.object({
   name: z.string().min(1).max(100),
+  shortcut: z.string().min(1).max(50).regex(/^[a-zA-Z0-9_-]+$/).optional(),
   description: z.string().max(500).optional(),
   triggerType: z.string().optional(),
   triggerConfig: z.any().optional(),
@@ -41,6 +42,7 @@ const createSequenceSchema = z.object({
 
 const updateSequenceSchema = z.object({
   name: z.string().min(1).max(100).optional(),
+  shortcut: z.string().min(1).max(50).regex(/^[a-zA-Z0-9_-]+$/).nullable().optional(),
   description: z.string().max(500).optional(),
   status: z.enum(['DRAFT', 'ACTIVE', 'PAUSED', 'ARCHIVED']).optional(),
   triggerType: z.string().optional(),
@@ -123,6 +125,17 @@ router.get(
   '/',
   requirePermission('automation:read'),
   sequenceController.listSequences.bind(sequenceController)
+);
+
+/**
+ * @route   GET /api/v1/sequences/search
+ * @desc    Search sequences by shortcut prefix (for autocomplete)
+ * @access  Private (automation:read)
+ */
+router.get(
+  '/search',
+  requirePermission('automation:read'),
+  sequenceController.searchSequences.bind(sequenceController)
 );
 
 /**

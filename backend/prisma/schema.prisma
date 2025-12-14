@@ -629,6 +629,7 @@ model MessageSequence {
   id             String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId String                @map("organization_id") @db.Uuid
   name           String
+  shortcut       String?               // Optional shortcut for /command access (e.g., "welcome" for /welcome)
   description    String?
   status         MessageSequenceStatus @default(DRAFT)
   triggerType    String                @default("manual") @map("trigger_type") // manual, keyword, tag_added, etc.
@@ -641,6 +642,7 @@ model MessageSequence {
   steps        MessageSequenceStep[]
   executions   SequenceExecution[]
 
+  @@unique([organizationId, shortcut])
   @@index([organizationId])
   @@index([status])
   @@map("message_sequences")

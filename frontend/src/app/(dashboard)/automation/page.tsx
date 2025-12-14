@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Bot,
@@ -162,6 +162,11 @@ function SequenceCard({
       </CardHeader>
       <CardContent>
         <div className="flex items-center gap-4 text-sm text-muted-foreground">
+          {sequence.shortcut && (
+            <div className="flex items-center gap-1">
+              <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">/{sequence.shortcut}</span>
+            </div>
+          )}
           <div className="flex items-center gap-1">
             <Zap className="h-4 w-4" />
             <span>{sequence.steps.length} steps</span>
@@ -209,12 +214,24 @@ function SequenceEditor({
   const isEditing = !!sequence;
 
   const [name, setName] = useState(sequence?.name || '');
+  const [shortcut, setShortcut] = useState(sequence?.shortcut || '');
   const [description, setDescription] = useState(sequence?.description || '');
   const [steps, setSteps] = useState<SequenceStep[]>(sequence?.steps || []);
   const [addingStep, setAddingStep] = useState(false);
   const [newStepType, setNewStepType] = useState<SequenceStepType>('TEXT');
   const [newStepContent, setNewStepContent] = useState('');
   const [newStepDelay, setNewStepDelay] = useState(5);
+
+  // Reset form when sequence changes
+  useEffect(() => {
+    setName(sequence?.name || '');
+    setShortcut(sequence?.shortcut || '');
+    setDescription(sequence?.description || '');
+    setSteps(sequence?.steps || []);
+    setAddingStep(false);
+    setNewStepContent('');
+    setNewStepDelay(5);
+  }, [sequence]);
 
   const createMutation = useMutation({
     mutationFn: createSequence,
@@ -274,14 +291,25 @@ function SequenceEditor({
       return;
     }
 
+    // Validate shortcut format
+    if (shortcut && !/^[a-zA-Z0-9_-]+$/.test(shortcut)) {
+      toast.error('Shortcut can only contain letters, numbers, dashes and underscores');
+      return;
+    }
+
     if (isEditing && sequence) {
       updateMutation.mutate({
         id: sequence.id,
-        data: { name: name.trim(), description: description.trim() || null },
+        data: {
+          name: name.trim(),
+          shortcut: shortcut.trim() || null,
+          description: description.trim() || null,
+        },
       });
     } else {
       createMutation.mutate({
         name: name.trim(),
+        shortcut: shortcut.trim() || undefined,
         description: description.trim() || undefined,
         steps: steps.map((s, i) => ({
           order: i,
@@ -362,6 +390,22 @@ function SequenceEditor({
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                 />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="shortcut">
+                  Shortcut (optional)
+                  <span className="text-xs text-muted-foreground ml-2">Use in chat with /shortcut</span>
+                </Label>
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">/</span>
+                  <Input
+                    id="shortcut"
+                    placeholder="e.g., welcome"
+                    value={shortcut}
+                    onChange={(e) => setShortcut(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
+                    className="flex-1"
+                  />
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="description">Description (optional)</Label>

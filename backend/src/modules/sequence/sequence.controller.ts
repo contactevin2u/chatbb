@@ -33,6 +33,30 @@ export class SequenceController {
   }
 
   /**
+   * Search sequences by shortcut (for slash-command autocomplete)
+   * GET /api/v1/sequences/search
+   */
+  async searchSequences(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId } = req.user!;
+      const { prefix, limit } = req.query;
+
+      const sequences = await sequenceService.searchByShortcut(
+        organizationId,
+        prefix as string || '',
+        limit ? parseInt(limit as string) : 5
+      );
+
+      res.json({
+        success: true,
+        data: sequences,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Get sequence by ID
    * GET /api/v1/sequences/:id
    */
@@ -59,11 +83,12 @@ export class SequenceController {
   async createSequence(req: Request, res: Response, next: NextFunction) {
     try {
       const { organizationId } = req.user!;
-      const { name, description, triggerType, triggerConfig, steps } = req.body;
+      const { name, shortcut, description, triggerType, triggerConfig, steps } = req.body;
 
       const sequence = await sequenceService.createSequence({
         organizationId,
         name,
+        shortcut,
         description,
         triggerType,
         triggerConfig,
@@ -87,10 +112,11 @@ export class SequenceController {
     try {
       const { organizationId } = req.user!;
       const { id } = req.params;
-      const { name, description, status, triggerType, triggerConfig } = req.body;
+      const { name, shortcut, description, status, triggerType, triggerConfig } = req.body;
 
       const sequence = await sequenceService.updateSequence(id, organizationId, {
         name,
+        shortcut,
         description,
         status,
         triggerType,
