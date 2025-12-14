@@ -33,6 +33,7 @@ interface SessionInfo {
   qrCode?: string;
   pairingCode?: string;
   retryCount: number;
+  qrGenerationCount: number;
   saveCreds: () => Promise<void>;
   deleteState: () => Promise<void>;
 }
@@ -180,6 +181,7 @@ export class SessionManager extends EventEmitter {
       organizationId,
       status: 'CONNECTING',
       retryCount: 0,
+      qrGenerationCount: 0,
       saveCreds,
       deleteState,
     };
@@ -206,11 +208,27 @@ export class SessionManager extends EventEmitter {
 
       // Handle QR code
       if (qr) {
+        session.qrGenerationCount++;
+
+        // Timeout after 5 QR regenerations (user didn't scan)
+        if (session.qrGenerationCount > 5) {
+          this.logger.warn({ channelId, qrCount: session.qrGenerationCount }, 'QR timeout - too many regenerations');
+          try {
+            session.socket.end(undefined);
+          } catch (e) {
+            // Ignore close errors
+          }
+          this.sessions.delete(channelId);
+          await this.updateChannelStatus(channelId, 'DISCONNECTED');
+          this.emit('disconnected', channelId, 'QR code expired - please try again');
+          return;
+        }
+
         session.qrCode = qr;
         session.status = 'CONNECTING';
         await this.updateChannelStatus(channelId, 'CONNECTING');
         this.emit('qr:generated', channelId, qr);
-        this.logger.info({ channelId }, 'QR code generated');
+        this.logger.info({ channelId, qrCount: session.qrGenerationCount }, 'QR code generated');
       }
 
       // Handle connection state
@@ -253,6 +271,15 @@ export class SessionManager extends EventEmitter {
           this.sessions.delete(channelId);
           this.emit('disconnected', channelId, 'Session corrupted - please scan QR code again');
           return;
+        }
+
+        // For 440 (connectionReplaced), another device took over - don't retry
+        if (statusCode === DisconnectReason.connectionReplaced) {
+          this.logger.warn({ channelId }, 'Connection replaced by another device (440)');
+          await this.updateChannelStatus(channelId, 'DISCONNECTED');
+          this.sessions.delete(channelId);
+          this.emit('disconnected', channelId, 'Connected from another device');
+          return; // Don't retry - user intentionally connected elsewhere
         }
 
         if (shouldReconnect && session.retryCount < MAX_RETRY_COUNT) {
@@ -317,10 +344,19 @@ export class SessionManager extends EventEmitter {
     });
 
     // Baileys v7 LID mapping updates - IMPORTANT: Never downgrade Baileys
+    // Store LID mappings in Redis for later lookups
     socket.ev.on('lid-mapping.update', async (mapping) => {
       for (const [lid, pn] of Object.entries(mapping)) {
+        try {
+          // Store bidirectional mapping in Redis
+          await redisClient.hset(`lid:${channelId}`, lid, pn as string);
+          await redisClient.hset(`pn:${channelId}`, pn as string, lid);
+        } catch (e) {
+          this.logger.debug({ channelId, lid, pn, error: e }, 'Failed to store LID mapping');
+        }
+
         this.emit('lid-mapping:update', channelId, { lid, pn: pn as string });
-        this.logger.debug({ channelId, lid, pn }, 'LID mapping received');
+        this.logger.debug({ channelId, lid, pn }, 'LID mapping stored');
       }
     });
 
@@ -395,8 +431,18 @@ export class SessionManager extends EventEmitter {
 
     this.logger.info({ channelId }, 'Attempting to reconnect');
 
-    // Remove old session
+    // CRITICAL: Close old socket first to prevent memory leak
+    try {
+      session.socket.end(undefined);
+    } catch (e) {
+      this.logger.debug({ channelId, error: e }, 'Error closing socket during reconnect');
+    }
+
+    // Remove old session from map
     this.sessions.delete(channelId);
+
+    // Small delay for cleanup before creating new session
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     // Create new session
     try {

@@ -555,9 +555,35 @@ async function main() {
     logger.info('  - Publishes events via Redis pub/sub to API');
     logger.info('  - Queues background jobs to BullMQ');
 
-    // Keep process alive
+    // Health check - log session stats every minute
     setInterval(() => {
-      logger.debug('WhatsApp Worker heartbeat');
+      const sessions = sessionManager.getAllSessions();
+      const stats = {
+        total: sessions.size,
+        connected: 0,
+        connecting: 0,
+        disconnected: 0,
+        error: 0,
+      };
+
+      for (const [, session] of sessions) {
+        switch (session.status) {
+          case 'CONNECTED':
+            stats.connected++;
+            break;
+          case 'CONNECTING':
+            stats.connecting++;
+            break;
+          case 'DISCONNECTED':
+            stats.disconnected++;
+            break;
+          case 'ERROR':
+            stats.error++;
+            break;
+        }
+      }
+
+      logger.info(stats, 'Session health check');
     }, 60000);
 
     // Graceful shutdown handlers
