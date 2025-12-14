@@ -273,8 +273,10 @@ export async function getOrCreateContact(options: {
   const isValidGroupName = displayName && displayName !== 'Group Chat';
   const shouldUpdateGroupName = isGroupContact && isValidGroupName && existing?.displayName !== displayName;
 
-  // For individuals: update if we have a new displayName and the contact doesn't have one
-  const shouldUpdateIndividualName = !isGroupContact && displayName && !existing?.displayName;
+  // For individuals: update if we have a new displayName and the contact doesn't have one (or has empty string)
+  // This ensures pushName is captured but won't overwrite manually set names
+  const existingHasNoName = !existing?.displayName || existing.displayName.trim() === '';
+  const shouldUpdateIndividualName = !isGroupContact && displayName && existingHasNoName;
 
   try {
     const contact = await prisma.contact.upsert({
@@ -333,16 +335,17 @@ export async function getOrCreateContact(options: {
       if (fetched) {
         // Update displayName if: groups with real name, or individuals without name
         // Also update isGroup to fix existing contacts
-        const shouldUpdateFetched =
+        const fetchedHasNoName = !fetched.displayName || fetched.displayName.trim() === '';
+        const shouldUpdateFetchedName =
           (isGroupContact && isValidGroupName && fetched.displayName !== displayName) ||
-          (!isGroupContact && displayName && !fetched.displayName) ||
-          fetched.isGroup !== isGroupContact;
+          (!isGroupContact && displayName && fetchedHasNoName);
+        const shouldUpdateFetched = shouldUpdateFetchedName || fetched.isGroup !== isGroupContact;
 
         if (shouldUpdateFetched) {
           const updated = await prisma.contact.update({
             where: { id: fetched.id },
             data: {
-              ...(shouldUpdateGroupName || shouldUpdateIndividualName ? { displayName } : {}),
+              ...(shouldUpdateFetchedName ? { displayName } : {}),
               isGroup: isGroupContact,
             },
             select: {
