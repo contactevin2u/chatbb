@@ -27,9 +27,27 @@ export function createApp(): Express {
 
   // Security middleware
   app.use(helmet());
+
+  // CORS configuration - support multiple origins
+  const allowedOrigins = [
+    env.FRONTEND_URL,
+    'http://localhost:3000',
+    'https://chatbb-mauve.vercel.app',
+  ].filter(Boolean);
+
   app.use(
     cors({
-      origin: env.FRONTEND_URL,
+      origin: (origin, callback) => {
+        // Allow requests with no origin (mobile apps, curl, etc.)
+        if (!origin) return callback(null, true);
+
+        if (allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          console.warn(`CORS blocked origin: ${origin}`);
+          callback(null, false);
+        }
+      },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],

@@ -26,9 +26,26 @@ interface AuthenticatedSocket extends Socket {
 }
 
 export function createSocketServer(httpServer: HttpServer): Server {
+  // CORS configuration - support multiple origins
+  const allowedOrigins = [
+    env.FRONTEND_URL,
+    'http://localhost:3000',
+    'https://chatbb-mauve.vercel.app',
+  ].filter(Boolean);
+
   io = new Server(httpServer, {
     cors: {
-      origin: env.FRONTEND_URL,
+      origin: (origin, callback) => {
+        // Allow requests with no origin (mobile apps, curl, etc.)
+        if (!origin) return callback(null, true);
+
+        if (allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          logger.warn({ origin }, 'WebSocket CORS blocked origin');
+          callback(null, false);
+        }
+      },
       methods: ['GET', 'POST'],
       credentials: true,
     },
