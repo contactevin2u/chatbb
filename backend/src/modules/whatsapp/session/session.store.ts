@@ -16,15 +16,16 @@ import {
 import { prisma } from '../../../core/database/prisma';
 import { encrypt, decrypt } from '../../../shared/utils/encryption';
 
-// Key mapping for signal data types (compatible with v6 and v7)
-const KEY_MAP: Record<string, string> = {
+// IMPORTANT: Never downgrade Baileys - we migrated to v7 with LID system
+// Baileys v7 requires additional keys for LID system
+const KEY_MAP: { [T in keyof SignalDataTypeMap]: string } = {
   'pre-key': 'pre-key',
   'session': 'session',
   'sender-key': 'sender-key',
   'sender-key-memory': 'sender-key-memory',
   'app-state-sync-key': 'app-state-sync-key',
   'app-state-sync-version': 'app-state-sync-version',
-  // v7-specific keys (ignored in v6)
+  // Baileys v7 LID system keys - DO NOT REMOVE
   'lid-mapping': 'lid-mapping',
   'device-list': 'device-list',
   'tctoken': 'tctoken',
