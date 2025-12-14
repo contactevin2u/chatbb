@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow, isToday, isYesterday, format, isSameDay } from 'date-fns';
 import {
@@ -241,11 +242,14 @@ function downloadFile(url: string, filename: string) {
 
 export default function InboxPage() {
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
   const { socket, joinConversation, leaveConversation, startTyping, stopTyping } = useWebSocket();
   const { user } = useAuthStore();
   const { conversationListCollapsed, toggleConversationList } = useUIStore();
 
-  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  // Get conversation ID from URL params
+  const urlConversationId = searchParams.get('conversation');
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(urlConversationId);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<ConversationStatus[]>(['OPEN', 'PENDING']);
   const [messageText, setMessageText] = useState('');
@@ -299,6 +303,13 @@ export default function InboxPage() {
   const selectedConversation = conversationsData?.conversations.find(
     (c) => c.id === selectedConversationId
   );
+
+  // Handle URL param changes for conversation selection
+  useEffect(() => {
+    if (urlConversationId && urlConversationId !== selectedConversationId) {
+      setSelectedConversationId(urlConversationId);
+    }
+  }, [urlConversationId]);
 
   // Send message mutation
   const sendMessageMutation = useMutation({
@@ -942,9 +953,12 @@ export default function InboxPage() {
                   onClick={() => handleSelectConversation(conversation.id)}
                 >
                   <div className="flex items-start gap-3">
-                    <div className="relative">
-                      <Avatar>
-                        <AvatarImage src={conversation.contact.avatarUrl || undefined} />
+                    <div className="relative flex-shrink-0">
+                      <Avatar className="h-10 w-10">
+                        <AvatarImage
+                          src={conversation.contact.avatarUrl || undefined}
+                          className="object-cover"
+                        />
                         <AvatarFallback>
                           {isGroupContact(conversation.contact) ? (
                             <Users className="h-5 w-5" />
