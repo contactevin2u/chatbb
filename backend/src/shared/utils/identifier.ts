@@ -3,12 +3,25 @@
  *
  * Centralizes all WhatsApp JID normalization logic to prevent
  * inconsistent identifier handling across the codebase.
+ *
+ * ALL contact creation/update paths MUST use functions from this file
+ * to ensure consistent behavior across the codebase.
  */
 
 import { redisClient } from '../../core/cache/redis.client';
 import { prisma } from '../../core/database/prisma';
 import { ChannelType, Prisma } from '@prisma/client';
 import { logger } from './logger';
+
+// Contact type returned by our functions
+export type ContactResult = {
+  id: string;
+  identifier: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  isGroup: boolean;
+  isNew: boolean;
+};
 
 /**
  * Normalize WhatsApp JID to consistent contact identifier
@@ -185,11 +198,18 @@ export async function resolveIdentifier(channelId: string, jidOrId: string): Pro
 /**
  * Store LID-to-phone mapping for future lookups
  * Call this when you know the relationship between an LID and a phone number
+ *
+ * IMPORTANT: This also triggers duplicate contact merge if both LID and PN contacts exist
  */
 export async function storeLidMapping(channelId: string, lid: string, phoneNumber: string): Promise<void> {
   try {
     const normalizedPhone = normalizeIdentifier(phoneNumber);
     const normalizedLid = normalizeIdentifier(lid);
+
+    // Skip if they're the same (no mapping needed)
+    if (normalizedLid === normalizedPhone) {
+      return;
+    }
 
     // Store in the standard LID hash
     await redisClient.hset(`lid:${channelId}`, normalizedLid, normalizedPhone);
@@ -203,8 +223,169 @@ export async function storeLidMapping(channelId: string, lid: string, phoneNumbe
       lid: normalizedLid,
       phone: normalizedPhone,
     }, 'Stored LID-to-phone mapping');
+
+    // CRITICAL: Trigger duplicate contact merge
+    // When we discover a LID↔PN mapping, merge any duplicate contacts
+    await mergeDuplicateContacts(channelId, normalizedLid, normalizedPhone);
   } catch (error) {
     logger.warn({ channelId, lid, phoneNumber, error }, 'Failed to store LID mapping');
+  }
+}
+
+/**
+ * Merge duplicate contacts when we discover LID↔PN mapping
+ *
+ * If we have two contacts for the same person (one with LID identifier, one with PN identifier),
+ * merge them into one contact using the phone number as the canonical identifier.
+ *
+ * This handles the case where:
+ * 1. User messages via LID format → contact created with LID identifier
+ * 2. Later, user messages via PN format → would create duplicate contact
+ * 3. When mapping is discovered → merge the LID contact into PN contact
+ */
+export async function mergeDuplicateContacts(
+  channelId: string,
+  lidIdentifier: string,
+  phoneIdentifier: string
+): Promise<void> {
+  try {
+    // Get channel to find organization
+    const channel = await prisma.channel.findUnique({
+      where: { id: channelId },
+      select: { organizationId: true },
+    });
+
+    if (!channel) return;
+
+    const orgId = channel.organizationId;
+
+    // Find contacts with both identifiers
+    const [lidContact, phoneContact] = await Promise.all([
+      prisma.contact.findUnique({
+        where: {
+          organizationId_channelType_identifier: {
+            organizationId: orgId,
+            channelType: ChannelType.WHATSAPP,
+            identifier: lidIdentifier,
+          },
+        },
+        include: {
+          conversations: { select: { id: true } },
+        },
+      }),
+      prisma.contact.findUnique({
+        where: {
+          organizationId_channelType_identifier: {
+            organizationId: orgId,
+            channelType: ChannelType.WHATSAPP,
+            identifier: phoneIdentifier,
+          },
+        },
+        include: {
+          conversations: { select: { id: true } },
+        },
+      }),
+    ]);
+
+    // No merge needed if either doesn't exist
+    if (!lidContact || !phoneContact) {
+      // If only LID contact exists, update its identifier to phone number
+      if (lidContact && !phoneContact) {
+        await prisma.contact.update({
+          where: { id: lidContact.id },
+          data: { identifier: phoneIdentifier },
+        });
+        logger.info({
+          channelId,
+          contactId: lidContact.id,
+          oldIdentifier: lidIdentifier,
+          newIdentifier: phoneIdentifier,
+        }, 'Updated LID contact identifier to phone number');
+      }
+      return;
+    }
+
+    // Both contacts exist - need to merge
+    logger.info({
+      channelId,
+      lidContactId: lidContact.id,
+      phoneContactId: phoneContact.id,
+      lidIdentifier,
+      phoneIdentifier,
+    }, 'Merging duplicate contacts (LID → PN)');
+
+    // Use transaction for atomic merge
+    await prisma.$transaction(async (tx) => {
+      // 1. Move all conversations from LID contact to phone contact
+      for (const conv of lidContact.conversations) {
+        // Check if phone contact already has a conversation in this channel
+        const existingConv = await tx.conversation.findFirst({
+          where: {
+            contactId: phoneContact.id,
+            channelId,
+          },
+        });
+
+        if (existingConv) {
+          // Move messages from LID conversation to existing conversation
+          await tx.message.updateMany({
+            where: { conversationId: conv.id },
+            data: { conversationId: existingConv.id },
+          });
+
+          // Update unread count
+          const lidConv = await tx.conversation.findUnique({
+            where: { id: conv.id },
+            select: { unreadCount: true },
+          });
+
+          if (lidConv && lidConv.unreadCount > 0) {
+            await tx.conversation.update({
+              where: { id: existingConv.id },
+              data: { unreadCount: { increment: lidConv.unreadCount } },
+            });
+          }
+
+          // Delete the LID conversation (messages already moved)
+          await tx.conversation.delete({ where: { id: conv.id } });
+        } else {
+          // No existing conversation - just update the contact reference
+          await tx.conversation.update({
+            where: { id: conv.id },
+            data: { contactId: phoneContact.id },
+          });
+        }
+      }
+
+      // 2. Merge contact metadata - prefer phone contact data, fill gaps from LID contact
+      const updateData: any = {};
+
+      if (!phoneContact.displayName && lidContact.displayName) {
+        updateData.displayName = lidContact.displayName;
+      }
+      if (!phoneContact.avatarUrl && lidContact.avatarUrl) {
+        updateData.avatarUrl = lidContact.avatarUrl;
+      }
+
+      if (Object.keys(updateData).length > 0) {
+        await tx.contact.update({
+          where: { id: phoneContact.id },
+          data: updateData,
+        });
+      }
+
+      // 3. Delete the LID contact
+      await tx.contact.delete({ where: { id: lidContact.id } });
+
+      logger.info({
+        channelId,
+        deletedContactId: lidContact.id,
+        mergedIntoContactId: phoneContact.id,
+        conversationsMerged: lidContact.conversations.length,
+      }, 'Successfully merged duplicate contacts');
+    });
+  } catch (error) {
+    logger.error({ channelId, lidIdentifier, phoneIdentifier, error }, 'Failed to merge duplicate contacts');
   }
 }
 
@@ -234,6 +415,8 @@ export function buildJid(identifier: string, isGroup: boolean = false): string {
  *
  * IMPORTANT: isGroup should be determined from the original JID using
  * jid.endsWith('@g.us') BEFORE normalization, not from the identifier
+ *
+ * @param options.forceDisplayNameUpdate - If true, always update displayName if provided (for sync operations)
  */
 export async function getOrCreateContact(options: {
   organizationId: string;
@@ -241,15 +424,9 @@ export async function getOrCreateContact(options: {
   identifier: string;
   displayName?: string | null;
   isGroup: boolean; // Required - must be determined from original JID
-}): Promise<{
-  id: string;
-  identifier: string;
-  displayName: string | null;
-  avatarUrl: string | null;
-  isGroup: boolean;
-  isNew: boolean;
-}> {
-  const { organizationId, channelType, identifier, displayName, isGroup } = options;
+  forceDisplayNameUpdate?: boolean; // For sync operations that should always update
+}): Promise<ContactResult> {
+  const { organizationId, channelType, identifier, displayName, isGroup, forceDisplayNameUpdate = false } = options;
 
   // isGroup is now explicitly passed, determined from original JID (jid.endsWith('@g.us'))
   const isGroupContact = isGroup;
@@ -268,15 +445,23 @@ export async function getOrCreateContact(options: {
 
   const isNew = !existing;
 
-  // For groups, determine if we should update the displayName
-  // Update if: new name is provided, it's not a fallback, and it's different from current
-  const isValidGroupName = displayName && displayName !== 'Group Chat';
-  const shouldUpdateGroupName = isGroupContact && isValidGroupName && existing?.displayName !== displayName;
+  // Determine if we should update displayName
+  let shouldUpdateName = false;
 
-  // For individuals: update if we have a new displayName and the contact doesn't have one (or has empty string)
-  // This ensures pushName is captured but won't overwrite manually set names
-  const existingHasNoName = !existing?.displayName || existing.displayName.trim() === '';
-  const shouldUpdateIndividualName = !isGroupContact && displayName && existingHasNoName;
+  if (displayName) {
+    if (forceDisplayNameUpdate) {
+      // Sync operations: always update if we have a name and it's different
+      shouldUpdateName = existing?.displayName !== displayName;
+    } else if (isGroupContact) {
+      // Groups: update if new name is not a fallback and different from current
+      const isValidGroupName = displayName !== 'Group Chat';
+      shouldUpdateName = isValidGroupName && existing?.displayName !== displayName;
+    } else {
+      // Individuals: only update if they don't have a name yet (preserve manual edits)
+      const existingHasNoName = !existing?.displayName || existing.displayName.trim() === '';
+      shouldUpdateName = existingHasNoName;
+    }
+  }
 
   try {
     const contact = await prisma.contact.upsert({
@@ -295,9 +480,7 @@ export async function getOrCreateContact(options: {
         isGroup: isGroupContact,
       },
       update: {
-        // For groups: update to real name (not fallback)
-        // For individuals: update if they don't have a name yet
-        ...(shouldUpdateGroupName || shouldUpdateIndividualName ? { displayName } : {}),
+        ...(shouldUpdateName ? { displayName } : {}),
         // Always ensure isGroup is correct (fix for existing contacts)
         isGroup: isGroupContact,
       },
@@ -333,12 +516,20 @@ export async function getOrCreateContact(options: {
       });
 
       if (fetched) {
-        // Update displayName if: groups with real name, or individuals without name
-        // Also update isGroup to fix existing contacts
-        const fetchedHasNoName = !fetched.displayName || fetched.displayName.trim() === '';
-        const shouldUpdateFetchedName =
-          (isGroupContact && isValidGroupName && fetched.displayName !== displayName) ||
-          (!isGroupContact && displayName && fetchedHasNoName);
+        // Recalculate shouldUpdateName for fetched contact
+        let shouldUpdateFetchedName = false;
+        if (displayName) {
+          if (forceDisplayNameUpdate) {
+            shouldUpdateFetchedName = fetched.displayName !== displayName;
+          } else if (isGroupContact) {
+            const isValidGroupName = displayName !== 'Group Chat';
+            shouldUpdateFetchedName = isValidGroupName && fetched.displayName !== displayName;
+          } else {
+            const fetchedHasNoName = !fetched.displayName || fetched.displayName.trim() === '';
+            shouldUpdateFetchedName = fetchedHasNoName;
+          }
+        }
+
         const shouldUpdateFetched = shouldUpdateFetchedName || fetched.isGroup !== isGroupContact;
 
         if (shouldUpdateFetched) {
@@ -362,6 +553,83 @@ export async function getOrCreateContact(options: {
       }
     }
     throw error;
+  }
+}
+
+/**
+ * Upsert contact from WhatsApp sync events (contacts.upsert, contacts.update, history sync)
+ *
+ * This is the ONLY function that should be used for syncing contacts from WhatsApp events.
+ * It handles LID resolution and uses consistent displayName update logic.
+ *
+ * @param channelId - The WhatsApp channel ID
+ * @param contactData - Contact data from Baileys event
+ * @returns The upserted contact or null if skipped
+ */
+export async function upsertContactFromSync(
+  channelId: string,
+  contactData: {
+    id: string;
+    phoneNumber?: string;
+    name?: string;
+    notify?: string;
+    verifiedName?: string;
+    pushname?: string;
+  }
+): Promise<ContactResult | null> {
+  try {
+    // Get channel for organization ID
+    const channel = await prisma.channel.findUnique({
+      where: { id: channelId },
+      select: { organizationId: true },
+    });
+
+    if (!channel) return null;
+
+    const contactId = contactData.id;
+    const phoneNumber = contactData.phoneNumber;
+
+    // Skip groups in contact sync (they're handled separately)
+    if (contactId?.endsWith('@g.us')) return null;
+
+    // Resolve identifier - prefer phone number over LID
+    let identifier: string;
+
+    if (contactId?.includes('@lid') && phoneNumber) {
+      // id is LID, use phoneNumber instead
+      identifier = normalizeIdentifier(phoneNumber);
+
+      // Store the LID mapping (this also triggers duplicate merge)
+      const lidPart = normalizeIdentifier(contactId);
+      await storeLidMapping(channelId, lidPart, identifier);
+    } else if (contactId) {
+      // Try to resolve LID to phone number
+      identifier = await resolveIdentifier(channelId, contactId);
+    } else {
+      return null;
+    }
+
+    if (!identifier) return null;
+
+    // Get display name from various fields (priority order)
+    const displayName = contactData.name
+      || contactData.verifiedName
+      || contactData.notify
+      || contactData.pushname
+      || null;
+
+    // Upsert contact with force update for sync operations
+    return await getOrCreateContact({
+      organizationId: channel.organizationId,
+      channelType: ChannelType.WHATSAPP,
+      identifier,
+      displayName,
+      isGroup: false,
+      forceDisplayNameUpdate: true, // Sync operations should update displayName
+    });
+  } catch (error) {
+    logger.error({ channelId, contactData, error }, 'Failed to upsert contact from sync');
+    return null;
   }
 }
 

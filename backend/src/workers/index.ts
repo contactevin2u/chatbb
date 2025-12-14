@@ -20,6 +20,7 @@ import {
   resolveIdentifier,
   getOrCreateContact,
   getOrCreateConversation,
+  upsertContactFromSync,
 } from '../shared/utils/identifier';
 import { ChannelType, MessageDirection, MessageStatus, MessageType } from '@prisma/client';
 
@@ -459,6 +460,7 @@ async function processAnalytics(job: Job) {
 
 // History sync processor - processes historical WhatsApp data in background
 // This runs with LOW priority so live messages are processed FIRST
+// Uses shared functions for consistent contact handling
 async function processHistorySync(job: Job) {
   const { channelId, chats, contacts, messages } = job.data;
   logger.info({ jobId: job.id, channelId, chats: chats?.length, contacts: contacts?.length }, 'Processing history sync');
@@ -472,48 +474,20 @@ async function processHistorySync(job: Job) {
 
   const orgId = channel.organizationId;
 
-  // Process contacts (batch upsert)
-  // Baileys v7 contact structure: { id, phoneNumber?, lid?, name?, notify? }
-  // If id is LID format, phoneNumber contains the actual phone number
+  // Process contacts using shared function
+  // This handles LID resolution and duplicate merging automatically
   for (const contact of contacts || []) {
     try {
-      let identifier: string | null = null;
-      const contactId = contact.id;
-      const phoneNumber = contact.phoneNumber; // Present if id is LID
+      // Skip groups - they're handled in chats processing
+      if (contact.id?.endsWith('@g.us')) continue;
 
-      if (contactId?.includes('@lid') && phoneNumber) {
-        // id is LID, use phoneNumber instead
-        identifier = normalizeIdentifier(phoneNumber);
-
-        // Store the LID mapping for future use
-        const lidPart = normalizeIdentifier(contactId);
-        await redisClient.hset(`lid:${channelId}`, lidPart, identifier);
-        await redisClient.hset(`pn:${channelId}`, identifier, lidPart);
-        logger.debug({ channelId, lid: lidPart, phone: identifier }, 'Stored LID mapping from history sync contact');
-      } else if (contactId) {
-        // id is already phone number format, or no phoneNumber field
-        identifier = await resolveIdentifier(channelId, contactId);
-      }
-
-      if (!identifier) continue;
-
-      await prisma.contact.upsert({
-        where: {
-          organizationId_channelType_identifier: {
-            organizationId: orgId,
-            channelType: ChannelType.WHATSAPP,
-            identifier,
-          },
-        },
-        create: {
-          organizationId: orgId,
-          channelType: ChannelType.WHATSAPP,
-          identifier,
-          displayName: contact.name || contact.notify || null,
-        },
-        update: {
-          displayName: contact.name || contact.notify || undefined,
-        },
+      await upsertContactFromSync(channelId, {
+        id: contact.id,
+        phoneNumber: contact.phoneNumber,
+        name: contact.name,
+        notify: contact.notify,
+        verifiedName: contact.verifiedName,
+        pushname: contact.pushname,
       });
     } catch (error) {
       // Skip errors, continue with next contact
@@ -521,7 +495,6 @@ async function processHistorySync(job: Job) {
   }
 
   // Process chats and create conversations (including groups)
-  // Baileys v7 chat structure may include alternate JID fields
   for (const chat of chats || []) {
     try {
       const remoteJid = chat.id;
@@ -529,14 +502,8 @@ async function processHistorySync(job: Job) {
 
       const isGroup = remoteJid.endsWith('@g.us');
 
-      // Resolve LID to phone number for non-group chats
-      let identifier: string;
-      if (!isGroup && remoteJid.includes('@lid')) {
-        // Try to resolve LID using Redis mappings
-        identifier = await resolveIdentifier(channelId, remoteJid);
-      } else {
-        identifier = normalizeIdentifier(remoteJid);
-      }
+      // Resolve identifier using shared function (handles LID resolution)
+      const identifier = await resolveIdentifier(channelId, remoteJid);
 
       // Get display name - for groups, try to get from cache or chat.name
       let displayName = chat.name || null;
@@ -553,12 +520,14 @@ async function processHistorySync(job: Job) {
       }
 
       // Use shared upsert helper for consistent contact creation
+      // forceDisplayNameUpdate for sync operations
       const contact = await getOrCreateContact({
         organizationId: orgId,
         channelType: ChannelType.WHATSAPP,
         identifier,
         displayName,
         isGroup,
+        forceDisplayNameUpdate: true,
       });
 
       // Use shared upsert helper for consistent conversation creation

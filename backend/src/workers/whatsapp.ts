@@ -25,6 +25,7 @@ import {
   normalizeIdentifier,
   getOrCreateContact,
   getOrCreateConversation,
+  storeLidMapping,
 } from '../shared/utils/identifier';
 
 // BullMQ queues
@@ -60,16 +61,10 @@ function setupEventHandlers() {
         phoneJid: remoteJidAlt,
       }, 'Resolved LID to phone number using remoteJidAlt');
 
-      // Store the mapping for future use
-      try {
-        const lidPart = originalRemoteJid.split('@')[0];
-        const phonePart = remoteJidAlt.split('@')[0];
-        await redisClient.hset(`lid:${channelId}`, lidPart, phonePart);
-        await redisClient.hset(`pn:${channelId}`, phonePart, lidPart);
-        logger.debug({ channelId, lid: lidPart, phone: phonePart }, 'Stored LID-phone mapping from remoteJidAlt');
-      } catch (e) {
-        logger.warn({ error: e }, 'Failed to store LID mapping');
-      }
+      // Store the mapping using shared function (triggers duplicate merge)
+      const lidPart = originalRemoteJid.split('@')[0];
+      const phonePart = remoteJidAlt.split('@')[0];
+      await storeLidMapping(channelId, lidPart, phonePart);
 
       // Replace LID with phone number in the message key
       waMessage.key.remoteJid = remoteJidAlt;
@@ -83,14 +78,10 @@ function setupEventHandlers() {
         participantPhone: participantAlt,
       }, 'Resolved participant LID to phone number');
 
-      try {
-        const lidPart = waMessage.key.participant.split('@')[0];
-        const phonePart = participantAlt.split('@')[0];
-        await redisClient.hset(`lid:${channelId}`, lidPart, phonePart);
-        await redisClient.hset(`pn:${channelId}`, phonePart, lidPart);
-      } catch (e) {
-        logger.warn({ error: e }, 'Failed to store participant LID mapping');
-      }
+      // Store the mapping using shared function (triggers duplicate merge)
+      const lidPart = waMessage.key.participant.split('@')[0];
+      const phonePart = participantAlt.split('@')[0];
+      await storeLidMapping(channelId, lidPart, phonePart);
     }
 
     const remoteJid = waMessage.key?.remoteJid;
@@ -773,10 +764,9 @@ async function fetchAndStoreProfilePicture(
 
 /**
  * Process contacts upsert - bulk contact sync from WhatsApp
+ * Uses shared upsertContactFromSync for consistent behavior
  */
 async function processContactsUpsert(channelId: string, contacts: any[]) {
-  const { ChannelType } = await import('@prisma/client');
-
   const channel = await prisma.channel.findUnique({ where: { id: channelId } });
   if (!channel) return;
 
@@ -784,37 +774,25 @@ async function processContactsUpsert(channelId: string, contacts: any[]) {
   let processed = 0;
   const contactsNeedingAvatar: { id: string; jid: string }[] = [];
 
+  // Import shared function
+  const { upsertContactFromSync } = await import('../shared/utils/identifier.js');
+
   for (const contact of contacts) {
     try {
-      // Extract identifier from JID (e.g., "1234567890@s.whatsapp.net" -> "1234567890")
-      const identifier = contact.id ? normalizeIdentifier(contact.id) : null;
-      if (!identifier) continue;
-
-      // Skip groups - they don't have profile pictures in the same way
+      // Skip groups - they're handled separately via groups.upsert
       if (contact.id?.endsWith('@g.us')) continue;
 
-      // Get contact name from various fields
-      const displayName = contact.name || contact.notify || contact.verifiedName || contact.pushname || null;
-
-      const upsertedContact = await prisma.contact.upsert({
-        where: {
-          organizationId_channelType_identifier: {
-            organizationId: orgId,
-            channelType: ChannelType.WHATSAPP,
-            identifier,
-          },
-        },
-        create: {
-          organizationId: orgId,
-          channelType: ChannelType.WHATSAPP,
-          identifier,
-          displayName,
-        },
-        update: {
-          // Only update displayName if we have a new non-null value
-          ...(displayName ? { displayName } : {}),
-        },
+      // Use shared function for consistent contact handling
+      const upsertedContact = await upsertContactFromSync(channelId, {
+        id: contact.id,
+        phoneNumber: contact.phoneNumber,
+        name: contact.name,
+        notify: contact.notify,
+        verifiedName: contact.verifiedName,
+        pushname: contact.pushname,
       });
+
+      if (!upsertedContact) continue;
 
       // Queue for avatar fetch if contact doesn't have one
       if (!upsertedContact.avatarUrl && contact.id) {
@@ -856,37 +834,30 @@ async function processContactsUpsert(channelId: string, contacts: any[]) {
 
 /**
  * Process contacts update - individual contact info changes
+ * Uses shared upsertContactFromSync for consistent behavior
  */
 async function processContactsUpdate(channelId: string, contacts: any[]) {
-  const { ChannelType } = await import('@prisma/client');
-
-  const channel = await prisma.channel.findUnique({ where: { id: channelId } });
-  if (!channel) return;
-
-  const orgId = channel.organizationId;
   let updated = 0;
+
+  // Import shared function
+  const { upsertContactFromSync } = await import('../shared/utils/identifier.js');
 
   for (const contact of contacts) {
     try {
-      const identifier = contact.id ? normalizeIdentifier(contact.id) : null;
-      if (!identifier) continue;
+      // Skip groups - they're handled separately via groups.update
+      if (contact.id?.endsWith('@g.us')) continue;
 
-      // Get contact name from various fields
-      const displayName = contact.name || contact.notify || contact.verifiedName || contact.pushname || null;
-      if (!displayName) continue; // Skip if no name to update
-
-      const result = await prisma.contact.updateMany({
-        where: {
-          organizationId: orgId,
-          channelType: ChannelType.WHATSAPP,
-          identifier,
-        },
-        data: {
-          displayName,
-        },
+      // Use shared function for consistent contact handling
+      const result = await upsertContactFromSync(channelId, {
+        id: contact.id,
+        phoneNumber: contact.phoneNumber,
+        name: contact.name,
+        notify: contact.notify,
+        verifiedName: contact.verifiedName,
+        pushname: contact.pushname,
       });
 
-      if (result.count > 0) updated++;
+      if (result) updated++;
     } catch {
       // Skip errors
     }
@@ -897,9 +868,11 @@ async function processContactsUpdate(channelId: string, contacts: any[]) {
 
 /**
  * Process history sync directly (fallback when Redis/BullMQ is unavailable)
+ * Uses shared functions for consistent contact handling
  */
 async function processHistorySyncDirect(channelId: string, data: { chats: any[]; contacts: any[]; messages: any; syncType: any }) {
   const { ChannelType, MessageDirection, MessageStatus, MessageType } = await import('@prisma/client');
+  const { upsertContactFromSync, resolveIdentifier } = await import('../shared/utils/identifier.js');
 
   const channel = await prisma.channel.findUnique({ where: { id: channelId } });
   if (!channel) return;
@@ -909,47 +882,23 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
   let chatsProcessed = 0;
   let messagesProcessed = 0;
 
-  // Process contacts
-  // Baileys v7: If contact.id is LID format, contact.phoneNumber contains the actual phone
+  // Process contacts using shared function
+  // This handles LID resolution and duplicate merging automatically
   for (const contact of data.contacts || []) {
     try {
-      let identifier: string | null = null;
-      const contactId = contact.id;
-      const phoneNumber = contact.phoneNumber;
+      // Skip groups - they're handled in chats processing
+      if (contact.id?.endsWith('@g.us')) continue;
 
-      if (contactId?.includes('@lid') && phoneNumber) {
-        // id is LID, use phoneNumber instead
-        identifier = normalizeIdentifier(phoneNumber);
-
-        // Store the LID mapping for future use
-        const lidPart = normalizeIdentifier(contactId);
-        await redisClient.hset(`lid:${channelId}`, lidPart, identifier);
-        await redisClient.hset(`pn:${channelId}`, identifier, lidPart);
-      } else if (contactId) {
-        identifier = normalizeIdentifier(contactId);
-      }
-
-      if (!identifier) continue;
-
-      await prisma.contact.upsert({
-        where: {
-          organizationId_channelType_identifier: {
-            organizationId: orgId,
-            channelType: ChannelType.WHATSAPP,
-            identifier,
-          },
-        },
-        create: {
-          organizationId: orgId,
-          channelType: ChannelType.WHATSAPP,
-          identifier,
-          displayName: contact.name || contact.notify || null,
-        },
-        update: {
-          displayName: contact.name || contact.notify || undefined,
-        },
+      const result = await upsertContactFromSync(channelId, {
+        id: contact.id,
+        phoneNumber: contact.phoneNumber,
+        name: contact.name,
+        notify: contact.notify,
+        verifiedName: contact.verifiedName,
+        pushname: contact.pushname,
       });
-      contactsProcessed++;
+
+      if (result) contactsProcessed++;
     } catch {
       // Skip errors
     }
@@ -963,18 +912,8 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
 
       const isGroup = remoteJid.endsWith('@g.us');
 
-      // Resolve LID to phone number for non-group chats
-      let identifier: string;
-      if (!isGroup && remoteJid.includes('@lid')) {
-        identifier = normalizeIdentifier(remoteJid);
-        // Try to find phone number from Redis
-        const phoneNumber = await redisClient.hget(`lid:${channelId}`, identifier);
-        if (phoneNumber) {
-          identifier = phoneNumber;
-        }
-      } else {
-        identifier = normalizeIdentifier(remoteJid);
-      }
+      // Resolve identifier using shared function (handles LID resolution)
+      const identifier = await resolveIdentifier(channelId, remoteJid);
 
       // Get display name - for groups, try to get from cache or chat.name
       let displayName = chat.name || null;
@@ -991,12 +930,14 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
       }
 
       // Use shared upsert helper for consistent contact creation
+      // forceDisplayNameUpdate for sync operations
       const contact = await getOrCreateContact({
         organizationId: orgId,
         channelType: ChannelType.WHATSAPP,
         identifier,
         displayName,
         isGroup,
+        forceDisplayNameUpdate: true,
       });
 
       // Use shared upsert helper for consistent conversation creation
