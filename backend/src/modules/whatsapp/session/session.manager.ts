@@ -70,6 +70,8 @@ export class SessionManager extends EventEmitter {
   private sessions: Map<string, SessionInfo> = new Map();
   private logger = pino({ level: 'info' });
   private msgRetryCache = new NodeCache({ stdTTL: 60, checkperiod: 30 });
+  // Track pending reconnection timers to prevent race conditions
+  private reconnectTimers: Map<string, NodeJS.Timeout> = new Map();
 
   constructor() {
     super();
@@ -105,6 +107,15 @@ export class SessionManager extends EventEmitter {
    * Create a new WhatsApp session for a channel
    */
   async createSession(channelId: string, organizationId: string): Promise<SessionInfo> {
+    // CRITICAL: Cancel any pending reconnection timer to prevent race conditions
+    // If an old session scheduled a reconnect, we don't want it firing and closing this new session
+    const pendingTimer = this.reconnectTimers.get(channelId);
+    if (pendingTimer) {
+      clearTimeout(pendingTimer);
+      this.reconnectTimers.delete(channelId);
+      this.logger.info({ channelId }, 'Cancelled pending reconnection timer');
+    }
+
     // Check if session already exists
     if (this.sessions.has(channelId)) {
       const existingSession = this.sessions.get(channelId)!;
@@ -298,9 +309,12 @@ export class SessionManager extends EventEmitter {
             'Scheduling reconnection'
           );
 
-          setTimeout(() => {
+          // Store timer so it can be cancelled if a new session is created
+          const timer = setTimeout(() => {
+            this.reconnectTimers.delete(channelId);
             this.reconnectSession(channelId);
           }, delay);
+          this.reconnectTimers.set(channelId, timer);
         } else {
           // Permanent disconnect
           await this.updateChannelStatus(
@@ -991,6 +1005,12 @@ export class SessionManager extends EventEmitter {
    * Used for reconnection flow
    */
   removeSession(channelId: string): void {
+    // Cancel any pending reconnection timer
+    const pendingTimer = this.reconnectTimers.get(channelId);
+    if (pendingTimer) {
+      clearTimeout(pendingTimer);
+      this.reconnectTimers.delete(channelId);
+    }
     this.sessions.delete(channelId);
     this.logger.info({ channelId }, 'Session removed from manager');
   }
@@ -1005,6 +1025,13 @@ export class SessionManager extends EventEmitter {
     }
 
     this.logger.info({ channelId }, 'Disconnecting session');
+
+    // Cancel any pending reconnection timer
+    const pendingTimer = this.reconnectTimers.get(channelId);
+    if (pendingTimer) {
+      clearTimeout(pendingTimer);
+      this.reconnectTimers.delete(channelId);
+    }
 
     try {
       await session.socket.logout();
