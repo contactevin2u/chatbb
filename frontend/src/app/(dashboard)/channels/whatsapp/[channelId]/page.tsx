@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Settings,
   MessageSquare,
+  LogOut,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -30,7 +31,7 @@ import {
 import {
   getWhatsAppChannelStatus,
   disconnectWhatsAppChannel,
-  reconnectWhatsAppChannel,
+  connectWhatsAppChannel,
   deleteWhatsAppChannel,
   clearWhatsAppSession,
 } from '@/lib/api/channels';
@@ -43,7 +44,7 @@ export default function ChannelSettingsPage() {
   const channelId = params.channelId as string;
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [clearSessionDialogOpen, setClearSessionDialogOpen] = useState(false);
+  const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
 
   const { data: channelStatus, isLoading } = useQuery({
     queryKey: ['channel-status', channelId],
@@ -51,30 +52,26 @@ export default function ChannelSettingsPage() {
     refetchInterval: 5000, // Poll every 5 seconds
   });
 
+  // Disconnect - closes connection but keeps credentials for quick reconnect
   const disconnectMutation = useMutation({
     mutationFn: () => disconnectWhatsAppChannel(channelId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['channel-status', channelId] });
-      toast.success('Channel disconnected');
+      toast.success('Disconnected');
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to disconnect');
     },
   });
 
-  const reconnectMutation = useMutation({
-    mutationFn: () => reconnectWhatsAppChannel(channelId),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['channel-status', channelId] });
-      if (data.hasAuthState) {
-        toast.success('Reconnecting using saved session...');
-      } else {
-        toast.info('No saved session. Redirecting to QR code...');
-        router.push(`/channels/whatsapp/${channelId}/connect`);
-      }
+  // Connect - redirects to QR page which handles everything
+  const connectMutation = useMutation({
+    mutationFn: () => connectWhatsAppChannel(channelId),
+    onSuccess: () => {
+      router.push(`/channels/whatsapp/${channelId}/connect`);
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to reconnect');
+      toast.error(error.message || 'Failed to connect');
     },
   });
 
@@ -90,16 +87,16 @@ export default function ChannelSettingsPage() {
     },
   });
 
-  const clearSessionMutation = useMutation({
+  // Logout - clears session completely, requires new QR scan
+  const logoutMutation = useMutation({
     mutationFn: () => clearWhatsAppSession(channelId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['channel-status', channelId] });
-      setClearSessionDialogOpen(false);
-      toast.success('Session cleared. Please scan QR code to reconnect.');
-      router.push(`/channels/whatsapp/${channelId}/connect`);
+      setLogoutDialogOpen(false);
+      toast.success('Logged out from WhatsApp');
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to clear session');
+      toast.error(error.message || 'Failed to logout');
     },
   });
 
@@ -198,53 +195,30 @@ export default function ChannelSettingsPage() {
                   </>
                 )}
               </Button>
+            ) : channelStatus?.status === 'CONNECTING' ? (
+              <Button disabled variant="outline">
+                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                Connecting...
+              </Button>
             ) : (
-              <>
-                {channelStatus?.status === 'CONNECTING' && (
-                  <Button disabled variant="outline">
+              <Button
+                onClick={() => connectMutation.mutate()}
+                disabled={connectMutation.isPending}
+              >
+                {connectMutation.isPending ? (
+                  <>
                     <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
                     Connecting...
-                  </Button>
-                )}
-                {/* Reconnect button - tries to use saved session */}
-                <Button
-                  onClick={() => reconnectMutation.mutate()}
-                  disabled={reconnectMutation.isPending}
-                  variant={channelStatus?.status === 'CONNECTING' ? 'secondary' : 'default'}
-                >
-                  {reconnectMutation.isPending ? (
-                    <>
-                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                      Reconnecting...
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw className="mr-2 h-4 w-4" />
-                      {channelStatus?.status === 'CONNECTING' ? 'Retry' : 'Reconnect'}
-                    </>
-                  )}
-                </Button>
-                {/* Connect button - always shows QR code */}
-                <Button variant="outline" asChild>
-                  <Link href={`/channels/whatsapp/${channelId}/connect`}>
+                  </>
+                ) : (
+                  <>
                     <Wifi className="mr-2 h-4 w-4" />
-                    Scan QR Code
-                  </Link>
-                </Button>
-              </>
+                    Connect
+                  </>
+                )}
+              </Button>
             )}
           </div>
-          {channelStatus?.status === 'CONNECTING' && (
-            <p className="text-sm text-muted-foreground">
-              If stuck connecting, click &quot;Retry&quot; or &quot;Scan QR Code&quot; to try again.
-            </p>
-          )}
-          {(channelStatus?.status === 'DISCONNECTED' || channelStatus?.status === 'ERROR') &&
-           channelStatus?.hasAuthState && (
-            <p className="text-sm text-muted-foreground">
-              Session saved. Click &quot;Reconnect&quot; to restore without scanning QR code.
-            </p>
-          )}
         </CardContent>
       </Card>
 
@@ -281,13 +255,13 @@ export default function ChannelSettingsPage() {
             <Button
               variant="outline"
               className="border-orange-500 text-orange-500 hover:bg-orange-500/10"
-              onClick={() => setClearSessionDialogOpen(true)}
+              onClick={() => setLogoutDialogOpen(true)}
             >
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Clear Session
+              <LogOut className="mr-2 h-4 w-4" />
+              Logout from WhatsApp
             </Button>
             <p className="text-xs text-muted-foreground">
-              Use this if you&apos;re experiencing connection errors. You&apos;ll need to scan the QR code again.
+              Logs out from WhatsApp and clears saved session. You&apos;ll need to scan QR code again.
             </p>
           </div>
           <div>
@@ -327,28 +301,27 @@ export default function ChannelSettingsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Clear Session Dialog */}
-      <Dialog open={clearSessionDialogOpen} onOpenChange={setClearSessionDialogOpen}>
+      {/* Logout Dialog */}
+      <Dialog open={logoutDialogOpen} onOpenChange={setLogoutDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Clear Session</DialogTitle>
+            <DialogTitle>Logout from WhatsApp</DialogTitle>
             <DialogDescription>
-              This will clear the saved WhatsApp session data. Use this if you&apos;re experiencing
-              connection errors like &quot;Invalid PreKey&quot; or &quot;No session found&quot;.
+              This will log out from WhatsApp and clear the saved session.
               You will need to scan the QR code again to reconnect.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setClearSessionDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setLogoutDialogOpen(false)}>
               Cancel
             </Button>
             <Button
               variant="default"
               className="bg-orange-500 hover:bg-orange-600"
-              onClick={() => clearSessionMutation.mutate()}
-              disabled={clearSessionMutation.isPending}
+              onClick={() => logoutMutation.mutate()}
+              disabled={logoutMutation.isPending}
             >
-              {clearSessionMutation.isPending ? 'Clearing...' : 'Clear Session'}
+              {logoutMutation.isPending ? 'Logging out...' : 'Logout'}
             </Button>
           </DialogFooter>
         </DialogContent>
