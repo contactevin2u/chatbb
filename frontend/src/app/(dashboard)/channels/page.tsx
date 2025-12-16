@@ -7,8 +7,6 @@ import {
   Plus,
   MessageSquare,
   Wifi,
-  WifiOff,
-  AlertCircle,
   MoreVertical,
   Trash2,
   Settings,
@@ -43,39 +41,7 @@ import {
   reconnectWhatsAppChannel,
   type Channel,
 } from '@/lib/api/channels';
-
-const statusConfig = {
-  CONNECTED: {
-    label: 'Connected',
-    icon: Wifi,
-    color: 'text-green-500',
-    bgColor: 'bg-green-500/10',
-  },
-  DISCONNECTED: {
-    label: 'Disconnected',
-    icon: WifiOff,
-    color: 'text-gray-500',
-    bgColor: 'bg-gray-500/10',
-  },
-  CONNECTING: {
-    label: 'Connecting',
-    icon: RefreshCw,
-    color: 'text-yellow-500',
-    bgColor: 'bg-yellow-500/10',
-  },
-  ERROR: {
-    label: 'Error',
-    icon: AlertCircle,
-    color: 'text-red-500',
-    bgColor: 'bg-red-500/10',
-  },
-  BANNED: {
-    label: 'Banned',
-    icon: AlertCircle,
-    color: 'text-red-500',
-    bgColor: 'bg-red-500/10',
-  },
-};
+import { getChannelStatus } from '@/lib/constants/channel-status';
 
 function ChannelCard({
   channel,
@@ -88,7 +54,7 @@ function ChannelCard({
   onReconnect: () => void;
   isReconnecting: boolean;
 }) {
-  const status = statusConfig[channel.status] || statusConfig.DISCONNECTED;
+  const status = getChannelStatus(channel.status);
   const StatusIcon = status.icon;
 
   return (

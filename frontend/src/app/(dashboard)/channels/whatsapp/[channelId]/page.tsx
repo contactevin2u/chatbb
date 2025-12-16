@@ -8,7 +8,6 @@ import {
   ArrowLeft,
   Wifi,
   WifiOff,
-  AlertCircle,
   Trash2,
   RefreshCw,
   Settings,
@@ -35,39 +34,7 @@ import {
   deleteWhatsAppChannel,
   clearWhatsAppSession,
 } from '@/lib/api/channels';
-
-const statusConfig = {
-  CONNECTED: {
-    label: 'Connected',
-    icon: Wifi,
-    color: 'text-green-500',
-    bgColor: 'bg-green-500/10',
-  },
-  DISCONNECTED: {
-    label: 'Disconnected',
-    icon: WifiOff,
-    color: 'text-gray-500',
-    bgColor: 'bg-gray-500/10',
-  },
-  CONNECTING: {
-    label: 'Connecting',
-    icon: RefreshCw,
-    color: 'text-yellow-500',
-    bgColor: 'bg-yellow-500/10',
-  },
-  ERROR: {
-    label: 'Error',
-    icon: AlertCircle,
-    color: 'text-red-500',
-    bgColor: 'bg-red-500/10',
-  },
-  BANNED: {
-    label: 'Banned',
-    icon: AlertCircle,
-    color: 'text-red-500',
-    bgColor: 'bg-red-500/10',
-  },
-};
+import { getChannelStatus } from '@/lib/constants/channel-status';
 
 export default function ChannelSettingsPage() {
   const params = useParams();
@@ -155,7 +122,7 @@ export default function ChannelSettingsPage() {
     );
   }
 
-  const status = statusConfig[channelStatus?.status as keyof typeof statusConfig] || statusConfig.DISCONNECTED;
+  const status = getChannelStatus(channelStatus?.status);
   const StatusIcon = status.icon;
 
   return (
