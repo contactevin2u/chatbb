@@ -32,7 +32,6 @@ interface SessionInfo {
   status: ChannelStatus;
   qrCode?: string;
   pairingCode?: string;
-  retryCount: number;
   qrGenerationCount: number;
   saveCreds: () => Promise<void>;
   deleteState: () => Promise<void>;
@@ -56,8 +55,8 @@ interface SessionEvents {
   'contacts:update': (channelId: string, contacts: any[]) => void;
 }
 
-const MAX_RETRY_COUNT = 5;
-const RETRY_DELAY_MS = 5000;
+// Simplified reconnection - follows official Baileys pattern
+// No exponential backoff, just immediate reconnect with minimal delay
 
 // Rate limiting constants (anti-ban)
 const RATE_LIMIT = {
@@ -137,31 +136,26 @@ export class SessionManager extends EventEmitter {
     // Let Baileys use its built-in default version
 
     // Create socket connection
-    // Use macOS Desktop browser for full historical message sync
+    // Simplified configuration based on official Baileys example
+    // See: https://github.com/WhiskeySockets/Baileys/blob/master/Example/example.ts
     const socket = makeWASocket({
       logger: this.logger.child({ channelId }),
       auth: {
         creds: state.creds,
         keys: makeCacheableSignalKeyStore(state.keys, this.logger),
       },
-      // macOS Desktop browser enables full history sync
+      // Browser identification - macOS Desktop for full history sync
       browser: Browsers.macOS('Desktop'),
       printQRInTerminal: false,
+      // Essential options from official example
       generateHighQualityLinkPreview: true,
-      // Enable full history sync from device
-      syncFullHistory: true,
-      // Set to false to receive phone notifications
-      markOnlineOnConnect: false,
       msgRetryCounterCache: this.msgRetryCache,
-      // Timeout and retry settings for better reliability
-      connectTimeoutMs: 60000, // 60 seconds connection timeout
-      defaultQueryTimeoutMs: 60000, // 60 seconds for queries
-      keepAliveIntervalMs: 30000, // 30 seconds keep alive
-      retryRequestDelayMs: 250, // 250ms delay between retries
-      qrTimeout: 60000, // 60 seconds QR timeout
-      maxMsgRetryCount: 5, // Retry failed messages up to 5 times
-      fireInitQueries: true, // Fire init queries on connect
-      // Cache group metadata to prevent rate limiting
+      // History sync settings
+      syncFullHistory: true,
+      shouldSyncHistoryMessage: () => true,
+      // Set to false to receive phone notifications on the device
+      markOnlineOnConnect: false,
+      // Cache group metadata to prevent rate limiting (recommended by Baileys)
       cachedGroupMetadata: async (jid) => {
         const cached = await redisClient.get(`group:${jid}:metadata`);
         if (cached) {
@@ -169,17 +163,14 @@ export class SessionManager extends EventEmitter {
         }
         return undefined;
       },
-      // Sync all historical messages (return true to sync)
-      shouldSyncHistoryMessage: () => true,
+      // Required: getMessage for retry and poll decryption
       getMessage: async (key) => {
-        // Retrieve message from database for retry
-        // Uses composite unique index [channelId, externalId] for O(1) lookup
         if (!key.id) return undefined;
         const message = await prisma.message.findUnique({
           where: {
             channelId_externalId: { channelId, externalId: key.id },
           },
-          select: { content: true },  // Only fetch content field (reduces payload)
+          select: { content: true },
         });
         if (message?.content) {
           return (message.content as any).message;
@@ -193,7 +184,6 @@ export class SessionManager extends EventEmitter {
       channelId,
       organizationId,
       status: 'CONNECTING',
-      retryCount: 0,
       qrGenerationCount: 0,
       saveCreds,
       deleteState,
@@ -249,7 +239,6 @@ export class SessionManager extends EventEmitter {
         session.status = 'CONNECTED';
         session.qrCode = undefined;
         session.pairingCode = undefined;
-        session.retryCount = 0;
 
         const phoneNumber = socket.user?.id?.split(':')[0] || 'unknown';
         await this.updateChannelStatus(channelId, 'CONNECTED', phoneNumber);
@@ -271,65 +260,50 @@ export class SessionManager extends EventEmitter {
 
         session.status = 'DISCONNECTED';
 
-        // Handle different disconnect reasons
-        // 401 = loggedOut, 405 = already registered, 408 = request timeout
-        // 411 = multidevice mismatch, 428 = precondition required (session issue)
-        // 440 = connection replaced, 500+ = server errors
-        const shouldReconnect =
-          statusCode !== DisconnectReason.loggedOut &&
-          statusCode !== DisconnectReason.badSession &&
-          statusCode !== DisconnectReason.multideviceMismatch &&
-          statusCode !== 428; // 428 = session corrupted, need fresh QR
+        // Simplified reconnection logic based on official Baileys example
+        // See: https://github.com/WhiskeySockets/Baileys/blob/master/Example/example.ts
+        // Only skip reconnection for permanent disconnects (logged out, bad session, etc.)
+        const shouldNotReconnect =
+          statusCode === DisconnectReason.loggedOut ||
+          statusCode === DisconnectReason.badSession ||
+          statusCode === DisconnectReason.multideviceMismatch ||
+          statusCode === DisconnectReason.connectionReplaced ||
+          statusCode === 428; // 428 = session corrupted
 
-        // For 428 (precondition required), clear session and require new QR
-        if (statusCode === 428) {
-          this.logger.warn({ channelId }, 'Session corrupted (428), clearing auth state');
-          await session.deleteState();
-          await this.updateChannelStatus(channelId, 'DISCONNECTED');
-          this.sessions.delete(channelId);
-          this.emit('disconnected', channelId, 'Session corrupted - please scan QR code again');
-          return;
-        }
+        if (shouldNotReconnect) {
+          // Permanent disconnect - clear state and notify
+          this.logger.info({ channelId, statusCode, reason }, 'Permanent disconnect, not reconnecting');
 
-        // For 440 (connectionReplaced), another device took over - don't retry
-        if (statusCode === DisconnectReason.connectionReplaced) {
-          this.logger.warn({ channelId }, 'Connection replaced by another device (440)');
-          await this.updateChannelStatus(channelId, 'DISCONNECTED');
-          this.sessions.delete(channelId);
-          this.emit('disconnected', channelId, 'Connected from another device');
-          return; // Don't retry - user intentionally connected elsewhere
-        }
-
-        if (shouldReconnect && session.retryCount < MAX_RETRY_COUNT) {
-          session.retryCount++;
-          const delay = RETRY_DELAY_MS * Math.pow(2, session.retryCount - 1); // Exponential backoff
-
-          this.logger.info(
-            { channelId, retryCount: session.retryCount, delay },
-            'Scheduling reconnection'
-          );
-
-          // Store timer so it can be cancelled if a new session is created
-          const timer = setTimeout(() => {
-            this.reconnectTimers.delete(channelId);
-            this.reconnectSession(channelId);
-          }, delay);
-          this.reconnectTimers.set(channelId, timer);
-        } else {
-          // Permanent disconnect
-          await this.updateChannelStatus(
-            channelId,
-            statusCode === DisconnectReason.loggedOut ? 'DISCONNECTED' : 'ERROR'
-          );
-
-          if (statusCode === DisconnectReason.loggedOut) {
-            // Clear auth state on logout
+          if (statusCode === DisconnectReason.loggedOut || statusCode === 428) {
             await session.deleteState();
           }
 
+          await this.updateChannelStatus(channelId, 'DISCONNECTED');
           this.sessions.delete(channelId);
           this.emit('disconnected', channelId, reason);
+          return;
         }
+
+        // For all other disconnects, reconnect immediately (official Baileys pattern)
+        // Note: After QR scan, WhatsApp forces a disconnect for auth handshake - this is normal
+        this.logger.info({ channelId }, 'Reconnecting (normal disconnect)');
+
+        // Remove old session and create new one immediately
+        this.sessions.delete(channelId);
+
+        // Small delay to prevent tight reconnection loops
+        const timer = setTimeout(async () => {
+          this.reconnectTimers.delete(channelId);
+          try {
+            await this.createSession(channelId, session.organizationId);
+          } catch (error) {
+            this.logger.error({ channelId, error }, 'Reconnection failed');
+            await this.updateChannelStatus(channelId, 'ERROR');
+            this.emit('error', channelId, error as Error);
+          }
+        }, 1000); // 1 second delay (minimal, just to prevent tight loops)
+
+        this.reconnectTimers.set(channelId, timer);
       }
     });
 
@@ -530,41 +504,6 @@ export class SessionManager extends EventEmitter {
         this.emit('contacts:update', channelId, contacts);
       }
     });
-  }
-
-  /**
-   * Reconnect a session
-   */
-  private async reconnectSession(channelId: string): Promise<void> {
-    const session = this.sessions.get(channelId);
-    if (!session) {
-      this.logger.warn({ channelId }, 'Cannot reconnect: session not found');
-      return;
-    }
-
-    this.logger.info({ channelId }, 'Attempting to reconnect');
-
-    // CRITICAL: Close old socket first to prevent memory leak
-    try {
-      session.socket.end(undefined);
-    } catch (e) {
-      this.logger.debug({ channelId, error: e }, 'Error closing socket during reconnect');
-    }
-
-    // Remove old session from map
-    this.sessions.delete(channelId);
-
-    // Small delay for cleanup before creating new session
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    // Create new session
-    try {
-      await this.createSession(channelId, session.organizationId);
-    } catch (error) {
-      this.logger.error({ channelId, error }, 'Reconnection failed');
-      await this.updateChannelStatus(channelId, 'ERROR');
-      this.emit('error', channelId, error as Error);
-    }
   }
 
   /**
