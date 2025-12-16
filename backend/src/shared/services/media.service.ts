@@ -193,6 +193,7 @@ export async function uploadToCloudinary(
           resource_type: options.resourceType || 'auto',
           format: options.format,
           public_id: options.publicId,
+          overwrite: true, // Prevent duplicates - if publicId exists, overwrite it
         },
         (error, result) => {
           if (error) {

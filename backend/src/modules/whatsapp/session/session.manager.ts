@@ -955,7 +955,13 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Disconnect a session
+   * Disconnect a session (preserves credentials for reconnection)
+   *
+   * IMPORTANT: This uses socket.end() NOT socket.logout()
+   * - socket.end() = Close connection, KEEP credentials (can reconnect without QR)
+   * - socket.logout() = Close connection, INVALIDATE session (needs new QR)
+   *
+   * Use logoutSession() if you want to fully logout and require new QR scan.
    */
   async disconnectSession(channelId: string): Promise<void> {
     const session = this.sessions.get(channelId);
@@ -963,7 +969,7 @@ export class SessionManager extends EventEmitter {
       return;
     }
 
-    this.logger.info({ channelId }, 'Disconnecting session');
+    this.logger.info({ channelId }, 'Disconnecting session (preserving credentials)');
 
     // Cancel any pending reconnection timer
     const pendingTimer = this.reconnectTimers.get(channelId);
@@ -973,11 +979,47 @@ export class SessionManager extends EventEmitter {
     }
 
     try {
+      // Use end() to close connection WITHOUT invalidating the session
+      // This preserves auth state so user can reconnect without QR
+      session.socket.end(undefined);
+    } catch (error) {
+      this.logger.warn({ channelId, error }, 'Error during disconnect');
+    }
+
+    // DON'T call deleteState() - preserve credentials for reconnection!
+    this.sessions.delete(channelId);
+    await this.updateChannelStatus(channelId, 'DISCONNECTED');
+  }
+
+  /**
+   * Logout and clear session (requires new QR scan)
+   *
+   * This fully logs out from WhatsApp and deletes all stored credentials.
+   * Use disconnectSession() if you just want to temporarily disconnect.
+   */
+  async logoutSession(channelId: string): Promise<void> {
+    const session = this.sessions.get(channelId);
+    if (!session) {
+      return;
+    }
+
+    this.logger.info({ channelId }, 'Logging out session (clearing credentials)');
+
+    // Cancel any pending reconnection timer
+    const pendingTimer = this.reconnectTimers.get(channelId);
+    if (pendingTimer) {
+      clearTimeout(pendingTimer);
+      this.reconnectTimers.delete(channelId);
+    }
+
+    try {
+      // logout() invalidates the session with WhatsApp servers
       await session.socket.logout();
     } catch (error) {
       this.logger.warn({ channelId, error }, 'Error during logout');
     }
 
+    // Delete auth state from database
     await session.deleteState();
     this.sessions.delete(channelId);
     await this.updateChannelStatus(channelId, 'DISCONNECTED');
