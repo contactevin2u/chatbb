@@ -261,10 +261,10 @@ export default function ChannelSettingsPage() {
               Logout from WhatsApp
             </Button>
             <p className="text-xs text-muted-foreground">
-              Logs out from WhatsApp and clears saved session. You&apos;ll need to scan QR code again.
+              Signs out from WhatsApp. Your conversations are kept. Scan QR to reconnect.
             </p>
           </div>
-          <div>
+          <div className="space-y-2">
             <Button
               variant="destructive"
               onClick={() => setDeleteDialogOpen(true)}
@@ -272,6 +272,9 @@ export default function ChannelSettingsPage() {
               <Trash2 className="mr-2 h-4 w-4" />
               Delete Channel
             </Button>
+            <p className="text-xs text-muted-foreground">
+              Permanently deletes this channel and ALL conversations/messages.
+            </p>
           </div>
         </CardContent>
       </Card>
