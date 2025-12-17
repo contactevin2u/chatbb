@@ -353,19 +353,23 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
     const totalPaid = due?.paid || order.paid_amount || 0;
     const toCollect = due?.to_collect || order.outstanding || 0;
 
+    // Trip status config
+    const tripStatusConfig: Record<string, { bg: string; text: string; dot: string }> = {
+      planned: { bg: 'bg-blue-50 dark:bg-blue-950/40', text: 'text-blue-700 dark:text-blue-300', dot: 'bg-blue-500' },
+      dispatched: { bg: 'bg-indigo-50 dark:bg-indigo-950/40', text: 'text-indigo-700 dark:text-indigo-300', dot: 'bg-indigo-500' },
+      in_transit: { bg: 'bg-violet-50 dark:bg-violet-950/40', text: 'text-violet-700 dark:text-violet-300', dot: 'bg-violet-500 animate-pulse' },
+      delivered: { bg: 'bg-emerald-50 dark:bg-emerald-950/40', text: 'text-emerald-700 dark:text-emerald-300', dot: 'bg-emerald-500' },
+      failed: { bg: 'bg-red-50 dark:bg-red-950/40', text: 'text-red-700 dark:text-red-300', dot: 'bg-red-500' },
+      cancelled: { bg: 'bg-gray-50 dark:bg-gray-900/40', text: 'text-gray-700 dark:text-gray-300', dot: 'bg-gray-500' },
+    };
+
     return (
-      <div className="space-y-4 animate-in slide-in-from-top-2 duration-200">
-        {/* Quick Info Grid */}
+      <div className="space-y-4 animate-in slide-in-from-top-2 duration-200 pt-4">
+        {/* Customer Info */}
         <div className="grid grid-cols-2 gap-2">
           <InfoPill icon={User} label="Customer" value={order.customer_name} />
           {order.customer_phone && (
             <InfoPill icon={Phone} label="Phone" value={order.customer_phone} />
-          )}
-          {order.delivery_date && (
-            <InfoPill icon={Calendar} label="Delivery" value={formatDate(order.delivery_date)} />
-          )}
-          {order.driver_name && (
-            <InfoPill icon={Truck} label="Driver" value={order.driver_name} />
           )}
         </div>
 
@@ -387,6 +391,100 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
                 </a>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Delivery & Driver Section */}
+        <div className="p-3 rounded-lg bg-gradient-to-br from-indigo-50/80 to-violet-50/80 dark:from-indigo-950/40 dark:to-violet-950/40 border border-indigo-100 dark:border-indigo-900/50 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Truck className="h-4 w-4 text-indigo-500" />
+              <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider">Delivery & Driver</span>
+            </div>
+            {order.trip_status && (
+              <span className={cn(
+                'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium',
+                tripStatusConfig[order.trip_status.toLowerCase()]?.bg || tripStatusConfig.planned.bg,
+                tripStatusConfig[order.trip_status.toLowerCase()]?.text || tripStatusConfig.planned.text
+              )}>
+                <span className={cn(
+                  'w-1.5 h-1.5 rounded-full',
+                  tripStatusConfig[order.trip_status.toLowerCase()]?.dot || tripStatusConfig.planned.dot
+                )} />
+                {order.trip_status}
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {/* Driver */}
+            <div className="space-y-1">
+              <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400">Driver</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-white">
+                {order.driver_name || <span className="text-gray-400 italic">Not assigned</span>}
+              </p>
+              {order.driver_id && (
+                <p className="text-[10px] text-gray-400">ID: {order.driver_id}</p>
+              )}
+            </div>
+
+            {/* Trip ID */}
+            {order.trip_id && (
+              <div className="space-y-1">
+                <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400">Trip</p>
+                <p className="text-sm font-medium text-gray-900 dark:text-white">#{order.trip_id}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Delivery Times */}
+          <div className="grid grid-cols-2 gap-3 pt-2 border-t border-indigo-100 dark:border-indigo-800/50">
+            {/* Scheduled */}
+            <div className="space-y-1">
+              <div className="flex items-center gap-1">
+                <Calendar className="h-3 w-3 text-gray-400" />
+                <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400">Scheduled</p>
+              </div>
+              <p className="text-sm font-medium text-gray-900 dark:text-white">
+                {order.delivery_date ? formatDate(order.delivery_date) : '-'}
+              </p>
+              {order.planned_at && (
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {formatDateTime(order.planned_at)}
+                </p>
+              )}
+            </div>
+
+            {/* Actual Delivery */}
+            <div className="space-y-1">
+              <div className="flex items-center gap-1">
+                <CheckCircle className="h-3 w-3 text-gray-400" />
+                <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400">Delivered</p>
+              </div>
+              {order.delivered_at ? (
+                <>
+                  <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                    {formatDate(order.delivered_at)}
+                  </p>
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                    {formatDateTime(order.delivered_at)}
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-gray-400 italic">Pending</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Notes Section */}
+        {order.notes && (
+          <div className="p-3 rounded-lg bg-amber-50/80 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/50">
+            <div className="flex items-center gap-2 mb-2">
+              <Receipt className="h-4 w-4 text-amber-500" />
+              <span className="text-xs font-semibold text-amber-700 dark:text-amber-300 uppercase tracking-wider">Notes</span>
+            </div>
+            <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{order.notes}</p>
           </div>
         )}
 
@@ -415,6 +513,46 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
           </div>
         </div>
 
+        {/* Payments List */}
+        {order.payments && order.payments.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <CreditCard className="h-3.5 w-3.5" />
+              Payment History ({order.payments.length})
+            </div>
+            <div className="space-y-1">
+              {order.payments.map((payment, index) => (
+                <div key={payment.payment_id || index} className="flex items-center justify-between py-2 px-3 rounded-lg bg-gray-50 dark:bg-gray-900/30 hover:bg-gray-100 dark:hover:bg-gray-800/30 transition-colors">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="p-1.5 rounded-md bg-emerald-100 dark:bg-emerald-900/50">
+                      <CreditCard className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">
+                        {formatCurrency(payment.amount)}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                        <span className="capitalize">{payment.method}</span>
+                        {payment.category && (
+                          <>
+                            <span className="text-gray-300 dark:text-gray-600">•</span>
+                            <span className="capitalize">{payment.category}</span>
+                          </>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {formatDateTime(payment.paid_at)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Items */}
         {order.items && order.items.length > 0 && (
           <div className="space-y-2">
@@ -430,6 +568,11 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
                       ×{item.quantity}
                     </span>
                     <span className="text-sm text-gray-900 dark:text-white truncate">{item.product_name}</span>
+                    {item.returned && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400">
+                        Returned
+                      </span>
+                    )}
                   </div>
                   <span className="text-sm font-medium text-gray-600 dark:text-gray-400 flex-shrink-0">{formatCurrency(item.subtotal)}</span>
                 </div>
@@ -443,7 +586,7 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
               <ImageIcon className="h-3.5 w-3.5" />
-              Proof of Delivery
+              Proof of Delivery ({order.pod_photo_urls.length})
             </div>
             <div className="flex gap-2 overflow-x-auto pb-1">
               {order.pod_photo_urls.map((url, index) => (
@@ -456,6 +599,22 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Signature */}
+        {order.signature_url && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <CheckCircle className="h-3.5 w-3.5" />
+              Customer Signature
+            </div>
+            <button
+              onClick={() => setSelectedPodImage(order.signature_url!)}
+              className="w-24 h-16 rounded-lg overflow-hidden border-2 border-gray-200 dark:border-gray-700 hover:border-pink-500 dark:hover:border-pink-500 transition-colors bg-white dark:bg-gray-900"
+            >
+              <img src={order.signature_url} alt="Signature" className="w-full h-full object-contain" />
+            </button>
           </div>
         )}
 
@@ -747,8 +906,26 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-sm pl-6">
-                    <span className="text-gray-600 dark:text-gray-400">{order.customer_name}</span>
-                    <span className="text-gray-400 dark:text-gray-500 text-xs">{order.type}</span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-gray-600 dark:text-gray-400 truncate">{order.customer_name}</span>
+                      {order.driver_name && (
+                        <>
+                          <span className="text-gray-300 dark:text-gray-600">•</span>
+                          <span className="flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400">
+                            <Truck className="h-3 w-3" />
+                            {order.driver_name}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {order.delivery_date && (
+                        <span className="text-xs text-gray-400 dark:text-gray-500">
+                          {formatDate(order.delivery_date)}
+                        </span>
+                      )}
+                      <span className="text-gray-400 dark:text-gray-500 text-xs">{order.type}</span>
+                    </div>
                   </div>
                 </button>
 
