@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Package,
@@ -8,24 +8,28 @@ import {
   Link2,
   Unlink,
   Truck,
-  CreditCard,
   MapPin,
   Phone,
   User,
   Calendar,
-  DollarSign,
-  Image as ImageIcon,
-  AlertCircle,
   CheckCircle,
-  FileText,
   Wand2,
   Send,
   Copy,
   Check,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  Search,
+  X,
+  Sparkles,
+  Receipt,
+  CreditCard,
+  Clock,
+  ImageIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Dialog,
@@ -55,27 +59,29 @@ interface OrderOpsTabProps {
   conversationId: string;
 }
 
-const statusColors: Record<string, string> = {
-  pending: 'bg-yellow-100 text-yellow-900 dark:bg-yellow-900/50 dark:text-yellow-200',
-  confirmed: 'bg-blue-100 text-blue-900 dark:bg-blue-900/50 dark:text-blue-200',
-  processing: 'bg-pink-100 text-pink-900 dark:bg-pink-900/50 dark:text-pink-200',
-  shipped: 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/50 dark:text-indigo-200',
-  delivered: 'bg-green-100 text-green-900 dark:bg-green-900/50 dark:text-green-200',
-  cancelled: 'bg-red-100 text-red-900 dark:bg-red-900/50 dark:text-red-200',
-  returned: 'bg-orange-100 text-orange-900 dark:bg-orange-900/50 dark:text-orange-200',
+// Premium status colors with gradients
+const statusConfig: Record<string, { bg: string; text: string; dot: string }> = {
+  pending: { bg: 'bg-amber-50 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-300', dot: 'bg-amber-500' },
+  confirmed: { bg: 'bg-blue-50 dark:bg-blue-950/40', text: 'text-blue-700 dark:text-blue-300', dot: 'bg-blue-500' },
+  processing: { bg: 'bg-violet-50 dark:bg-violet-950/40', text: 'text-violet-700 dark:text-violet-300', dot: 'bg-violet-500' },
+  shipped: { bg: 'bg-indigo-50 dark:bg-indigo-950/40', text: 'text-indigo-700 dark:text-indigo-300', dot: 'bg-indigo-500' },
+  delivered: { bg: 'bg-emerald-50 dark:bg-emerald-950/40', text: 'text-emerald-700 dark:text-emerald-300', dot: 'bg-emerald-500' },
+  cancelled: { bg: 'bg-red-50 dark:bg-red-950/40', text: 'text-red-700 dark:text-red-300', dot: 'bg-red-500' },
+  returned: { bg: 'bg-orange-50 dark:bg-orange-950/40', text: 'text-orange-700 dark:text-orange-300', dot: 'bg-orange-500' },
 };
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-MY', {
     style: 'currency',
     currency: 'MYR',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
   }).format(amount);
 }
 
 function formatDate(dateString?: string): string {
   if (!dateString) return '-';
   return new Date(dateString).toLocaleDateString('en-MY', {
-    year: 'numeric',
     month: 'short',
     day: 'numeric',
   });
@@ -84,12 +90,89 @@ function formatDate(dateString?: string): string {
 function formatDateTime(dateString?: string): string {
   if (!dateString) return '-';
   return new Date(dateString).toLocaleString('en-MY', {
-    year: 'numeric',
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+// Skeleton loader component
+function Skeleton({ className }: { className?: string }) {
+  return (
+    <div className={cn('animate-pulse bg-gradient-to-r from-pink-100 via-pink-50 to-pink-100 dark:from-pink-900/30 dark:via-pink-950/20 dark:to-pink-900/30 rounded', className)} />
+  );
+}
+
+// Order card skeleton
+function OrderCardSkeleton() {
+  return (
+    <div className="border border-pink-100 dark:border-pink-900/50 rounded-xl p-4 space-y-3 bg-white dark:bg-black/50">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-5 w-20" />
+          <Skeleton className="h-5 w-16 rounded-full" />
+        </div>
+        <Skeleton className="h-5 w-16" />
+      </div>
+      <div className="flex items-center justify-between">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-4 w-12" />
+      </div>
+    </div>
+  );
+}
+
+// Status badge component
+function StatusBadge({ status }: { status: string }) {
+  const config = statusConfig[status?.toLowerCase()] || statusConfig.pending;
+  return (
+    <span className={cn('inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium', config.bg, config.text)}>
+      <span className={cn('w-1.5 h-1.5 rounded-full', config.dot)} />
+      {status}
+    </span>
+  );
+}
+
+// Payment progress bar
+function PaymentProgress({ paid, total }: { paid: number; total: number }) {
+  const percentage = total > 0 ? Math.min((paid / total) * 100, 100) : 0;
+  const isPaid = percentage >= 100;
+
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between text-xs">
+        <span className="text-gray-500 dark:text-gray-400">Payment Progress</span>
+        <span className={cn('font-medium', isPaid ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-900 dark:text-white')}>
+          {percentage.toFixed(0)}%
+        </span>
+      </div>
+      <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+        <div
+          className={cn(
+            'h-full rounded-full transition-all duration-500 ease-out',
+            isPaid
+              ? 'bg-gradient-to-r from-emerald-400 to-emerald-500'
+              : 'bg-gradient-to-r from-pink-400 to-pink-500'
+          )}
+          style={{ width: `${percentage}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Quick info pill
+function InfoPill({ icon: Icon, label, value, className }: { icon: any; label: string; value: string; className?: string }) {
+  return (
+    <div className={cn('flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900/50', className)}>
+      <Icon className="h-4 w-4 text-pink-500 flex-shrink-0" />
+      <div className="min-w-0">
+        <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500">{label}</p>
+        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{value}</p>
+      </div>
+    </div>
+  );
 }
 
 export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
@@ -103,21 +186,25 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
   const [selectedPodImage, setSelectedPodImage] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
-  // Parse message mutation (auto-links if order created)
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Parse message mutation
   const parseMutation = useMutation({
     mutationFn: (text: string) => parseConversationMessage(conversationId, { text }),
     onSuccess: (data: any) => {
       setParseResult(data);
       if (data.linked) {
-        toast.success(`Order #${data.parsed?.data?.order_code || ''} created and linked!`);
-        // Refresh the linked orders data
+        toast.success(`Order #${data.parsed?.data?.order_code || ''} created and linked!`, { duration: 4000 });
         queryClient.invalidateQueries({ queryKey: ['linkedOrders', conversationId] });
         setShowParseDialog(false);
       } else if (data.parsed?.data?.order_id) {
         toast.success('Order created successfully');
-      } else {
-        toast.success('Message parsed successfully');
       }
     },
     onError: (error: any) => {
@@ -142,31 +229,26 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
   } = useQuery({
     queryKey: ['linkedOrders', conversationId],
     queryFn: () => getLinkedOrders(conversationId),
-    staleTime: 0, // Always fetch fresh data
+    staleTime: 0,
   });
 
   const handleRefresh = async () => {
-    toast.loading('Refreshing orders...', { id: 'refresh-order' });
-    try {
-      await refetchLinked();
-      toast.success('Order data refreshed', { id: 'refresh-order' });
-    } catch {
-      toast.error('Failed to refresh', { id: 'refresh-order' });
-    }
+    await refetchLinked();
+    toast.success('Updated', { duration: 1500 });
   };
 
-  // Fetch available orders by contact (for linking)
+  // Fetch orders by contact
   const { data: contactOrders, isLoading: isLoadingContactSearch } = useQuery({
     queryKey: ['searchOrdersByContact', conversationId],
     queryFn: () => searchOrdersByContact(conversationId),
     enabled: showLinkDialog,
   });
 
-  // Search orders by code
+  // Search orders
   const { data: searchResults, isLoading: isSearching } = useQuery({
-    queryKey: ['searchOrders', searchQuery],
-    queryFn: () => searchOrders(searchQuery),
-    enabled: showLinkDialog && searchQuery.length >= 2,
+    queryKey: ['searchOrders', debouncedSearch],
+    queryFn: () => searchOrders(debouncedSearch),
+    enabled: showLinkDialog && debouncedSearch.length >= 2,
   });
 
   // Link order mutation
@@ -176,7 +258,7 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
       queryClient.invalidateQueries({ queryKey: ['linkedOrders', conversationId] });
       setShowLinkDialog(false);
       setSearchQuery('');
-      toast.success('Order linked');
+      toast.success('Order linked successfully');
     },
   });
 
@@ -192,599 +274,519 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
 
   const linkedOrders = linkedOrdersData?.orders || [];
   const isLinked = linkedOrdersData?.linked;
-
-  // Get already linked order IDs to filter from search results
   const linkedOrderIds = new Set(linkedOrders.map(o => o.orderId));
 
+  // Loading state with skeletons
   if (isLoadingLinked) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <RefreshCw className="h-6 w-6 animate-spin text-pink-500" />
+      <div className="p-4 space-y-3">
+        <div className="flex items-center justify-between mb-2">
+          <Skeleton className="h-5 w-24" />
+          <Skeleton className="h-8 w-24 rounded-lg" />
+        </div>
+        <OrderCardSkeleton />
+        <OrderCardSkeleton />
       </div>
     );
   }
 
+  // Empty state
   if (!isLinked || linkedOrders.length === 0) {
     return (
-      <div className="p-4 space-y-4">
-        {/* Parse Message Section */}
-        <div className="border border-pink-200 dark:border-pink-800 rounded-lg p-3 bg-white dark:bg-black">
-          <h6 className="text-xs font-semibold text-black dark:text-white uppercase mb-2 flex items-center gap-1">
-            <Wand2 className="h-3 w-3 text-pink-500" />
-            Parse Order Message
-          </h6>
-          <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
-            Paste a WhatsApp message to extract order details using AI
+      <div className="p-4 space-y-6">
+        {/* AI Parse Section */}
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-pink-500/10 via-purple-500/5 to-transparent border border-pink-200/50 dark:border-pink-800/50 p-4">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-pink-500/20 to-transparent rounded-full blur-2xl" />
+          <div className="relative">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-2 rounded-lg bg-pink-500/10">
+                <Sparkles className="h-4 w-4 text-pink-500" />
+              </div>
+              <h6 className="font-semibold text-gray-900 dark:text-white">AI Order Parser</h6>
+            </div>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+              Paste any WhatsApp message and let AI extract order details automatically
+            </p>
+            <Button
+              onClick={() => {
+                setParseText('');
+                setParseResult(null);
+                setShowParseDialog(true);
+              }}
+              className="w-full bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white shadow-lg shadow-pink-500/25 transition-all duration-200 hover:shadow-xl hover:shadow-pink-500/30"
+            >
+              <Wand2 className="h-4 w-4 mr-2" />
+              Parse Message
+            </Button>
+          </div>
+        </div>
+
+        {/* Empty State */}
+        <div className="text-center py-8">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-pink-100 to-pink-50 dark:from-pink-900/30 dark:to-pink-950/20 flex items-center justify-center">
+            <Package className="h-8 w-8 text-pink-400" />
+          </div>
+          <h5 className="font-semibold text-gray-900 dark:text-white mb-1">No Orders Linked</h5>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 max-w-[200px] mx-auto">
+            Link orders to this conversation for quick access
           </p>
           <Button
             variant="outline"
-            size="sm"
-            className="w-full border-pink-300 hover:bg-pink-50 hover:border-pink-400 dark:border-pink-700 dark:hover:bg-pink-950 dark:hover:border-pink-600"
-            onClick={() => {
-              setParseText('');
-              setParseResult(null);
-              setShowParseDialog(true);
-            }}
-          >
-            <Wand2 className="h-3 w-3 mr-1 text-pink-500" />
-            Parse Message
-          </Button>
-        </div>
-
-        <Separator className="bg-pink-200 dark:bg-pink-800" />
-
-        {/* Link Order Section */}
-        <div className="text-center py-4">
-          <Package className="h-10 w-10 mx-auto text-pink-300 dark:text-pink-700 mb-2" />
-          <h5 className="text-sm font-semibold text-black dark:text-white mb-1">No Orders Linked</h5>
-          <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
-            Link existing orders to track them
-          </p>
-          <Button
-            size="sm"
             onClick={() => setShowLinkDialog(true)}
-            className="bg-pink-500 hover:bg-pink-600 text-white"
+            className="border-pink-200 hover:border-pink-300 hover:bg-pink-50 dark:border-pink-800 dark:hover:border-pink-700 dark:hover:bg-pink-950/50"
           >
-            <Link2 className="h-3 w-3 mr-1" />
-            Link Order
+            <Link2 className="h-4 w-4 mr-2 text-pink-500" />
+            Link Existing Order
           </Button>
         </div>
 
-        {/* Parse Message Dialog */}
-        <Dialog open={showParseDialog} onOpenChange={setShowParseDialog}>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-black dark:text-white">
-                <Wand2 className="h-5 w-5 text-pink-500" />
-                Parse Order Message
-              </DialogTitle>
-              <DialogDescription className="text-gray-600 dark:text-gray-400">
-                Paste a WhatsApp message to extract order details using AI (4-stage LLM pipeline)
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <Textarea
-                placeholder="Paste WhatsApp message here...&#10;&#10;Example:&#10;Customer: Ahmad&#10;Phone: 0123456789&#10;Address: 123 Jalan ABC&#10;Order: 2x Item A, 1x Item B&#10;Total: RM500"
-                value={parseText}
-                onChange={(e) => setParseText(e.target.value)}
-                rows={6}
-                className="resize-none border-pink-200 focus:border-pink-400 focus:ring-pink-400 dark:border-pink-800 dark:focus:border-pink-600"
-              />
-              {parseResult && (
-                <div className="border border-pink-200 dark:border-pink-800 rounded-lg p-3 bg-pink-50/50 dark:bg-pink-950/30 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-black dark:text-white">Parse Result:</span>
-                    <Button variant="ghost" size="sm" onClick={handleCopyResult} className="text-pink-500 hover:text-pink-600">
-                      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                    </Button>
-                  </div>
-                  {/* Show order created info */}
-                  {parseResult.parsed?.data?.order_id && (
-                    <div className="flex items-center justify-between p-2 bg-green-50 dark:bg-green-950/50 rounded border border-green-300 dark:border-green-800">
-                      <div>
-                        <p className="text-sm font-semibold text-green-800 dark:text-green-300">
-                          Order #{parseResult.parsed.data.order_code} created
-                        </p>
-                        <p className="text-xs text-green-700 dark:text-green-400">
-                          ID: {parseResult.parsed.data.order_id}
-                        </p>
-                      </div>
-                      {parseResult.linked ? (
-                        <Badge className="bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300">
-                          <CheckCircle className="h-3 w-3 mr-1" />
-                          Linked
-                        </Badge>
-                      ) : (
-                        <Button
-                          size="sm"
-                          onClick={() => {
-                            linkMutation.mutate(parseResult.parsed.data.order_id);
-                            setShowParseDialog(false);
-                          }}
-                          disabled={linkMutation.isPending}
-                          className="bg-pink-500 hover:bg-pink-600 text-white"
-                        >
-                          <Link2 className="h-3 w-3 mr-1" />
-                          Link Order
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                  <pre className="text-xs overflow-auto max-h-40 whitespace-pre-wrap text-black dark:text-white bg-white dark:bg-black p-2 rounded border">
-                    {JSON.stringify(parseResult.parsed, null, 2)}
-                  </pre>
-                </div>
-              )}
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowParseDialog(false)} className="border-gray-300 dark:border-gray-700">
-                Close
-              </Button>
-              <Button
-                onClick={() => parseMutation.mutate(parseText)}
-                disabled={!parseText.trim() || parseMutation.isPending}
-                className="bg-pink-500 hover:bg-pink-600 text-white"
-              >
-                {parseMutation.isPending ? (
-                  <>
-                    <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
-                    Parsing...
-                  </>
-                ) : (
-                  <>
-                    <Send className="h-3 w-3 mr-1" />
-                    Parse
-                  </>
-                )}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Link Order Dialog */}
-        <Dialog open={showLinkDialog} onOpenChange={(open) => { setShowLinkDialog(open); if (!open) setSearchQuery(''); }}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle className="text-black dark:text-white">Link Order</DialogTitle>
-              <DialogDescription className="text-gray-600 dark:text-gray-400">
-                Search by order code or select from contact's orders
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              {/* Search Input */}
-              <Input
-                placeholder="Search by order code..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="border-pink-200 focus:border-pink-400 focus:ring-pink-400 dark:border-pink-800 dark:focus:border-pink-600"
-              />
-
-              <div className="max-h-64 overflow-y-auto space-y-2">
-                {/* Search Results */}
-                {searchQuery.length >= 2 && (
-                  <>
-                    <p className="text-xs text-gray-600 dark:text-gray-400 font-semibold uppercase">Search Results</p>
-                    {isSearching ? (
-                      <div className="flex items-center justify-center py-4">
-                        <RefreshCw className="h-5 w-5 animate-spin text-pink-500" />
-                      </div>
-                    ) : searchResults?.orders && searchResults.orders.length > 0 ? (
-                      searchResults.orders
-                        .filter(o => !linkedOrderIds.has(o.order_id))
-                        .map((o) => (
-                          <button
-                            key={o.order_id}
-                            onClick={() => linkMutation.mutate(o.order_id)}
-                            disabled={linkMutation.isPending}
-                            className="w-full p-3 text-left rounded-lg border border-pink-200 dark:border-pink-800 hover:bg-pink-50 dark:hover:bg-pink-950/50 transition-colors bg-white dark:bg-black"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="font-semibold text-black dark:text-white">#{o.order_code}</span>
-                              <Badge className={statusColors[o.status?.toLowerCase()] || 'bg-gray-100 text-gray-900'}>
-                                {o.status}
-                              </Badge>
-                            </div>
-                            <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                              {formatCurrency(o.total)} - {o.customer_name}
-                            </div>
-                          </button>
-                        ))
-                    ) : (
-                      <p className="text-center text-gray-500 py-2 text-sm">
-                        No orders found
-                      </p>
-                    )}
-                    <Separator className="my-2 bg-pink-200 dark:bg-pink-800" />
-                  </>
-                )}
-
-                {/* Contact's Orders */}
-                <p className="text-xs text-gray-600 dark:text-gray-400 font-semibold uppercase">Contact's Orders</p>
-                {isLoadingContactSearch ? (
-                  <div className="flex items-center justify-center py-4">
-                    <RefreshCw className="h-5 w-5 animate-spin text-pink-500" />
-                  </div>
-                ) : contactOrders?.orders && contactOrders.orders.length > 0 ? (
-                  contactOrders.orders
-                    .filter(o => !linkedOrderIds.has(o.order_id))
-                    .map((o) => (
-                      <button
-                        key={o.order_id}
-                        onClick={() => linkMutation.mutate(o.order_id)}
-                        disabled={linkMutation.isPending}
-                        className="w-full p-3 text-left rounded-lg border border-pink-200 dark:border-pink-800 hover:bg-pink-50 dark:hover:bg-pink-950/50 transition-colors bg-white dark:bg-black"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-black dark:text-white">#{o.order_code}</span>
-                          <Badge className={statusColors[o.status?.toLowerCase()] || 'bg-gray-100 text-gray-900'}>
-                            {o.status}
-                          </Badge>
-                        </div>
-                        <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                          {formatCurrency(o.total)} - {o.customer_name}
-                        </div>
-                      </button>
-                    ))
-                ) : (
-                  <p className="text-center text-gray-500 py-4">
-                    No orders found for this contact
-                  </p>
-                )}
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => { setShowLinkDialog(false); setSearchQuery(''); }} className="border-gray-300 dark:border-gray-700">
-                Cancel
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Dialogs */}
+        {renderParseDialog()}
+        {renderLinkDialog()}
       </div>
     );
   }
 
-  // Helper function to render order details
-  const renderOrderDetails = (order: OrderDetails, due: OrderDue | undefined) => (
-    <div className="space-y-3 pt-2">
-      {/* Customer Info */}
-      <div className="space-y-1.5 text-sm">
-        <div className="flex items-center gap-2">
-          <User className="h-3.5 w-3.5 text-pink-500" />
-          <span className="text-black dark:text-white">{order.customer_name}</span>
+  // Render order details
+  function renderOrderDetails(order: OrderDetails, due: OrderDue | undefined) {
+    const totalExpected = due?.expected || order.total || 0;
+    const totalPaid = due?.paid || order.paid_amount || 0;
+    const toCollect = due?.to_collect || order.outstanding || 0;
+
+    return (
+      <div className="space-y-4 animate-in slide-in-from-top-2 duration-200">
+        {/* Quick Info Grid */}
+        <div className="grid grid-cols-2 gap-2">
+          <InfoPill icon={User} label="Customer" value={order.customer_name} />
+          {order.customer_phone && (
+            <InfoPill icon={Phone} label="Phone" value={order.customer_phone} />
+          )}
+          {order.delivery_date && (
+            <InfoPill icon={Calendar} label="Delivery" value={formatDate(order.delivery_date)} />
+          )}
+          {order.driver_name && (
+            <InfoPill icon={Truck} label="Driver" value={order.driver_name} />
+          )}
         </div>
-        {order.customer_phone && (
-          <div className="flex items-center gap-2">
-            <Phone className="h-3.5 w-3.5 text-pink-500" />
-            <span className="text-gray-700 dark:text-gray-300">{order.customer_phone}</span>
-          </div>
-        )}
+
+        {/* Address */}
         {order.customer_address && (
-          <div className="flex items-start gap-2">
-            <MapPin className="h-3.5 w-3.5 text-pink-500 mt-0.5" />
-            <div className="flex-1">
-              <span className="text-xs text-gray-700 dark:text-gray-300">{order.customer_address}</span>
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+            <MapPin className="h-4 w-4 text-pink-500 mt-0.5 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500">Address</p>
+              <p className="text-sm text-gray-900 dark:text-white">{order.customer_address}</p>
               {order.customer_map_url && (
                 <a
                   href={order.customer_map_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="ml-2 text-xs text-pink-500 hover:text-pink-600 hover:underline font-medium"
+                  className="inline-flex items-center gap-1 mt-1 text-xs text-pink-500 hover:text-pink-600 font-medium"
                 >
-                  Map
+                  Open in Maps <ExternalLink className="h-3 w-3" />
                 </a>
               )}
             </div>
           </div>
         )}
-      </div>
 
-      {/* Delivery */}
-      {(order.delivery_date || order.trip_status || order.driver_name) && (
-        <div className="space-y-1.5 text-sm border-t border-pink-200 dark:border-pink-800 pt-2">
-          {order.delivery_date && (
-            <div className="flex items-center gap-2">
-              <Calendar className="h-3.5 w-3.5 text-pink-500" />
-              <span className="text-black dark:text-white">{formatDate(order.delivery_date)}</span>
+        {/* Payment Progress */}
+        <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-900/50 space-y-3">
+          <PaymentProgress paid={totalPaid} total={totalExpected} />
+
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-gray-400">Expected</p>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">{formatCurrency(totalExpected)}</p>
             </div>
-          )}
-          {order.driver_name && (
-            <div className="flex items-center gap-2">
-              <Truck className="h-3.5 w-3.5 text-pink-500" />
-              <span className="text-black dark:text-white">{order.driver_name}</span>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-gray-400">Paid</p>
+              <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">{formatCurrency(totalPaid)}</p>
             </div>
-          )}
-          {order.trip_status && (
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-xs border-pink-300 dark:border-pink-700 text-black dark:text-white">
-                {order.trip_status}
-              </Badge>
-              {order.delivered_at && (
-                <span className="text-xs text-gray-600 dark:text-gray-400">
-                  {formatDateTime(order.delivered_at)}
-                </span>
-              )}
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-gray-400">Balance</p>
+              <p className={cn(
+                'text-sm font-semibold',
+                toCollect > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'
+              )}>
+                {formatCurrency(toCollect)}
+              </p>
             </div>
-          )}
+          </div>
         </div>
-      )}
 
-      {/* Financial */}
-      <div className="border-t border-pink-200 dark:border-pink-800 pt-2 space-y-1 text-sm">
-        {due && due.monthly_amount > 0 && (
-          <div className="flex justify-between text-xs">
-            <span className="text-gray-600 dark:text-gray-400">{formatCurrency(due.monthly_amount)}/mo × {due.months_elapsed}mo</span>
+        {/* Items */}
+        {order.items && order.items.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <Receipt className="h-3.5 w-3.5" />
+              Items ({order.items.length})
+            </div>
+            <div className="space-y-1">
+              {order.items.map((item, index) => (
+                <div key={item.item_id || index} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-50 dark:hover:bg-gray-900/30 transition-colors">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-xs font-medium text-pink-500 bg-pink-50 dark:bg-pink-950/50 px-1.5 py-0.5 rounded">
+                      ×{item.quantity}
+                    </span>
+                    <span className="text-sm text-gray-900 dark:text-white truncate">{item.product_name}</span>
+                  </div>
+                  <span className="text-sm font-medium text-gray-600 dark:text-gray-400 flex-shrink-0">{formatCurrency(item.subtotal)}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
-        <div className="flex justify-between">
-          <span className="text-gray-600 dark:text-gray-400">Expected</span>
-          <span className="text-black dark:text-white font-medium">{formatCurrency(due?.expected || order.total)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-gray-600 dark:text-gray-400">Paid</span>
-          <span className="text-green-600 dark:text-green-400 font-medium">{formatCurrency(due?.paid || order.paid_amount)}</span>
-        </div>
-        <div className="flex justify-between font-semibold">
-          <span className="text-black dark:text-white">To Collect</span>
-          <span className={(due?.to_collect || order.outstanding) > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}>
-            {formatCurrency(due?.to_collect || order.outstanding)}
-          </span>
-        </div>
+
+        {/* POD Photos */}
+        {order.pod_photo_urls && order.pod_photo_urls.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <ImageIcon className="h-3.5 w-3.5" />
+              Proof of Delivery
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {order.pod_photo_urls.map((url, index) => (
+                <button
+                  key={index}
+                  onClick={() => setSelectedPodImage(url)}
+                  className="flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 border-transparent hover:border-pink-500 transition-colors"
+                >
+                  <img src={url} alt={`POD ${index + 1}`} className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Unlink Button */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+          onClick={() => setOrderToUnlink(linkedOrders.find(o => o.order?.order_id === order.order_id) || null)}
+        >
+          <Unlink className="h-3.5 w-3.5 mr-1.5" />
+          Unlink Order
+        </Button>
       </div>
+    );
+  }
 
-      {/* Items */}
-      {order.items && order.items.length > 0 && (
-        <div className="border-t border-pink-200 dark:border-pink-800 pt-2">
-          <p className="text-xs text-gray-600 dark:text-gray-400 font-semibold uppercase mb-1">Items ({order.items.length})</p>
-          <div className="space-y-1">
-            {order.items.map((item, index) => (
-              <div key={item.item_id || index} className="flex justify-between text-xs">
-                <span className="text-black dark:text-white">{item.product_name} x{item.quantity}</span>
-                <span className="text-gray-700 dark:text-gray-300">{formatCurrency(item.subtotal)}</span>
+  // Render parse dialog
+  function renderParseDialog() {
+    return (
+      <Dialog open={showParseDialog} onOpenChange={setShowParseDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-pink-100 dark:bg-pink-900/30">
+                <Sparkles className="h-4 w-4 text-pink-500" />
               </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* POD Photos */}
-      {order.pod_photo_urls && order.pod_photo_urls.length > 0 && (
-        <div className="border-t border-pink-200 dark:border-pink-800 pt-2">
-          <p className="text-xs text-gray-600 dark:text-gray-400 font-semibold uppercase mb-1">Proof of Delivery</p>
-          <div className="grid grid-cols-4 gap-1">
-            {order.pod_photo_urls.map((url, index) => (
-              <button
-                key={index}
-                onClick={() => setSelectedPodImage(url)}
-                className="aspect-square rounded overflow-hidden border border-pink-200 dark:border-pink-800 hover:opacity-80"
-              >
-                <img src={url} alt={`POD ${index + 1}`} className="w-full h-full object-cover" />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-  return (
-    <ScrollArea className="h-[calc(100vh-280px)]">
-      <div className="p-4 space-y-3">
-        {/* Header with actions */}
-        <div className="flex items-center justify-between">
-          <h5 className="text-sm font-semibold text-black dark:text-white">
-            {linkedOrders.length} Order{linkedOrders.length !== 1 ? 's' : ''} Linked
-          </h5>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleRefresh}
-              disabled={isRefetching}
-              className="h-8 w-8 text-pink-500 hover:text-pink-600 hover:bg-pink-50 dark:hover:bg-pink-950"
-            >
-              <RefreshCw className={cn("h-4 w-4", isRefetching && "animate-spin")} />
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => setShowLinkDialog(true)}
-              className="bg-pink-500 hover:bg-pink-600 text-white"
-            >
-              <Link2 className="h-3 w-3 mr-1" />
-              Link More
-            </Button>
-          </div>
-        </div>
-
-        {/* Orders List */}
-        {linkedOrders.map((linkedOrder) => {
-          const order = linkedOrder.order;
-          const due = linkedOrder.due;
-          const isExpanded = expandedOrderId === linkedOrder.orderId;
-
-          if (!order) return null;
-
-          return (
-            <div
-              key={linkedOrder.id}
-              className="border border-pink-200 dark:border-pink-800 rounded-lg overflow-hidden bg-white dark:bg-black"
-            >
-              {/* Order Header (always visible) */}
-              <button
-                onClick={() => setExpandedOrderId(isExpanded ? null : linkedOrder.orderId)}
-                className="w-full p-3 text-left hover:bg-pink-50 dark:hover:bg-pink-950/50 transition-colors"
-              >
+              AI Order Parser
+            </DialogTitle>
+            <DialogDescription>
+              Paste a WhatsApp message and our AI will extract order details automatically
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Textarea
+              placeholder="Paste WhatsApp message here..."
+              value={parseText}
+              onChange={(e) => setParseText(e.target.value)}
+              rows={6}
+              className="resize-none border-gray-200 focus:border-pink-400 focus:ring-pink-400/20 dark:border-gray-800 dark:focus:border-pink-600"
+            />
+            {parseResult && (
+              <div className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/30 p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <a
-                      href={`https://aaalyx.com/orders/${order.order_id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="font-semibold text-pink-500 hover:text-pink-600 hover:underline"
-                    >
-                      #{order.order_code}
-                    </a>
-                    <Badge className={statusColors[order.status?.toLowerCase()] || 'bg-gray-100 text-gray-900'}>
-                      {order.status}
-                    </Badge>
+                    <CheckCircle className="h-4 w-4 text-emerald-500" />
+                    <span className="font-medium text-emerald-700 dark:text-emerald-300">Order Created</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className={cn(
-                      "text-sm font-semibold",
-                      (due?.to_collect || order.outstanding) > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
-                    )}>
-                      {formatCurrency(due?.to_collect || order.outstanding)}
-                    </span>
+                  <Button variant="ghost" size="sm" onClick={handleCopyResult} className="h-8 text-emerald-600">
+                    {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                  </Button>
+                </div>
+                {parseResult.parsed?.data?.order_id && (
+                  <div className="flex items-center justify-between p-3 bg-white dark:bg-black rounded-lg">
+                    <div>
+                      <p className="font-semibold text-gray-900 dark:text-white">#{parseResult.parsed.data.order_code}</p>
+                      <p className="text-xs text-gray-500">ID: {parseResult.parsed.data.order_id}</p>
+                    </div>
+                    {parseResult.linked ? (
+                      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
+                        <CheckCircle className="h-3 w-3 mr-1" />
+                        Linked
+                      </Badge>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          linkMutation.mutate(parseResult.parsed.data.order_id);
+                          setShowParseDialog(false);
+                        }}
+                        className="bg-pink-500 hover:bg-pink-600 text-white"
+                      >
+                        <Link2 className="h-3.5 w-3.5 mr-1" />
+                        Link
+                      </Button>
+                    )}
                   </div>
-                </div>
-                <div className="flex items-center justify-between mt-1 text-xs">
-                  <span className="text-gray-700 dark:text-gray-300">{order.customer_name}</span>
-                  <span className="text-gray-500 dark:text-gray-500">{order.type}</span>
-                </div>
-              </button>
-
-              {/* Expanded Details */}
-              {isExpanded && (
-                <div className="px-3 pb-3 border-t border-pink-200 dark:border-pink-800 bg-pink-50/50 dark:bg-pink-950/30">
-                  {renderOrderDetails(order, due)}
-
-                  {/* Unlink Button */}
-                  <div className="mt-3 pt-2 border-t border-pink-200 dark:border-pink-800">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="w-full text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-950/50"
-                      onClick={() => setOrderToUnlink(linkedOrder)}
-                    >
-                      <Unlink className="h-3 w-3 mr-1" />
-                      Unlink Order
-                    </Button>
-                  </div>
-                </div>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowParseDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => parseMutation.mutate(parseText)}
+              disabled={!parseText.trim() || parseMutation.isPending}
+              className="bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white"
+            >
+              {parseMutation.isPending ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Parsing...
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4 mr-2" />
+                  Parse Message
+                </>
               )}
-            </div>
-          );
-        })}
-      </div>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
-      {/* Link Order Dialog */}
+  // Render link dialog
+  function renderLinkDialog() {
+    const showSearchResults = debouncedSearch.length >= 2;
+    const filteredSearchResults = searchResults?.orders?.filter(o => !linkedOrderIds.has(o.order_id)) || [];
+    const filteredContactOrders = contactOrders?.orders?.filter(o => !linkedOrderIds.has(o.order_id)) || [];
+
+    return (
       <Dialog open={showLinkDialog} onOpenChange={(open) => { setShowLinkDialog(open); if (!open) setSearchQuery(''); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-black dark:text-white">Link Order</DialogTitle>
-            <DialogDescription className="text-gray-600 dark:text-gray-400">
-              Search by order code or select from contact's orders
+            <DialogTitle>Link Order</DialogTitle>
+            <DialogDescription>
+              Search by order code or select from this contact's orders
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {/* Search Input */}
-            <Input
-              placeholder="Search by order code..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="border-pink-200 focus:border-pink-400 focus:ring-pink-400 dark:border-pink-800 dark:focus:border-pink-600"
-            />
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Search by order code..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 pr-9 border-gray-200 focus:border-pink-400 focus:ring-pink-400/20 dark:border-gray-800"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
 
-            <div className="max-h-64 overflow-y-auto space-y-2">
+            <div className="max-h-72 overflow-y-auto space-y-3">
               {/* Search Results */}
-              {searchQuery.length >= 2 && (
-                <>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 font-semibold uppercase">Search Results</p>
-                  {isSearching ? (
-                    <div className="flex items-center justify-center py-4">
-                      <RefreshCw className="h-5 w-5 animate-spin text-pink-500" />
-                    </div>
-                  ) : searchResults?.orders && searchResults.orders.length > 0 ? (
-                    searchResults.orders
-                      .filter(o => !linkedOrderIds.has(o.order_id))
-                      .map((o) => (
-                        <button
-                          key={o.order_id}
-                          onClick={() => linkMutation.mutate(o.order_id)}
-                          disabled={linkMutation.isPending}
-                          className="w-full p-3 text-left rounded-lg border border-pink-200 dark:border-pink-800 hover:bg-pink-50 dark:hover:bg-pink-950/50 transition-colors bg-white dark:bg-black"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-semibold text-black dark:text-white">#{o.order_code}</span>
-                            <Badge className={statusColors[o.status?.toLowerCase()] || 'bg-gray-100 text-gray-900'}>
-                              {o.status}
-                            </Badge>
-                          </div>
-                          <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                            {formatCurrency(o.total)} - {o.customer_name}
-                          </div>
-                        </button>
-                      ))
-                  ) : (
-                    <p className="text-center text-gray-500 py-2 text-sm">
-                      No orders found
-                    </p>
+              {showSearchResults && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider flex items-center gap-2">
+                    <Search className="h-3 w-3" />
+                    Search Results
+                    {isSearching && <RefreshCw className="h-3 w-3 animate-spin text-pink-500" />}
+                  </p>
+                  {!isSearching && filteredSearchResults.length === 0 && (
+                    <p className="text-sm text-gray-400 text-center py-3">No orders found</p>
                   )}
-                  <Separator className="my-2 bg-pink-200 dark:bg-pink-800" />
-                </>
+                  {filteredSearchResults.map((o) => (
+                    <OrderSelectCard key={o.order_id} order={o} onSelect={() => linkMutation.mutate(o.order_id)} disabled={linkMutation.isPending} />
+                  ))}
+                </div>
               )}
 
               {/* Contact's Orders */}
-              <p className="text-xs text-gray-600 dark:text-gray-400 font-semibold uppercase">Contact's Orders</p>
-              {isLoadingContactSearch ? (
-                <div className="flex items-center justify-center py-4">
-                  <RefreshCw className="h-5 w-5 animate-spin text-pink-500" />
-                </div>
-              ) : contactOrders?.orders && contactOrders.orders.length > 0 ? (
-                contactOrders.orders
-                  .filter(o => !linkedOrderIds.has(o.order_id))
-                  .map((o) => (
-                    <button
-                      key={o.order_id}
-                      onClick={() => linkMutation.mutate(o.order_id)}
-                      disabled={linkMutation.isPending}
-                      className="w-full p-3 text-left rounded-lg border border-pink-200 dark:border-pink-800 hover:bg-pink-50 dark:hover:bg-pink-950/50 transition-colors bg-white dark:bg-black"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-black dark:text-white">#{o.order_code}</span>
-                        <Badge className={statusColors[o.status?.toLowerCase()] || 'bg-gray-100 text-gray-900'}>
-                          {o.status}
-                        </Badge>
-                      </div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                        {formatCurrency(o.total)} - {o.customer_name}
-                      </div>
-                    </button>
-                  ))
-              ) : (
-                <p className="text-center text-gray-500 py-4">
-                  No orders found for this contact
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider flex items-center gap-2">
+                  <User className="h-3 w-3" />
+                  Contact's Orders
+                  {isLoadingContactSearch && <RefreshCw className="h-3 w-3 animate-spin text-pink-500" />}
                 </p>
-              )}
+                {!isLoadingContactSearch && filteredContactOrders.length === 0 && (
+                  <p className="text-sm text-gray-400 text-center py-3">No orders found for this contact</p>
+                )}
+                {filteredContactOrders.map((o) => (
+                  <OrderSelectCard key={o.order_id} order={o} onSelect={() => linkMutation.mutate(o.order_id)} disabled={linkMutation.isPending} />
+                ))}
+              </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowLinkDialog(false); setSearchQuery(''); }} className="border-gray-300 dark:border-gray-700">
+            <Button variant="outline" onClick={() => { setShowLinkDialog(false); setSearchQuery(''); }}>
               Cancel
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    );
+  }
 
-      {/* Unlink Confirmation Dialog */}
+  // Order select card
+  function OrderSelectCard({ order, onSelect, disabled }: { order: OrderDetails; onSelect: () => void; disabled: boolean }) {
+    return (
+      <button
+        onClick={onSelect}
+        disabled={disabled}
+        className="w-full p-3 text-left rounded-xl border border-gray-100 dark:border-gray-800 hover:border-pink-300 dark:hover:border-pink-700 hover:bg-pink-50/50 dark:hover:bg-pink-950/30 transition-all duration-150 bg-white dark:bg-black/50 group"
+      >
+        <div className="flex items-center justify-between mb-1">
+          <span className="font-semibold text-gray-900 dark:text-white group-hover:text-pink-600 dark:group-hover:text-pink-400 transition-colors">
+            #{order.order_code}
+          </span>
+          <StatusBadge status={order.status} />
+        </div>
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-gray-500 dark:text-gray-400 truncate">{order.customer_name}</span>
+          <span className="font-medium text-gray-700 dark:text-gray-300">{formatCurrency(order.total)}</span>
+        </div>
+      </button>
+    );
+  }
+
+  // Main render with orders
+  return (
+    <ScrollArea className="h-[calc(100vh-280px)]">
+      <div className="p-4 space-y-3">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <h5 className="font-semibold text-gray-900 dark:text-white">
+            {linkedOrders.length} Order{linkedOrders.length !== 1 ? 's' : ''}
+          </h5>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleRefresh}
+              disabled={isRefetching}
+              className="h-8 w-8 text-gray-500 hover:text-pink-500 hover:bg-pink-50 dark:hover:bg-pink-950/50"
+            >
+              <RefreshCw className={cn('h-4 w-4', isRefetching && 'animate-spin')} />
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setShowLinkDialog(true)}
+              className="bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white shadow-sm"
+            >
+              <Link2 className="h-3.5 w-3.5 mr-1.5" />
+              Link
+            </Button>
+          </div>
+        </div>
+
+        {/* Orders List */}
+        <div className="space-y-2">
+          {linkedOrders.map((linkedOrder) => {
+            const order = linkedOrder.order;
+            const due = linkedOrder.due;
+            const isExpanded = expandedOrderId === linkedOrder.orderId;
+            const toCollect = due?.to_collect || order?.outstanding || 0;
+
+            if (!order) return null;
+
+            return (
+              <div
+                key={linkedOrder.id}
+                className={cn(
+                  'rounded-xl border transition-all duration-200',
+                  isExpanded
+                    ? 'border-pink-300 dark:border-pink-700 shadow-lg shadow-pink-500/10'
+                    : 'border-gray-100 dark:border-gray-800 hover:border-pink-200 dark:hover:border-pink-800'
+                )}
+              >
+                {/* Order Header */}
+                <button
+                  onClick={() => setExpandedOrderId(isExpanded ? null : linkedOrder.orderId)}
+                  className="w-full p-4 text-left"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      {isExpanded ? (
+                        <ChevronDown className="h-4 w-4 text-pink-500" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-gray-400" />
+                      )}
+                      <a
+                        href={`https://aaalyx.com/orders/${order.order_id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="font-semibold text-pink-500 hover:text-pink-600 hover:underline flex items-center gap-1"
+                      >
+                        #{order.order_code}
+                        <ExternalLink className="h-3 w-3 opacity-50" />
+                      </a>
+                      <StatusBadge status={order.status} />
+                    </div>
+                    <span className={cn(
+                      'text-sm font-bold tabular-nums',
+                      toCollect > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'
+                    )}>
+                      {formatCurrency(toCollect)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm pl-6">
+                    <span className="text-gray-600 dark:text-gray-400">{order.customer_name}</span>
+                    <span className="text-gray-400 dark:text-gray-500 text-xs">{order.type}</span>
+                  </div>
+                </button>
+
+                {/* Expanded Details */}
+                {isExpanded && (
+                  <div className="px-4 pb-4 border-t border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/30">
+                    {renderOrderDetails(order, due)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Dialogs */}
+      {renderParseDialog()}
+      {renderLinkDialog()}
+
+      {/* Unlink Dialog */}
       <Dialog open={!!orderToUnlink} onOpenChange={(open) => !open && setOrderToUnlink(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="text-black dark:text-white">Unlink Order</DialogTitle>
-            <DialogDescription className="text-gray-600 dark:text-gray-400">
-              Are you sure you want to unlink order <span className="font-semibold text-pink-500">#{orderToUnlink?.orderCode}</span> from this conversation?
+            <DialogTitle>Unlink Order</DialogTitle>
+            <DialogDescription>
+              Remove <span className="font-semibold text-pink-500">#{orderToUnlink?.orderCode}</span> from this conversation?
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOrderToUnlink(null)} className="border-gray-300 dark:border-gray-700">
+            <Button variant="outline" onClick={() => setOrderToUnlink(null)}>
               Cancel
             </Button>
             <Button
               onClick={() => orderToUnlink && unlinkMutation.mutate(orderToUnlink.orderId)}
               disabled={unlinkMutation.isPending}
-              className="bg-red-600 hover:bg-red-700 text-white"
+              className="bg-red-500 hover:bg-red-600 text-white"
             >
-              {unlinkMutation.isPending ? 'Unlinking...' : 'Unlink'}
+              {unlinkMutation.isPending ? 'Unlinking...' : 'Unlink Order'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -792,12 +794,9 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
 
       {/* POD Image Viewer */}
       <Dialog open={!!selectedPodImage} onOpenChange={() => setSelectedPodImage(null)}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-black dark:text-white">Proof of Delivery</DialogTitle>
-          </DialogHeader>
+        <DialogContent className="max-w-2xl p-2">
           {selectedPodImage && (
-            <img src={selectedPodImage} alt="POD" className="w-full rounded-lg border border-pink-200 dark:border-pink-800" />
+            <img src={selectedPodImage} alt="Proof of Delivery" className="w-full rounded-lg" />
           )}
         </DialogContent>
       </Dialog>
