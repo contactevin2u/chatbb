@@ -292,6 +292,39 @@ class OrderOpsService {
   }
 
   /**
+   * Search orders by order code
+   */
+  async searchByCode(code: string): Promise<OrderDetails[]> {
+    try {
+      const response = await this.client.get('/orders', { params: { q: code, limit: 10 } });
+      const items = response.data?.data?.items || response.data?.items || [];
+
+      // Transform each order
+      return items.map((raw: any) => ({
+        order_id: raw.id,
+        order_code: raw.code,
+        status: raw.status,
+        type: raw.type,
+        delivery_date: raw.delivery_date,
+        customer_name: raw.customer?.name || raw.customer_name || '',
+        customer_phone: raw.customer?.phone || '',
+        customer_address: raw.customer?.address,
+        total: parseFloat(raw.total) || 0,
+        paid_amount: parseFloat(raw.paid_amount) || 0,
+        balance: parseFloat(raw.balance) || 0,
+        outstanding: parseFloat(raw.balance) || 0,
+        trip_status: raw.trip?.status,
+        driver_name: raw.trip?.driver_name,
+        items: [],
+        payments: [],
+      }));
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'OrderOps search by code failed');
+      return [];
+    }
+  }
+
+  /**
    * Queue a parsing job for async processing
    */
   async queueParseJob(text: string): Promise<ParseResult> {

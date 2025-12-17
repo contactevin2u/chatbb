@@ -71,11 +71,20 @@ export interface ParseResult {
   error?: string;
 }
 
-export interface LinkedOrderResponse {
-  linked: boolean;
-  linkedAt?: string;
+export interface LinkedOrder {
+  id: string;
+  conversationId: string;
+  orderId: number;
+  orderCode: string;
+  linkedAt: string;
+  linkedBy?: string;
   order?: OrderDetails;
   due?: OrderDue;
+}
+
+export interface LinkedOrdersResponse {
+  linked: boolean;
+  orders: LinkedOrder[];
 }
 
 // Test OrderOps connection
@@ -113,14 +122,20 @@ export async function linkOrder(
 }
 
 // Unlink order from conversation
-export async function unlinkOrder(conversationId: string): Promise<{ success: boolean }> {
-  const response = await api.delete(`/orderops/conversations/${conversationId}/link`);
+export async function unlinkOrder(conversationId: string, orderId: number): Promise<{ success: boolean }> {
+  const response = await api.delete(`/orderops/conversations/${conversationId}/link/${orderId}`);
   return response.data;
 }
 
-// Get linked order for a conversation
-export async function getLinkedOrder(conversationId: string): Promise<LinkedOrderResponse> {
-  const response = await api.get(`/orderops/conversations/${conversationId}/order`);
+// Get all linked orders for a conversation
+export async function getLinkedOrders(conversationId: string): Promise<LinkedOrdersResponse> {
+  const response = await api.get(`/orderops/conversations/${conversationId}/orders`);
+  return response.data;
+}
+
+// Search orders by code
+export async function searchOrders(query: string): Promise<{ orders: OrderDetails[] }> {
+  const response = await api.get(`/orderops/search`, { params: { q: query } });
   return response.data;
 }
 

@@ -36,7 +36,7 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils/cn';
 import {
-  getLinkedOrder,
+  getLinkedOrders,
   searchOrdersByContact,
   linkOrder,
   unlinkOrder,
@@ -100,14 +100,14 @@ export function OrderPanel({ conversationId, onClose }: OrderPanelProps) {
   const [showUnlinkDialog, setShowUnlinkDialog] = useState(false);
   const [selectedPodImage, setSelectedPodImage] = useState<string | null>(null);
 
-  // Fetch linked order
+  // Fetch linked orders
   const {
-    data: linkedOrderData,
+    data: linkedOrdersData,
     isLoading: isLoadingLinked,
     refetch: refetchLinked,
   } = useQuery({
-    queryKey: ['linkedOrder', conversationId],
-    queryFn: () => getLinkedOrder(conversationId),
+    queryKey: ['linkedOrders', conversationId],
+    queryFn: () => getLinkedOrders(conversationId),
   });
 
   // Fetch available orders (for linking)
@@ -121,23 +121,29 @@ export function OrderPanel({ conversationId, onClose }: OrderPanelProps) {
   const linkMutation = useMutation({
     mutationFn: (orderId: number) => linkOrder(conversationId, orderId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['linkedOrder', conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['linkedOrders', conversationId] });
       setShowLinkDialog(false);
     },
   });
 
-  // Unlink order mutation
+  // Unlink order mutation (uses first linked order for backward compat)
   const unlinkMutation = useMutation({
-    mutationFn: () => unlinkOrder(conversationId),
+    mutationFn: () => {
+      const firstOrder = linkedOrdersData?.orders?.[0];
+      if (!firstOrder) throw new Error('No order to unlink');
+      return unlinkOrder(conversationId, firstOrder.orderId);
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['linkedOrder', conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['linkedOrders', conversationId] });
       setShowUnlinkDialog(false);
     },
   });
 
-  const order = linkedOrderData?.order;
-  const due = linkedOrderData?.due;
-  const isLinked = linkedOrderData?.linked;
+  // Get first linked order for display (this panel shows single order)
+  const firstLinkedOrder = linkedOrdersData?.orders?.[0];
+  const order = firstLinkedOrder?.order;
+  const due = firstLinkedOrder?.due;
+  const isLinked = linkedOrdersData?.linked && linkedOrdersData.orders.length > 0;
 
   return (
     <div className="w-80 border-l border-pink-200/50 dark:border-purple-800/50 bg-gradient-to-b from-white via-pink-50/20 to-lavender-50/20 dark:from-purple-950 dark:via-purple-900/20 dark:to-pink-950/20 flex flex-col h-full">

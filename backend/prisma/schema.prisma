@@ -76,6 +76,7 @@ model User {
   auditLogs               AuditLog[]
   conversationNotes       ConversationNote[]  @relation("ConversationNotes")
   scheduledMessages       ScheduledMessage[]
+  linkedOrders            ConversationOrder[]
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -379,6 +380,7 @@ model Conversation {
   notes              ConversationNote[]
   scheduledMessages  ScheduledMessage[]
   sequenceExecutions SequenceExecution[]
+  linkedOrders       ConversationOrder[]
 
   @@unique([channelId, contactId])
   @@index([organizationId])
@@ -389,6 +391,24 @@ model Conversation {
   @@index([isPinned, pinnedAt(sort: Desc)])
   @@index([orderOpsOrderId])
   @@map("conversations")
+}
+
+// Multiple OrderOps orders linked to a conversation
+model ConversationOrder {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversationId String   @map("conversation_id") @db.Uuid
+  orderId        Int      @map("order_id")
+  orderCode      String   @map("order_code")
+  linkedAt       DateTime @default(now()) @map("linked_at")
+  linkedBy       String?  @map("linked_by") @db.Uuid
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [linkedBy], references: [id])
+
+  @@unique([conversationId, orderId])
+  @@index([conversationId])
+  @@index([orderId])
+  @@map("conversation_orders")
 }
 
 // Multi-agent assignment for collaborative conversations

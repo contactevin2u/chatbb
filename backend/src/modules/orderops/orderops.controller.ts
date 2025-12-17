@@ -42,6 +42,7 @@ export class OrderOpsController {
       const { conversationId } = req.params;
       const { text, messageId, autoLink = true } = req.body;
       const organizationId = req.organizationId!;
+      const userId = req.user?.sub;
 
       // Verify conversation belongs to org
       const conversation = await prisma.conversation.findFirst({
@@ -86,6 +87,27 @@ export class OrderOpsController {
 
       if (autoLink && orderData?.order_id) {
         try {
+          // Add to ConversationOrder table (supports multiple orders)
+          await prisma.conversationOrder.upsert({
+            where: {
+              conversationId_orderId: {
+                conversationId,
+                orderId: orderData.order_id,
+              },
+            },
+            update: {
+              linkedAt: new Date(),
+              linkedBy: userId,
+            },
+            create: {
+              conversationId,
+              orderId: orderData.order_id,
+              orderCode: orderData.order_code,
+              linkedBy: userId,
+            },
+          });
+
+          // Also update legacy single order field for backwards compatibility
           await prisma.conversation.update({
             where: { id: conversationId },
             data: {
@@ -94,6 +116,7 @@ export class OrderOpsController {
               orderOpsLinkedAt: new Date(),
             },
           });
+
           linked = true;
           linkedOrder = await orderOpsService.getOrder(orderData.order_id);
           logger.info({ conversationId, orderId: orderData.order_id }, 'Order auto-linked to conversation');
@@ -127,6 +150,7 @@ export class OrderOpsController {
       const { conversationId } = req.params;
       const { orderId, orderCode } = req.body;
       const organizationId = req.organizationId!;
+      const userId = req.user?.sub;
 
       if (!orderId) {
         return res.status(400).json({ error: 'Order ID is required' });
@@ -147,8 +171,28 @@ export class OrderOpsController {
         return res.status(404).json({ error: 'Order not found in OrderOps' });
       }
 
-      // Link order to conversation
-      const updated = await prisma.conversation.update({
+      // Add to ConversationOrder table (supports multiple orders)
+      await prisma.conversationOrder.upsert({
+        where: {
+          conversationId_orderId: {
+            conversationId,
+            orderId: order.order_id,
+          },
+        },
+        update: {
+          linkedAt: new Date(),
+          linkedBy: userId,
+        },
+        create: {
+          conversationId,
+          orderId: order.order_id,
+          orderCode: order.order_code,
+          linkedBy: userId,
+        },
+      });
+
+      // Also update legacy single order field
+      await prisma.conversation.update({
         where: { id: conversationId },
         data: {
           orderOpsOrderId: order.order_id,
@@ -161,12 +205,6 @@ export class OrderOpsController {
 
       res.json({
         success: true,
-        conversation: {
-          id: updated.id,
-          orderOpsOrderId: updated.orderOpsOrderId,
-          orderOpsOrderCode: updated.orderOpsOrderCode,
-          orderOpsLinkedAt: updated.orderOpsLinkedAt,
-        },
         order,
       });
     } catch (error) {
@@ -175,12 +213,12 @@ export class OrderOpsController {
   }
 
   /**
-   * Unlink order from conversation
-   * DELETE /api/orderops/conversations/:conversationId/link
+   * Unlink a specific order from conversation
+   * DELETE /api/orderops/conversations/:conversationId/link/:orderId
    */
   async unlinkOrder(req: Request, res: Response, next: NextFunction) {
     try {
-      const { conversationId } = req.params;
+      const { conversationId, orderId } = req.params;
       const organizationId = req.organizationId!;
 
       const conversation = await prisma.conversation.findFirst({
@@ -191,16 +229,44 @@ export class OrderOpsController {
         return res.status(404).json({ error: 'Conversation not found' });
       }
 
-      await prisma.conversation.update({
-        where: { id: conversationId },
-        data: {
-          orderOpsOrderId: null,
-          orderOpsOrderCode: null,
-          orderOpsLinkedAt: null,
-        },
+      // Remove from ConversationOrder table
+      if (orderId) {
+        await prisma.conversationOrder.deleteMany({
+          where: {
+            conversationId,
+            orderId: parseInt(orderId),
+          },
+        });
+      }
+
+      // Check if any orders remain linked
+      const remainingOrders = await prisma.conversationOrder.findFirst({
+        where: { conversationId },
+        orderBy: { linkedAt: 'desc' },
       });
 
-      logger.info({ conversationId }, 'Order unlinked from conversation');
+      // Update legacy field to most recent order or null
+      if (remainingOrders) {
+        await prisma.conversation.update({
+          where: { id: conversationId },
+          data: {
+            orderOpsOrderId: remainingOrders.orderId,
+            orderOpsOrderCode: remainingOrders.orderCode,
+            orderOpsLinkedAt: remainingOrders.linkedAt,
+          },
+        });
+      } else {
+        await prisma.conversation.update({
+          where: { id: conversationId },
+          data: {
+            orderOpsOrderId: null,
+            orderOpsOrderCode: null,
+            orderOpsLinkedAt: null,
+          },
+        });
+      }
+
+      logger.info({ conversationId, orderId }, 'Order unlinked from conversation');
 
       res.json({ success: true });
     } catch (error) {
@@ -209,36 +275,64 @@ export class OrderOpsController {
   }
 
   /**
-   * Get linked order details for a conversation
-   * GET /api/orderops/conversations/:conversationId/order
+   * Get all linked orders for a conversation
+   * GET /api/orderops/conversations/:conversationId/orders
    */
-  async getLinkedOrder(req: Request, res: Response, next: NextFunction) {
+  async getLinkedOrders(req: Request, res: Response, next: NextFunction) {
     try {
       const { conversationId } = req.params;
       const organizationId = req.organizationId!;
 
       const conversation = await prisma.conversation.findFirst({
         where: { id: conversationId, organizationId },
+        include: { linkedOrders: { orderBy: { linkedAt: 'desc' } } },
       });
 
       if (!conversation) {
         return res.status(404).json({ error: 'Conversation not found' });
       }
 
-      if (!conversation.orderOpsOrderId) {
-        return res.json({ linked: false, order: null });
+      if (!conversation.linkedOrders.length) {
+        return res.json({ linked: false, orders: [] });
       }
 
-      // Get fresh order details from OrderOps
-      const order = await orderOpsService.getOrder(conversation.orderOpsOrderId);
-      const due = await orderOpsService.getOrderDue(conversation.orderOpsOrderId);
+      // Fetch fresh details for all linked orders
+      const ordersWithDetails = await Promise.all(
+        conversation.linkedOrders.map(async (link) => {
+          const order = await orderOpsService.getOrder(link.orderId);
+          const due = await orderOpsService.getOrderDue(link.orderId);
+          return {
+            ...link,
+            order,
+            due,
+          };
+        })
+      );
 
       res.json({
         linked: true,
-        linkedAt: conversation.orderOpsLinkedAt,
-        order,
-        due,
+        orders: ordersWithDetails,
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Search orders by code
+   * GET /api/orderops/search
+   */
+  async searchOrders(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { q } = req.query;
+
+      if (!q || typeof q !== 'string') {
+        return res.status(400).json({ error: 'Search query is required' });
+      }
+
+      const orders = await orderOpsService.searchByCode(q);
+
+      res.json({ orders });
     } catch (error) {
       next(error);
     }

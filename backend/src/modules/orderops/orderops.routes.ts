@@ -28,15 +28,15 @@ router.post(
 );
 
 router.delete(
-  '/conversations/:conversationId/link',
+  '/conversations/:conversationId/link/:orderId',
   requirePermission('conversations:view'),
   orderOpsController.unlinkOrder.bind(orderOpsController)
 );
 
 router.get(
-  '/conversations/:conversationId/order',
+  '/conversations/:conversationId/orders',
   requirePermission('conversations:view'),
-  orderOpsController.getLinkedOrder.bind(orderOpsController)
+  orderOpsController.getLinkedOrders.bind(orderOpsController)
 );
 
 router.get(
@@ -47,5 +47,8 @@ router.get(
 
 // Order lookup
 router.get('/orders/:orderId', orderOpsController.getOrder.bind(orderOpsController));
+
+// Search orders by code
+router.get('/search', orderOpsController.searchOrders.bind(orderOpsController));
 
 export default router;
