@@ -1103,13 +1103,13 @@ export default function InboxPage() {
                         </span>
                         {conversation.tags && conversation.tags.length > 0 && (
                           <>
-                            {conversation.tags.slice(0, 2).map((tagRelation) => (
+                            {conversation.tags.slice(0, 2).map((tagRelation) => tagRelation.tag && (
                               <span
                                 key={tagRelation.tag.id}
                                 className="px-1.5 py-0.5 rounded text-[10px] font-medium"
                                 style={{
-                                  backgroundColor: `${tagRelation.tag.color}20`,
-                                  color: tagRelation.tag.color,
+                                  backgroundColor: `${tagRelation.tag.color || '#6b7280'}20`,
+                                  color: tagRelation.tag.color || '#6b7280',
                                 }}
                               >
                                 {tagRelation.tag.name}
@@ -2034,13 +2034,13 @@ export default function InboxPage() {
                 </h5>
                 <div className="flex flex-wrap gap-1.5">
                   {selectedConversation.tags && selectedConversation.tags.length > 0 ? (
-                    selectedConversation.tags.map((tagRelation) => (
+                    selectedConversation.tags.filter((tagRelation) => tagRelation.tag).map((tagRelation) => (
                       <span
                         key={tagRelation.tag.id}
                         className="px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
                         style={{
-                          backgroundColor: `${tagRelation.tag.color}20`,
-                          color: tagRelation.tag.color,
+                          backgroundColor: `${tagRelation.tag.color || '#6b7280'}20`,
+                          color: tagRelation.tag.color || '#6b7280',
                         }}
                       >
                         {tagRelation.tag.name}
@@ -2067,7 +2067,7 @@ export default function InboxPage() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" className="w-48">
                       {allTags.map((tag) => {
-                        const isAdded = selectedConversation.tags?.some(t => t.tag.id === tag.id);
+                        const isAdded = selectedConversation.tags?.some(t => t.tag?.id === tag.id);
                         return (
                           <DropdownMenuItem
                             key={tag.id}
@@ -2077,7 +2077,7 @@ export default function InboxPage() {
                           >
                             <span
                               className="w-3 h-3 rounded-full mr-2"
-                              style={{ backgroundColor: tag.color }}
+                              style={{ backgroundColor: tag.color || '#6b7280' }}
                             />
                             {tag.name}
                             {isAdded && <Check className="h-3 w-3 ml-auto" />}
