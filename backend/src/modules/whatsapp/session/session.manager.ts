@@ -24,6 +24,13 @@ import { usePostgresAuthState, hasAuthState } from './session.store';
 import { prisma } from '../../../core/database/prisma';
 import { redisClient } from '../../../core/cache/redis.client';
 import { ChannelStatus } from '@prisma/client';
+import {
+  acquireLock,
+  releaseLock,
+  ownsLock,
+  getInstanceId,
+  releaseAllLocks,
+} from '../../../shared/services/distributed-lock.service';
 
 interface SessionInfo {
   socket: WASocket;
@@ -128,7 +135,21 @@ export class SessionManager extends EventEmitter {
       return existingSession;
     }
 
-    this.logger.info({ channelId, organizationId }, 'Creating new WhatsApp session');
+    this.logger.info({ channelId, organizationId, instanceId: getInstanceId() }, 'Creating new WhatsApp session');
+
+    // DISTRIBUTED LOCK: Acquire lock before connecting
+    // This prevents multiple instances from connecting to the same channel
+    // First check if we already own the lock (reconnection case)
+    const alreadyOwnsLock = await ownsLock(channelId);
+    if (!alreadyOwnsLock) {
+      const lockAcquired = await acquireLock(channelId);
+      if (!lockAcquired) {
+        this.logger.warn({ channelId, instanceId: getInstanceId() }, 'Cannot create session - another instance holds the lock');
+        throw new Error('Another instance is already managing this channel');
+      }
+    } else {
+      this.logger.info({ channelId, instanceId: getInstanceId() }, 'Already owns lock (reconnection)');
+    }
 
     // Fetch channel to check if initial sync has been completed
     const channel = await prisma.channel.findUnique({
@@ -284,17 +305,19 @@ export class SessionManager extends EventEmitter {
         const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
         const reason = statusCode ? String(DisconnectReason[statusCode] || 'Unknown') : 'Unknown';
 
-        this.logger.warn({ channelId, statusCode, reason }, 'WhatsApp disconnected');
+        this.logger.warn({ channelId, statusCode, reason, instanceId: getInstanceId() }, 'WhatsApp disconnected');
 
         session.status = 'DISCONNECTED';
 
         // Official Baileys pattern: only loggedOut prevents reconnection
         // See: https://github.com/WhiskeySockets/Baileys/blob/master/Example/example.ts
         const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+        const isConnectionReplaced = statusCode === DisconnectReason.connectionReplaced;
 
         if (isLoggedOut) {
           // User logged out - clear credentials and stop
           this.logger.info({ channelId, statusCode, reason }, 'Logged out, clearing credentials');
+          await releaseLock(channelId); // Release distributed lock
           await session.deleteState();
           await this.updateChannelStatus(channelId, 'DISCONNECTED');
           this.sessions.delete(channelId);
@@ -303,11 +326,43 @@ export class SessionManager extends EventEmitter {
           return;
         }
 
+        // CONNECTION REPLACED: Another instance connected to this channel
+        // Per Baileys docs: DO NOT reconnect - another instance has taken over
+        if (isConnectionReplaced) {
+          this.logger.warn({
+            channelId,
+            instanceId: getInstanceId(),
+            statusCode,
+          }, 'Connection replaced by another instance - NOT reconnecting');
+
+          // Release lock (another instance should have it now)
+          await releaseLock(channelId);
+          this.sessions.delete(channelId);
+          this.reconnectAttempts.delete(channelId);
+          // Don't update channel status - let the other instance manage it
+          this.emit('disconnected', channelId, 'connectionReplaced');
+          return;
+        }
+
+        // Before attempting reconnection, verify we still own the lock
+        const stillOwnsLock = await ownsLock(channelId);
+        if (!stillOwnsLock) {
+          this.logger.warn({
+            channelId,
+            instanceId: getInstanceId(),
+          }, 'Lost distributed lock - another instance may have taken over, NOT reconnecting');
+          this.sessions.delete(channelId);
+          this.reconnectAttempts.delete(channelId);
+          this.emit('disconnected', channelId, 'Lost lock');
+          return;
+        }
+
         // All other disconnects: reconnect with exponential backoff
         const attempts = this.reconnectAttempts.get(channelId) || 0;
 
         if (attempts >= RECONNECT_CONFIG.MAX_ATTEMPTS) {
           this.logger.error({ channelId, attempts }, 'Max reconnection attempts reached, giving up');
+          await releaseLock(channelId); // Release distributed lock
           await this.updateChannelStatus(channelId, 'ERROR');
           this.sessions.delete(channelId);
           this.reconnectAttempts.delete(channelId);
@@ -324,11 +379,19 @@ export class SessionManager extends EventEmitter {
         this.reconnectAttempts.set(channelId, attempts + 1);
         this.logger.info({ channelId, attempt: attempts + 1, delayMs: delay }, 'Scheduling reconnection');
 
-        // Remove old session
+        // Remove old session (but keep the lock for reconnection)
         this.sessions.delete(channelId);
 
         const timer = setTimeout(async () => {
           this.reconnectTimers.delete(channelId);
+
+          // Check lock ownership again before reconnecting
+          const canReconnect = await ownsLock(channelId);
+          if (!canReconnect) {
+            this.logger.warn({ channelId }, 'Lost lock during reconnection delay, aborting');
+            return;
+          }
+
           try {
             await this.createSession(channelId, session.organizationId);
           } catch (error) {
@@ -1067,6 +1130,37 @@ export class SessionManager extends EventEmitter {
     await session.deleteState();
     this.sessions.delete(channelId);
     await this.updateChannelStatus(channelId, 'DISCONNECTED');
+
+    // Release distributed lock
+    await releaseLock(channelId);
+  }
+
+  /**
+   * Graceful shutdown - release all locks
+   * Call this before process exit
+   */
+  async shutdown(): Promise<void> {
+    this.logger.info({ instanceId: getInstanceId() }, 'Shutting down session manager, releasing all locks');
+
+    // Cancel all pending reconnection timers
+    for (const [channelId, timer] of this.reconnectTimers) {
+      clearTimeout(timer);
+      this.logger.debug({ channelId }, 'Cancelled reconnection timer on shutdown');
+    }
+    this.reconnectTimers.clear();
+
+    // Close all sessions and release locks
+    for (const [channelId, session] of this.sessions) {
+      try {
+        session.socket.end(undefined);
+      } catch (e) {
+        // Ignore
+      }
+    }
+    this.sessions.clear();
+
+    // Release all distributed locks held by this instance
+    await releaseAllLocks();
   }
 
   /**
@@ -1158,24 +1252,6 @@ export class SessionManager extends EventEmitter {
     }
   }
 
-  /**
-   * Cleanup on shutdown
-   */
-  async shutdown(): Promise<void> {
-    this.logger.info('Shutting down session manager...');
-
-    for (const [channelId, session] of this.sessions) {
-      try {
-        session.socket.end(undefined);
-        this.logger.info({ channelId }, 'Session closed');
-      } catch (error) {
-        this.logger.error({ channelId, error }, 'Error closing session');
-      }
-    }
-
-    this.sessions.clear();
-    this.logger.info('Session manager shutdown complete');
-  }
 }
 
 // Singleton instance
