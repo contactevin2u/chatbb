@@ -22,6 +22,7 @@ import {
   upsertContactFromSync,
 } from '../shared/utils/identifier';
 import { ChannelType, MessageDirection, MessageStatus, MessageType } from '@prisma/client';
+import { autoReplyHandler } from '../modules/ai/auto-reply.handler';
 
 // Queue names
 const QUEUES = {
@@ -367,6 +368,13 @@ async function processMessage(job: Job) {
     await redisClient.publish(`org:${channel.organizationId}:message`, messagePayload);
 
     logger.info({ channelId, messageId: externalId, assignedUserId }, 'Processed incoming message');
+
+    // Trigger AI auto-reply for inbound messages (non-blocking)
+    if (!isFromMe && savedMessage) {
+      autoReplyHandler.handleIncomingMessage(conversation.id, savedMessage).catch((err) => {
+        logger.error({ error: err.message, conversationId: conversation.id }, 'Auto-reply handler error');
+      });
+    }
 
   } else if (jobName === 'status_update') {
     // Process message status update

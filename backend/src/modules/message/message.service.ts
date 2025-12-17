@@ -19,8 +19,8 @@ export interface GetMessagesInput {
 
 export interface SendMessageInput {
   conversationId: string;
-  organizationId: string;
-  userId: string;
+  organizationId?: string;
+  userId?: string;
   text?: string;
   media?: {
     type: 'image' | 'video' | 'audio' | 'document';
@@ -31,6 +31,7 @@ export interface SendMessageInput {
     caption?: string;
   };
   quotedMessageId?: string;
+  isAIGenerated?: boolean;
 }
 
 export class MessageService {
@@ -170,13 +171,13 @@ export class MessageService {
    * Send a message (optimized for speed)
    */
   async sendMessage(input: SendMessageInput) {
-    const { conversationId, organizationId, userId, text, media, quotedMessageId } = input;
+    const { conversationId, organizationId, userId, text, media, quotedMessageId, isAIGenerated } = input;
 
     // Get conversation with channel info
     const conversation = await prisma.conversation.findFirst({
       where: {
         id: conversationId,
-        organizationId,
+        ...(organizationId && { organizationId }),
       },
       include: {
         channel: true,
@@ -242,7 +243,8 @@ export class MessageService {
         type: messageType,
         content: messageContent,
         status: MessageStatus.PENDING,
-        sentByUserId: userId,
+        sentByUserId: userId || null,
+        isAIGenerated: isAIGenerated || false,
       },
       include: {
         sentByUser: {

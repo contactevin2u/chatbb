@@ -35,6 +35,8 @@ model Organization {
   broadcasts        Broadcast[]
   webhooks          Webhook[]
   auditLogs         AuditLog[]
+  knowledgeItems    KnowledgeItem[]
+  aiConfig          AIConfig?
 
   @@map("organizations")
 }
@@ -462,6 +464,7 @@ model Message {
   readAt         DateTime?        @map("read_at")
   failedReason   String?          @map("failed_reason")
   metadata       Json             @default("{}")
+  isAIGenerated  Boolean          @default(false) @map("is_ai_generated")
   createdAt      DateTime         @default(now()) @map("created_at")
 
   conversation Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -845,4 +848,69 @@ model AuditLog {
   @@index([organizationId, createdAt(sort: Desc)])
   @@index([entityType, entityId])
   @@map("audit_logs")
+}
+
+// ==================== AI KNOWLEDGE BANK ====================
+
+model KnowledgeItem {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String        @map("organization_id") @db.Uuid
+  type           KnowledgeType
+  title          String
+  content        String        @db.Text
+  keywords       String[]
+  category       String?
+  isActive       Boolean       @default(true) @map("is_active")
+  priority       Int           @default(0)
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([type])
+  @@index([isActive])
+  @@map("knowledge_items")
+}
+
+enum KnowledgeType {
+  FAQ
+  PRODUCT
+  POLICY
+  GENERAL
+}
+
+model AIConfig {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId    String   @unique @map("organization_id") @db.Uuid
+
+  // OpenAI Settings
+  openaiApiKey      String?  @map("openai_api_key")
+  model             String   @default("gpt-4o-mini")
+
+  // Auto-Reply Settings
+  isEnabled         Boolean  @default(false) @map("is_enabled")
+  replyToAll        Boolean  @default(false) @map("reply_to_all")
+  responseDelayMs   Int      @default(2000) @map("response_delay_ms")
+
+  // Business Hours (Malaysia Time UTC+8)
+  businessHoursOnly Boolean  @default(false) @map("business_hours_only")
+  businessStart     String?  @map("business_start")
+  businessEnd       String?  @map("business_end")
+  offHoursMessage   String?  @map("off_hours_message")
+
+  // Handoff Settings
+  handoffKeywords   String[] @map("handoff_keywords")
+  handoffMessage    String?  @map("handoff_message")
+
+  // Prompt Settings
+  systemPrompt      String?  @map("system_prompt") @db.Text
+  companyName       String?  @map("company_name")
+
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("ai_configs")
 }

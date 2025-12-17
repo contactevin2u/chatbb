@@ -27,6 +27,8 @@ import { tagRoutes } from './modules/tag/tag.routes.js';
 import { quickReplyRoutes } from './modules/quick-reply/quick-reply.routes.js';
 import { scheduledMessageRoutes } from './modules/scheduled-message/scheduled-message.routes.js';
 import { sequenceRoutes } from './modules/sequence/sequence.routes.js';
+import knowledgeRoutes from './modules/knowledge/knowledge.routes.js';
+import aiRoutes from './modules/ai/ai.routes.js';
 
 export function createApp(): Express {
   const app = express();
@@ -113,6 +115,8 @@ export function createApp(): Express {
   app.use(`${apiPrefix}/quick-replies`, quickReplyRoutes);
   app.use(`${apiPrefix}/scheduled-messages`, scheduledMessageRoutes);
   app.use(`${apiPrefix}/sequences`, sequenceRoutes);
+  app.use(`${apiPrefix}/knowledge`, knowledgeRoutes);
+  app.use(`${apiPrefix}/ai`, aiRoutes);
 
   // 404 handler
   app.use((_req: Request, res: Response) => {
