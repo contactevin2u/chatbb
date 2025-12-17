@@ -431,6 +431,257 @@ export class MessageService {
   }
 
   /**
+   * Edit a message
+   * Sends edit via WhatsApp and updates locally
+   */
+  async editMessage(messageId: string, organizationId: string, newText: string) {
+    const message = await prisma.message.findFirst({
+      where: {
+        id: messageId,
+        conversation: {
+          organizationId,
+        },
+      },
+      include: {
+        conversation: {
+          include: {
+            channel: true,
+            contact: true,
+          },
+        },
+      },
+    });
+
+    if (!message) {
+      throw new Error('Message not found');
+    }
+
+    if (!message.externalId) {
+      throw new Error('Cannot edit this message (no external ID)');
+    }
+
+    if (message.direction !== MessageDirection.OUTBOUND) {
+      throw new Error('Can only edit outbound messages');
+    }
+
+    if (message.conversation.channel.type !== 'WHATSAPP') {
+      throw new Error('Edit is only supported for WhatsApp messages');
+    }
+
+    // Build message key for the edit
+    const recipient = message.conversation.contact.identifier;
+    const messageKey = {
+      remoteJid: `${recipient}@s.whatsapp.net`,
+      id: message.externalId,
+      fromMe: true,
+    };
+
+    // Send edit via WhatsApp
+    await whatsappService.editMessage(
+      message.conversation.channelId,
+      messageKey,
+      newText
+    );
+
+    // Update local message
+    const currentContent = message.content as any || {};
+    const updatedMessage = await prisma.message.update({
+      where: { id: messageId },
+      data: {
+        content: {
+          ...currentContent,
+          text: newText,
+          edited: true,
+          editedAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    // Emit update to conversation
+    socketServer.to(`conversation:${message.conversationId}`).emit('message:edited', {
+      messageId: message.id,
+      newText,
+      editedAt: new Date().toISOString(),
+    });
+
+    return updatedMessage;
+  }
+
+  /**
+   * Send a poll
+   */
+  async sendPoll(input: {
+    conversationId: string;
+    organizationId: string;
+    userId: string;
+    name: string;
+    options: string[];
+    selectableCount?: number;
+  }) {
+    const { conversationId, organizationId, userId, name, options, selectableCount = 1 } = input;
+
+    const conversation = await prisma.conversation.findFirst({
+      where: {
+        id: conversationId,
+        organizationId,
+      },
+      include: {
+        channel: true,
+        contact: true,
+      },
+    });
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    if (conversation.channel.type !== 'WHATSAPP') {
+      throw new Error('Polls are only supported for WhatsApp');
+    }
+
+    // Create message record
+    const message = await prisma.message.create({
+      data: {
+        conversationId,
+        channelId: conversation.channelId,
+        direction: MessageDirection.OUTBOUND,
+        type: MessageType.INTERACTIVE,
+        content: {
+          poll: { name, options, selectableCount },
+        },
+        status: MessageStatus.PENDING,
+        sentByUserId: userId,
+      },
+      include: {
+        sentByUser: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatarUrl: true,
+          },
+        },
+      },
+    });
+
+    try {
+      // Send poll via WhatsApp
+      const result = await whatsappService.sendPoll(
+        conversation.channelId,
+        conversation.contact.identifier,
+        { name, options, selectableCount }
+      );
+
+      // Update message with external ID
+      const updatedMessage = await prisma.message.update({
+        where: { id: message.id },
+        data: {
+          externalId: result?.key?.id,
+          status: MessageStatus.SENT,
+          sentAt: new Date(),
+        },
+        include: {
+          sentByUser: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              avatarUrl: true,
+            },
+          },
+        },
+      });
+
+      // Update conversation lastMessageAt
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: { lastMessageAt: new Date() },
+      });
+
+      // Emit to WebSocket
+      socketServer.to(`conversation:${conversationId}`).emit('message:new', {
+        message: updatedMessage,
+      });
+
+      return updatedMessage;
+    } catch (error) {
+      // Mark message as failed
+      await prisma.message.update({
+        where: { id: message.id },
+        data: {
+          status: MessageStatus.FAILED,
+          failedReason: (error as Error).message,
+        },
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a message via WhatsApp (delete for everyone)
+   */
+  async deleteMessageForEveryone(messageId: string, organizationId: string) {
+    const message = await prisma.message.findFirst({
+      where: {
+        id: messageId,
+        conversation: {
+          organizationId,
+        },
+      },
+      include: {
+        conversation: {
+          include: {
+            channel: true,
+            contact: true,
+          },
+        },
+      },
+    });
+
+    if (!message) {
+      throw new Error('Message not found');
+    }
+
+    if (!message.externalId) {
+      throw new Error('Cannot delete this message (no external ID)');
+    }
+
+    if (message.direction !== MessageDirection.OUTBOUND) {
+      throw new Error('Can only delete outbound messages');
+    }
+
+    if (message.conversation.channel.type !== 'WHATSAPP') {
+      throw new Error('Delete for everyone is only supported for WhatsApp');
+    }
+
+    // Build message key
+    const recipient = message.conversation.contact.identifier;
+    const messageKey = {
+      remoteJid: `${recipient}@s.whatsapp.net`,
+      id: message.externalId,
+      fromMe: true,
+    };
+
+    // Delete via WhatsApp
+    await whatsappService.deleteMessage(message.conversation.channelId, messageKey);
+
+    // Update local message
+    const deletedMessage = await prisma.message.update({
+      where: { id: messageId },
+      data: {
+        content: { deleted: true, originalType: message.type },
+        type: MessageType.SYSTEM,
+      },
+    });
+
+    socketServer.to(`conversation:${message.conversationId}`).emit('message:deleted', {
+      messageId: message.id,
+    });
+
+    return deletedMessage;
+  }
+
+  /**
    * React to a message
    * Sends reaction via WhatsApp and stores it locally
    */

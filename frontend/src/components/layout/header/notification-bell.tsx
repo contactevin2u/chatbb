@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bell, Clock, AlertTriangle, AlertCircle, MessageSquare } from 'lucide-react';
+import { Bell, Clock, AlertTriangle, AlertCircle, MessageSquare, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -12,8 +12,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { getUnrepliedConversations, UnrepliedResponse } from '@/lib/api/conversations';
+import { getUnrepliedConversations, UnrepliedResponse, updateConversation } from '@/lib/api/conversations';
 import { cn } from '@/lib/utils/cn';
+import { toast } from 'sonner';
 
 export function NotificationBell() {
   const router = useRouter();
@@ -40,6 +41,36 @@ export function NotificationBell() {
 
   const handleConversationClick = (conversationId: string) => {
     router.push(`/inbox?conversation=${conversationId}`);
+  };
+
+  const handleMarkAsReplied = async (e: React.MouseEvent, conversationId: string) => {
+    e.stopPropagation(); // Prevent navigation
+    try {
+      await updateConversation(conversationId, { status: 'RESOLVED' });
+      // Remove from local state
+      setData((prev) => {
+        if (!prev) return prev;
+        const updatedConversations = prev.conversations.filter((c) => c.id !== conversationId);
+        // Recalculate counts
+        const now = Date.now();
+        const oneHourAgo = now - 60 * 60 * 1000;
+        const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
+        return {
+          ...prev,
+          total: prev.total - 1,
+          conversations: updatedConversations,
+          urgent: updatedConversations.filter((c) => c.waitMinutes > 24 * 60).length,
+          warning: updatedConversations.filter(
+            (c) => c.waitMinutes > 60 && c.waitMinutes <= 24 * 60
+          ).length,
+          recent: updatedConversations.filter((c) => c.waitMinutes <= 60).length,
+        };
+      });
+      toast.success('Marked as replied');
+    } catch (error) {
+      console.error('Failed to mark as replied:', error);
+      toast.error('Failed to mark as replied');
+    }
   };
 
   const formatWaitTime = (minutes: number): string => {
@@ -90,7 +121,7 @@ export function NotificationBell() {
       <DropdownMenuContent className="w-80" align="end" forceMount>
         <DropdownMenuLabel className="flex items-center justify-between">
           <span>Unreplied Messages</span>
-          <span className="text-xs font-normal text-muted-foreground">Last 72 hours</span>
+          <span className="text-xs font-normal text-muted-foreground">Last 90 days</span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
 
@@ -133,9 +164,16 @@ export function NotificationBell() {
                     <p className="text-sm font-medium truncate">{conv.contactName}</p>
                     <p className="text-xs text-muted-foreground truncate">{conv.channelName}</p>
                   </div>
-                  <span className={cn('text-xs font-medium', getUrgencyColor(conv.waitMinutes))}>
+                  <span className={cn('text-xs font-medium mr-1', getUrgencyColor(conv.waitMinutes))}>
                     {formatWaitTime(conv.waitMinutes)}
                   </span>
+                  <button
+                    onClick={(e) => handleMarkAsReplied(e, conv.id)}
+                    className="flex-shrink-0 p-1 rounded hover:bg-accent transition-colors"
+                    title="Mark as replied"
+                  >
+                    <Check className="h-3.5 w-3.5 text-muted-foreground hover:text-primary" />
+                  </button>
                 </DropdownMenuItem>
               ))}
             </div>

@@ -660,6 +660,51 @@ export class WhatsAppService {
     };
     return typeMap[mediaType] || MessageType.TEXT;
   }
+
+  /**
+   * Edit a message via WhatsApp Worker
+   */
+  async editMessage(
+    channelId: string,
+    messageKey: { remoteJid: string; id: string; fromMe: boolean },
+    newText: string
+  ): Promise<void> {
+    await this.sendCommand(
+      'edit',
+      channelId,
+      { messageKey, newText }
+    );
+  }
+
+  /**
+   * Send a poll via WhatsApp Worker
+   */
+  async sendPoll(
+    channelId: string,
+    to: string,
+    poll: { name: string; options: string[]; selectableCount?: number }
+  ): Promise<{ key?: { id?: string } }> {
+    const response = await this.sendCommand<{ success: boolean; messageId?: string }>(
+      'poll',
+      channelId,
+      { to, poll }
+    );
+    return { key: { id: response.messageId } };
+  }
+
+  /**
+   * Delete a message via WhatsApp Worker
+   */
+  async deleteMessage(
+    channelId: string,
+    messageKey: { remoteJid: string; id: string; fromMe: boolean }
+  ): Promise<void> {
+    await this.sendCommand(
+      'delete',
+      channelId,
+      { messageKey }
+    );
+  }
 }
 
 // Singleton instance

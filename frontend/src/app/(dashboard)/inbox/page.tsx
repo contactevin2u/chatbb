@@ -77,6 +77,7 @@ import { useKeyboardShortcuts, KeyboardShortcut } from '@/hooks/use-keyboard-sho
 import { SlashCommand, SlashCommandItem } from '@/components/slash-command';
 import { startSequenceExecution } from '@/lib/api/sequences';
 import { ScheduleMessageDialog } from '@/components/schedule-message-dialog';
+import { TagDropdown } from '@/components/tag-dropdown';
 import { QuickReply } from '@/lib/api/quick-replies';
 import { listScheduledMessages, cancelScheduledMessage, ScheduledMessage } from '@/lib/api/scheduled-messages';
 import {
@@ -255,7 +256,7 @@ export default function InboxPage() {
   const urlConversationId = searchParams.get('conversation');
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(urlConversationId);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<ConversationStatus[]>(['OPEN', 'PENDING']);
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [messageText, setMessageText] = useState('');
   const [showContactPanel, setShowContactPanel] = useState(true);
   const [typingUsers, setTypingUsers] = useState<Map<string, string>>(new Map());
@@ -285,11 +286,17 @@ export default function InboxPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
 
+  // Fetch all tags for the organization
+  const { data: allTags } = useQuery({
+    queryKey: ['tags'],
+    queryFn: listTags,
+  });
+
   // Fetch conversations
   const { data: conversationsData, isLoading: isLoadingConversations } = useQuery({
-    queryKey: ['conversations', statusFilter, searchQuery],
+    queryKey: ['conversations', selectedTagIds, searchQuery],
     queryFn: () => listConversations({
-      status: statusFilter,
+      tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
       search: searchQuery || undefined,
       sortBy: 'lastMessageAt',
       sortOrder: 'desc',
@@ -313,6 +320,8 @@ export default function InboxPage() {
   useEffect(() => {
     if (urlConversationId && urlConversationId !== selectedConversationId) {
       setSelectedConversationId(urlConversationId);
+      // Clear tag filter to ensure the conversation is visible
+      setSelectedTagIds([]);
     }
   }, [urlConversationId]);
 
@@ -422,12 +431,6 @@ export default function InboxPage() {
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to delete note');
     },
-  });
-
-  // Fetch tags
-  const { data: allTags } = useQuery({
-    queryKey: ['tags'],
-    queryFn: listTags,
   });
 
   // Fetch conversation notes
@@ -977,24 +980,39 @@ export default function InboxPage() {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <div className="flex gap-1">
-            {(['OPEN', 'PENDING', 'RESOLVED', 'CLOSED'] as ConversationStatus[]).map((status) => (
+          {/* Tag filter chips */}
+          <div className="flex gap-1 flex-wrap">
+            {allTags?.map((tag) => (
               <Button
-                key={status}
-                variant={statusFilter.includes(status) ? 'default' : 'outline'}
+                key={tag.id}
+                variant={selectedTagIds.includes(tag.id) ? 'default' : 'outline'}
                 size="sm"
-                className="text-xs"
+                className="text-xs h-7 gap-1"
                 onClick={() => {
-                  setStatusFilter((prev) =>
-                    prev.includes(status)
-                      ? prev.filter((s) => s !== status)
-                      : [...prev, status]
+                  setSelectedTagIds((prev) =>
+                    prev.includes(tag.id)
+                      ? prev.filter((id) => id !== tag.id)
+                      : [...prev, tag.id]
                   );
                 }}
               >
-                {status.charAt(0) + status.slice(1).toLowerCase()}
+                <span
+                  className="w-2 h-2 rounded-full"
+                  style={{ backgroundColor: tag.color || '#6b7280' }}
+                />
+                {tag.name}
               </Button>
             ))}
+            {selectedTagIds.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs h-7"
+                onClick={() => setSelectedTagIds([])}
+              >
+                Clear
+              </Button>
+            )}
           </div>
         </div>
 
@@ -1028,7 +1046,7 @@ export default function InboxPage() {
                   )}
                   onClick={() => handleSelectConversation(conversation.id)}
                 >
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-start gap-3 group">
                     <div className="relative flex-shrink-0">
                       <Avatar className="h-10 w-10">
                         <AvatarImage
@@ -1054,6 +1072,11 @@ export default function InboxPage() {
                         </span>
                       )}
                     </div>
+                    {/* Tag dropdown beside avatar */}
+                    <TagDropdown
+                      conversationId={conversation.id}
+                      currentTags={conversation.tags || []}
+                    />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5 min-w-0">

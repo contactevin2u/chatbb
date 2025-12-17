@@ -364,6 +364,21 @@ async function setupCommandSubscriber() {
           await handleReconnectCommand(channelId, data);
           break;
 
+        case 'edit':
+          // Edit a message
+          await handleEditCommand(channelId, data);
+          break;
+
+        case 'poll':
+          // Send a poll
+          await handlePollCommand(channelId, data);
+          break;
+
+        case 'delete':
+          // Delete a message
+          await handleDeleteCommand(channelId, data);
+          break;
+
         default:
           logger.warn({ command }, 'Unknown command');
       }
@@ -624,6 +639,60 @@ async function handleReconnectCommand(channelId: string, data: { organizationId:
   }
 }
 
+async function handleEditCommand(channelId: string, data: {
+  messageKey: { remoteJid: string; id: string; fromMe: boolean };
+  newText: string;
+  requestId: string;
+}) {
+  try {
+    await sessionManager.editMessage(channelId, data.messageKey, data.newText);
+    await redisClient.publish(`whatsapp:response:${data.requestId}`, JSON.stringify({
+      success: true,
+    }));
+  } catch (error) {
+    await redisClient.publish(`whatsapp:response:${data.requestId}`, JSON.stringify({
+      success: false,
+      error: (error as Error).message,
+    }));
+  }
+}
+
+async function handlePollCommand(channelId: string, data: {
+  to: string;
+  poll: { name: string; options: string[]; selectableCount?: number };
+  requestId: string;
+}) {
+  try {
+    const result = await sessionManager.sendPoll(channelId, data.to, data.poll);
+    await redisClient.publish(`whatsapp:response:${data.requestId}`, JSON.stringify({
+      success: true,
+      messageId: result?.key?.id,
+    }));
+  } catch (error) {
+    await redisClient.publish(`whatsapp:response:${data.requestId}`, JSON.stringify({
+      success: false,
+      error: (error as Error).message,
+    }));
+  }
+}
+
+async function handleDeleteCommand(channelId: string, data: {
+  messageKey: { remoteJid: string; id: string; fromMe: boolean };
+  requestId: string;
+}) {
+  try {
+    await sessionManager.deleteMessage(channelId, data.messageKey);
+    await redisClient.publish(`whatsapp:response:${data.requestId}`, JSON.stringify({
+      success: true,
+    }));
+  } catch (error) {
+    await redisClient.publish(`whatsapp:response:${data.requestId}`, JSON.stringify({
+      success: false,
+      error: (error as Error).message,
+    }));
+  }
+}
+
 async function main() {
   logger.info('Starting WhatsApp Worker...');
 
@@ -723,7 +792,7 @@ async function main() {
     logger.info('  - Queues background jobs to BullMQ');
 
     // Health check - log session stats every minute
-    setInterval(() => {
+    setInterval(async () => {
       const sessions = sessionManager.getAllSessions();
       const stats = {
         total: sessions.size,
@@ -751,6 +820,21 @@ async function main() {
       }
 
       logger.info(stats, 'Session health check');
+
+      // Auto-reconnect stale channels that have saved credentials but no active session
+      try {
+        const staleChannels = await sessionManager.getStaleChannels();
+        if (staleChannels.length > 0) {
+          logger.info({ count: staleChannels.length }, 'Found stale channels with credentials - auto-reconnecting');
+          for (const channel of staleChannels) {
+            // Stagger reconnections to avoid overwhelming the system
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            await sessionManager.reconnectStaleChannel(channel.id, channel.organizationId);
+          }
+        }
+      } catch (error) {
+        logger.error({ error }, 'Failed to check/reconnect stale channels');
+      }
     }, 60000);
 
     // Sync timeout check - mark sync complete if stale (every 2 minutes)

@@ -155,6 +155,7 @@ export interface ListConversationsParams {
   status?: ConversationStatus | ConversationStatus[];
   assignedUserId?: string | null;
   channelId?: string;
+  tagIds?: string[];
   search?: string;
   limit?: number;
   offset?: number;
@@ -188,6 +189,9 @@ export async function listConversations(params: ListConversationsParams = {}): P
     searchParams.set('assignedUserId', params.assignedUserId === null ? 'null' : params.assignedUserId);
   }
   if (params.channelId) searchParams.set('channelId', params.channelId);
+  if (params.tagIds && params.tagIds.length > 0) {
+    searchParams.set('tagIds', params.tagIds.join(','));
+  }
   if (params.search) searchParams.set('search', params.search);
   if (params.limit) searchParams.set('limit', params.limit.toString());
   if (params.offset) searchParams.set('offset', params.offset.toString());
@@ -251,7 +255,7 @@ export async function getConversationStats(): Promise<ConversationStats> {
   return response.data.data;
 }
 
-// Unreplied conversations (72 hours)
+// Unreplied conversations (90 days)
 
 export interface UnrepliedConversation {
   id: string;
@@ -470,4 +474,30 @@ export async function updateTag(tagId: string, data: { name?: string; color?: st
 
 export async function deleteTag(tagId: string): Promise<void> {
   await apiClient.delete(`/tags/${tagId}`);
+}
+
+// Poll, Edit, Delete message
+
+export interface SendPollInput {
+  conversationId: string;
+  name: string;
+  options: string[];
+  selectableCount?: number;
+}
+
+export async function sendPoll(data: SendPollInput): Promise<Message> {
+  const response = await apiClient.post<{ success: boolean; data: Message }>('/messages/poll', data);
+  return response.data.data;
+}
+
+export async function editMessage(messageId: string, text: string): Promise<Message> {
+  const response = await apiClient.patch<{ success: boolean; data: Message }>(
+    `/messages/${messageId}/edit`,
+    { text }
+  );
+  return response.data.data;
+}
+
+export async function deleteMessageForEveryone(messageId: string): Promise<void> {
+  await apiClient.delete(`/messages/${messageId}/everyone`);
 }

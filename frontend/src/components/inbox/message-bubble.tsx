@@ -17,9 +17,18 @@ import {
   FileSpreadsheet,
   FileImage,
   File,
+  Pencil,
+  Trash2,
+  MoreVertical,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils/cn';
 import { formatWhatsAppText } from '@/lib/utils/whatsapp-formatting';
 
@@ -69,6 +78,8 @@ interface MessageBubbleProps {
   senderName?: string;
   onReply?: (message: MessageData) => void;
   onReaction?: (messageId: string, emoji: string) => void;
+  onEdit?: (message: MessageData) => void;
+  onDelete?: (message: MessageData) => void;
   playingAudioId?: string | null;
   onAudioPlay?: (id: string) => void;
   onAudioPause?: () => void;
@@ -109,6 +120,8 @@ export const MessageBubble = memo(function MessageBubble({
   senderName,
   onReply,
   onReaction,
+  onEdit,
+  onDelete,
   playingAudioId,
   onAudioPlay,
   onAudioPause,
@@ -117,6 +130,8 @@ export const MessageBubble = memo(function MessageBubble({
 }: MessageBubbleProps) {
   const isOutbound = message.direction === 'OUTBOUND';
   const [showActions, setShowActions] = useState(false);
+  const canEdit = isOutbound && message.type === 'TEXT' && message.status !== 'FAILED';
+  const canDelete = isOutbound && message.status !== 'FAILED';
 
   const renderContent = () => {
     const { type, content } = message;
@@ -273,14 +288,15 @@ export const MessageBubble = memo(function MessageBubble({
         {message.quotedMessage && (
           <div
             className={cn(
-              'text-xs p-2 rounded border-l-2 mb-1 max-w-[250px]',
+              'text-xs p-2 rounded border-l-2 mb-1 w-full min-w-[120px]',
               isOutbound
-                ? 'bg-primary/10 border-primary/50'
+                ? 'bg-white/20 border-white/50'
                 : 'bg-muted border-muted-foreground/50'
             )}
           >
-            <p className="truncate">
+            <p className="line-clamp-2 break-words">
               {message.quotedMessage.content.text ||
+                message.quotedMessage.content.caption ||
                 `[${message.quotedMessage.type}]`}
             </p>
           </div>
@@ -365,6 +381,37 @@ export const MessageBubble = memo(function MessageBubble({
           >
             <ThumbsUp className="h-3.5 w-3.5" />
           </Button>
+          {/* Edit/Delete dropdown for outbound messages */}
+          {(canEdit || canDelete) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 hover:bg-pink-100 dark:hover:bg-purple-900/50 rounded-full transition-all hover:scale-110"
+                >
+                  <MoreVertical className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align={isOutbound ? 'end' : 'start'}>
+                {canEdit && (
+                  <DropdownMenuItem onClick={() => onEdit?.(message)}>
+                    <Pencil className="h-4 w-4 mr-2" />
+                    Edit
+                  </DropdownMenuItem>
+                )}
+                {canDelete && (
+                  <DropdownMenuItem
+                    onClick={() => onDelete?.(message)}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete for everyone
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       )}
     </div>

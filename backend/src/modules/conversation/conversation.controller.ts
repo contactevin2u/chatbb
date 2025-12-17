@@ -21,6 +21,7 @@ export class ConversationController {
         status,
         assignedUserId,
         channelId,
+        tagIds,
         search,
         limit,
         offset,
@@ -39,11 +40,18 @@ export class ConversationController {
         }
       }
 
+      // Parse tagIds (can be comma-separated)
+      let tagIdsFilter: string[] | undefined;
+      if (tagIds) {
+        tagIdsFilter = (tagIds as string).split(',').filter(Boolean);
+      }
+
       const result = await conversationService.listConversations({
         organizationId,
         status: statusFilter,
         assignedUserId: assignedUserId === 'null' ? null : (assignedUserId as string | undefined),
         channelId: channelId as string | undefined,
+        tagIds: tagIdsFilter,
         search: search as string | undefined,
         limit: limit ? parseInt(limit as string, 10) : undefined,
         offset: offset ? parseInt(offset as string, 10) : undefined,

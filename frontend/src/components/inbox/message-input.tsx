@@ -14,12 +14,14 @@ import {
   FileImage,
   File,
   Clock,
+  BarChart3,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SlashCommand, SlashCommandItem } from '@/components/slash-command';
 import { ScheduleMessageDialog } from '@/components/schedule-message-dialog';
+import { PollDialog } from '@/components/poll-dialog';
 import { QuickReply } from '@/lib/api/quick-replies';
 import { startSequenceExecution } from '@/lib/api/sequences';
 import { cn } from '@/lib/utils/cn';
@@ -116,6 +118,7 @@ export const MessageInput = memo(function MessageInput({
   const [slashCommandOpen, setSlashCommandOpen] = useState(false);
   const [slashSearchTerm, setSlashSearchTerm] = useState('');
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [pollDialogOpen, setPollDialogOpen] = useState(false);
 
   const isClosed = conversationStatus === 'CLOSED';
   const hasContent = messageText.trim() || selectedMedia;
@@ -345,6 +348,17 @@ export const MessageInput = memo(function MessageInput({
           <Button variant="ghost" size="icon" className="hover:bg-pink-100 dark:hover:bg-purple-900/50 text-pink-600 dark:text-pink-400 rounded-full transition-all hover:scale-110">
             <Smile className="h-5 w-5" />
           </Button>
+          {/* Poll button */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setPollDialogOpen(true)}
+            disabled={isClosed}
+            title="Create poll"
+            className="hover:bg-pink-100 dark:hover:bg-purple-900/50 text-pink-600 dark:text-pink-400 rounded-full transition-all hover:scale-110"
+          >
+            <BarChart3 className="h-5 w-5" />
+          </Button>
           {/* Schedule button - only show when there's content */}
           {hasContent && (
             <Button
@@ -397,6 +411,14 @@ export const MessageInput = memo(function MessageInput({
           onClearMedia();
         }}
       />
+
+      {/* Poll Dialog */}
+      <PollDialog
+        open={pollDialogOpen}
+        onOpenChange={setPollDialogOpen}
+        conversationId={conversationId}
+      />
+
       {isClosed && (
         <p className="text-xs text-pink-500 dark:text-pink-400 mt-2 text-center">
           This conversation is closed.{' '}

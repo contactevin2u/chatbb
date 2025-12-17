@@ -73,7 +73,7 @@ router.get(
 
 /**
  * @route   GET /api/v1/conversations/unreplied
- * @desc    Get unreplied conversations count (last 72 hours)
+ * @desc    Get unreplied conversations count (last 90 days)
  * @access  Private (conversations:view)
  */
 router.get(

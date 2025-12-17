@@ -116,6 +116,95 @@ export class MessageController {
       next(error);
     }
   }
+
+  /**
+   * Edit a message
+   * PATCH /api/v1/messages/:id/edit
+   */
+  async editMessage(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId } = req.user!;
+      const { id } = req.params;
+      const { text } = req.body;
+
+      if (!text) {
+        return res.status(400).json({
+          success: false,
+          error: 'text is required',
+        });
+      }
+
+      const result = await messageService.editMessage(id, organizationId, text);
+
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Send a poll
+   * POST /api/v1/messages/poll
+   */
+  async sendPoll(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId, sub: userId } = req.user!;
+      const { conversationId, name, options, selectableCount } = req.body;
+
+      if (!conversationId) {
+        return res.status(400).json({
+          success: false,
+          error: 'conversationId is required',
+        });
+      }
+
+      if (!name || !options || options.length < 2) {
+        return res.status(400).json({
+          success: false,
+          error: 'Poll name and at least 2 options are required',
+        });
+      }
+
+      const message = await messageService.sendPoll({
+        conversationId,
+        organizationId,
+        userId,
+        name,
+        options,
+        selectableCount,
+      });
+
+      res.status(201).json({
+        success: true,
+        data: message,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Delete message for everyone
+   * DELETE /api/v1/messages/:id/everyone
+   */
+  async deleteMessageForEveryone(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId } = req.user!;
+      const { id } = req.params;
+
+      const result = await messageService.deleteMessageForEveryone(id, organizationId);
+
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const messageController = new MessageController();

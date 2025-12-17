@@ -36,6 +36,17 @@ const reactToMessageSchema = z.object({
   emoji: z.string(), // Empty string to remove reaction
 });
 
+const editMessageSchema = z.object({
+  text: z.string().min(1),
+});
+
+const sendPollSchema = z.object({
+  conversationId: z.string().uuid(),
+  name: z.string().min(1).max(256),
+  options: z.array(z.string().min(1).max(100)).min(2).max(12),
+  selectableCount: z.number().min(1).optional(),
+});
+
 // Validation middleware
 const validate = (schema: z.ZodSchema) => {
   return (req: any, res: any, next: any) => {
@@ -99,6 +110,41 @@ router.post(
   requirePermission('conversations:reply'),
   validate(reactToMessageSchema),
   messageController.reactToMessage.bind(messageController)
+);
+
+/**
+ * @route   PATCH /api/v1/messages/:id/edit
+ * @desc    Edit a message
+ * @access  Private (conversations:edit)
+ */
+router.patch(
+  '/:id/edit',
+  requirePermission('conversations:edit'),
+  validate(editMessageSchema),
+  messageController.editMessage.bind(messageController)
+);
+
+/**
+ * @route   POST /api/v1/messages/poll
+ * @desc    Send a poll
+ * @access  Private (conversations:reply)
+ */
+router.post(
+  '/poll',
+  requirePermission('conversations:reply'),
+  validate(sendPollSchema),
+  messageController.sendPoll.bind(messageController)
+);
+
+/**
+ * @route   DELETE /api/v1/messages/:id/everyone
+ * @desc    Delete message for everyone
+ * @access  Private (conversations:edit)
+ */
+router.delete(
+  '/:id/everyone',
+  requirePermission('conversations:edit'),
+  messageController.deleteMessageForEveryone.bind(messageController)
 );
 
 export const messageRoutes = router;

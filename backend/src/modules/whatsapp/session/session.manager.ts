@@ -95,17 +95,33 @@ export class SessionManager extends EventEmitter {
   async initializeAllSessions(): Promise<void> {
     this.logger.info('Initializing all WhatsApp sessions...');
 
+    // Find all WhatsApp channels that were previously connected OR have saved credentials
     const channels = await prisma.channel.findMany({
       where: {
         type: 'WHATSAPP',
-        status: {
-          in: ['CONNECTED', 'CONNECTING'],
-        },
+        // Include CONNECTED, CONNECTING, and DISCONNECTED with credentials
+        OR: [
+          { status: { in: ['CONNECTED', 'CONNECTING'] } },
+          // DISCONNECTED channels that have credentials should auto-reconnect
+          { status: 'DISCONNECTED' },
+        ],
       },
     });
 
+    this.logger.info({ totalChannels: channels.length }, 'Found WhatsApp channels to check');
+
     for (const channel of channels) {
       try {
+        // For DISCONNECTED channels, check if they have saved auth state
+        if (channel.status === 'DISCONNECTED') {
+          const hasState = await hasAuthState(channel.id);
+          if (!hasState) {
+            this.logger.info({ channelId: channel.id }, 'Skipping DISCONNECTED channel - no saved credentials');
+            continue;
+          }
+          this.logger.info({ channelId: channel.id }, 'Auto-reconnecting DISCONNECTED channel with saved credentials');
+        }
+
         await this.createSession(channel.id, channel.organizationId);
       } catch (error) {
         this.logger.error({ channelId: channel.id, error }, 'Failed to initialize session');
@@ -113,6 +129,67 @@ export class SessionManager extends EventEmitter {
     }
 
     this.logger.info(`Initialized ${this.sessions.size} WhatsApp sessions`);
+  }
+
+  /**
+   * Get channels that should be connected but aren't
+   * Used by the worker for periodic reconnection checks
+   */
+  async getStaleChannels(): Promise<Array<{ id: string; organizationId: string }>> {
+    // Find channels that have auth state but aren't in our sessions map
+    const allChannels = await prisma.channel.findMany({
+      where: {
+        type: 'WHATSAPP',
+      },
+      select: {
+        id: true,
+        organizationId: true,
+        status: true,
+      },
+    });
+
+    const staleChannels: Array<{ id: string; organizationId: string }> = [];
+
+    for (const channel of allChannels) {
+      // Skip if already in sessions
+      if (this.sessions.has(channel.id)) {
+        continue;
+      }
+
+      // Check if has saved credentials
+      const hasState = await hasAuthState(channel.id);
+      if (hasState) {
+        staleChannels.push({ id: channel.id, organizationId: channel.organizationId });
+      }
+    }
+
+    return staleChannels;
+  }
+
+  /**
+   * Reconnect a stale channel
+   */
+  async reconnectStaleChannel(channelId: string, organizationId: string): Promise<void> {
+    // Skip if already in sessions
+    if (this.sessions.has(channelId)) {
+      this.logger.debug({ channelId }, 'Channel already has active session, skipping');
+      return;
+    }
+
+    // Check if has saved credentials
+    const hasState = await hasAuthState(channelId);
+    if (!hasState) {
+      this.logger.debug({ channelId }, 'Channel has no saved credentials, skipping');
+      return;
+    }
+
+    this.logger.info({ channelId }, 'Reconnecting stale channel');
+
+    try {
+      await this.createSession(channelId, organizationId);
+    } catch (error) {
+      this.logger.error({ channelId, error }, 'Failed to reconnect stale channel');
+    }
   }
 
   /**

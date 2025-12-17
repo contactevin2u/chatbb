@@ -13,6 +13,7 @@ export interface ListConversationsInput {
   status?: ConversationStatus | ConversationStatus[];
   assignedUserId?: string | null;
   channelId?: string;
+  tagIds?: string[];
   search?: string;
   limit?: number;
   offset?: number;
@@ -36,6 +37,7 @@ export class ConversationService {
       status,
       assignedUserId,
       channelId,
+      tagIds,
       search,
       limit = 50,
       offset = 0,
@@ -66,16 +68,38 @@ export class ConversationService {
       where.channelId = channelId;
     }
 
-    // Search by contact name or identifier
-    if (search) {
-      where.contact = {
-        OR: [
-          { displayName: { contains: search, mode: 'insensitive' } },
-          { firstName: { contains: search, mode: 'insensitive' } },
-          { lastName: { contains: search, mode: 'insensitive' } },
-          { identifier: { contains: search, mode: 'insensitive' } },
-        ],
+    // Filter by tags - conversation must have ALL specified tags
+    if (tagIds && tagIds.length > 0) {
+      where.tags = {
+        some: {
+          tagId: { in: tagIds },
+        },
       };
+    }
+
+    // Search by contact name, identifier, or tag name
+    if (search) {
+      where.OR = [
+        {
+          contact: {
+            OR: [
+              { displayName: { contains: search, mode: 'insensitive' } },
+              { firstName: { contains: search, mode: 'insensitive' } },
+              { lastName: { contains: search, mode: 'insensitive' } },
+              { identifier: { contains: search, mode: 'insensitive' } },
+            ],
+          },
+        },
+        {
+          tags: {
+            some: {
+              tag: {
+                name: { contains: search, mode: 'insensitive' },
+              },
+            },
+          },
+        },
+      ];
     }
 
     // Build orderBy - pinned conversations always first
@@ -468,20 +492,20 @@ export class ConversationService {
   }
 
   /**
-   * Get unreplied conversations count (last 72 hours)
+   * Get unreplied conversations count (last 90 days)
    * Returns conversations where the last message is inbound and waiting for reply
    */
   async getUnrepliedCount(organizationId: string) {
-    const seventyTwoHoursAgo = new Date(Date.now() - 72 * 60 * 60 * 1000);
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 
     // Find conversations where:
     // 1. Status is OPEN or PENDING
-    // 2. Last message is within 72 hours
+    // 2. Last message is within 90 days
     const unrepliedConversations = await prisma.conversation.findMany({
       where: {
         organizationId,
         status: { in: [ConversationStatus.OPEN, ConversationStatus.PENDING] },
-        lastMessageAt: { gte: seventyTwoHoursAgo },
+        lastMessageAt: { gte: ninetyDaysAgo },
       },
       include: {
         contact: {
