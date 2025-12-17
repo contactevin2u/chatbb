@@ -55,8 +55,12 @@ interface SessionEvents {
   'contacts:update': (channelId: string, contacts: any[]) => void;
 }
 
-// Simplified reconnection - follows official Baileys pattern
-// No exponential backoff, just immediate reconnect with minimal delay
+// Exponential backoff for reconnection
+const RECONNECT_CONFIG = {
+  BASE_DELAY_MS: 1000, // Start with 1 second
+  MAX_DELAY_MS: 60_000, // Max 60 seconds between retries
+  MAX_ATTEMPTS: 10, // After 10 attempts, give up and require manual reconnect
+};
 
 // Rate limiting constants (anti-ban)
 const RATE_LIMIT = {
@@ -71,6 +75,8 @@ export class SessionManager extends EventEmitter {
   private msgRetryCache = new NodeCache({ stdTTL: 60, checkperiod: 30 });
   // Track pending reconnection timers to prevent race conditions
   private reconnectTimers: Map<string, NodeJS.Timeout> = new Map();
+  // Track reconnect attempts for exponential backoff (persists across session recreations)
+  private reconnectAttempts: Map<string, number> = new Map();
 
   constructor() {
     super();
@@ -147,10 +153,20 @@ export class SessionManager extends EventEmitter {
       // Browser identification - macOS Desktop for full history sync
       browser: Browsers.macOS('Desktop'),
       printQRInTerminal: false,
+
+      // === CONNECTION PERSISTENCE OPTIONS ===
+      // Keep connection alive with ping-pong (prevents stale connections)
+      keepAliveIntervalMs: 30_000, // 30 seconds - ping WhatsApp servers
+      // Connection timeouts
+      connectTimeoutMs: 60_000, // 60 seconds to establish connection
+      defaultQueryTimeoutMs: 60_000, // 60 seconds for queries
+      // Retry configuration
+      retryRequestDelayMs: 250, // 250ms between retries
+
       // Essential options from official example
       generateHighQualityLinkPreview: true,
       msgRetryCounterCache: this.msgRetryCache,
-      // History sync settings
+      // History sync settings - emulate desktop for full history
       syncFullHistory: true,
       shouldSyncHistoryMessage: () => true,
       // Set to false to receive phone notifications on the device
@@ -243,6 +259,9 @@ export class SessionManager extends EventEmitter {
         const phoneNumber = socket.user?.id?.split(':')[0] || 'unknown';
         await this.updateChannelStatus(channelId, 'CONNECTED', phoneNumber);
 
+        // Reset reconnect attempts on successful connection
+        this.reconnectAttempts.delete(channelId);
+
         this.emit('connected', channelId, phoneNumber);
         this.logger.info({ channelId, phoneNumber }, 'WhatsApp connected');
 
@@ -260,48 +279,54 @@ export class SessionManager extends EventEmitter {
 
         session.status = 'DISCONNECTED';
 
-        // Simplified reconnection logic based on official Baileys example
+        // Official Baileys pattern: only loggedOut prevents reconnection
         // See: https://github.com/WhiskeySockets/Baileys/blob/master/Example/example.ts
-        // Only skip reconnection for permanent disconnects (logged out, bad session, etc.)
-        const shouldNotReconnect =
-          statusCode === DisconnectReason.loggedOut ||
-          statusCode === DisconnectReason.badSession ||
-          statusCode === DisconnectReason.multideviceMismatch ||
-          statusCode === DisconnectReason.connectionReplaced ||
-          statusCode === 428; // 428 = session corrupted
+        const isLoggedOut = statusCode === DisconnectReason.loggedOut;
 
-        if (shouldNotReconnect) {
-          // Permanent disconnect - clear state and notify
-          this.logger.info({ channelId, statusCode, reason }, 'Permanent disconnect, not reconnecting');
-
-          if (statusCode === DisconnectReason.loggedOut || statusCode === 428) {
-            await session.deleteState();
-          }
-
+        if (isLoggedOut) {
+          // User logged out - clear credentials and stop
+          this.logger.info({ channelId, statusCode, reason }, 'Logged out, clearing credentials');
+          await session.deleteState();
           await this.updateChannelStatus(channelId, 'DISCONNECTED');
           this.sessions.delete(channelId);
+          this.reconnectAttempts.delete(channelId);
           this.emit('disconnected', channelId, reason);
           return;
         }
 
-        // For all other disconnects, reconnect immediately (official Baileys pattern)
-        // Note: After QR scan, WhatsApp forces a disconnect for auth handshake - this is normal
-        this.logger.info({ channelId }, 'Reconnecting (normal disconnect)');
+        // All other disconnects: reconnect with exponential backoff
+        const attempts = this.reconnectAttempts.get(channelId) || 0;
 
-        // Remove old session and create new one immediately
+        if (attempts >= RECONNECT_CONFIG.MAX_ATTEMPTS) {
+          this.logger.error({ channelId, attempts }, 'Max reconnection attempts reached, giving up');
+          await this.updateChannelStatus(channelId, 'ERROR');
+          this.sessions.delete(channelId);
+          this.reconnectAttempts.delete(channelId);
+          this.emit('disconnected', channelId, 'Max reconnection attempts reached');
+          return;
+        }
+
+        // Calculate delay with exponential backoff: 1s, 2s, 4s, 8s... up to MAX_DELAY
+        const delay = Math.min(
+          RECONNECT_CONFIG.BASE_DELAY_MS * Math.pow(2, attempts),
+          RECONNECT_CONFIG.MAX_DELAY_MS
+        );
+
+        this.reconnectAttempts.set(channelId, attempts + 1);
+        this.logger.info({ channelId, attempt: attempts + 1, delayMs: delay }, 'Scheduling reconnection');
+
+        // Remove old session
         this.sessions.delete(channelId);
 
-        // Small delay to prevent tight reconnection loops
         const timer = setTimeout(async () => {
           this.reconnectTimers.delete(channelId);
           try {
             await this.createSession(channelId, session.organizationId);
           } catch (error) {
             this.logger.error({ channelId, error }, 'Reconnection failed');
-            await this.updateChannelStatus(channelId, 'ERROR');
-            this.emit('error', channelId, error as Error);
+            // Don't set ERROR status - let the next attempt try
           }
-        }, 1000); // 1 second delay (minimal, just to prevent tight loops)
+        }, delay);
 
         this.reconnectTimers.set(channelId, timer);
       }
@@ -1056,6 +1081,15 @@ export class SessionManager extends EventEmitter {
       // This happens when a channel was deleted but worker still has the session
       if (error.code === 'P2025') {
         this.logger.warn({ channelId, status }, 'Channel not found in database, removing session');
+        // Close the socket first to stop it from generating more events
+        const session = this.sessions.get(channelId);
+        if (session?.socket) {
+          try {
+            session.socket.end(undefined);
+          } catch (e) {
+            // Ignore close errors
+          }
+        }
         // Remove the session since the channel no longer exists
         this.sessions.delete(channelId);
         return;
