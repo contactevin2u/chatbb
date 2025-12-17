@@ -458,10 +458,19 @@ export class SessionManager extends EventEmitter {
 
     // Historical message sync (requires macOS Desktop browser + syncFullHistory: true)
     // Note: messages is a WAMessage[] flat array, NOT object keyed by JID
-    socket.ev.on('messaging-history.set', async ({ chats, contacts, messages, syncType }) => {
+    // Sync comes in chunks with progress (0-100%) - only mark complete when isLatest=true
+    socket.ev.on('messaging-history.set', async ({ chats, contacts, messages, syncType, isLatest, progress }) => {
       this.logger.info(
-        { channelId, chatsCount: chats.length, contactsCount: contacts.length, messagesCount: Array.isArray(messages) ? messages.length : 0, syncType },
-        'Historical sync received'
+        {
+          channelId,
+          chatsCount: chats.length,
+          contactsCount: contacts.length,
+          messagesCount: Array.isArray(messages) ? messages.length : 0,
+          syncType,
+          isLatest,
+          progress,
+        },
+        'Historical sync chunk received'
       );
 
       // Emit event for processing by the application
@@ -482,15 +491,21 @@ export class SessionManager extends EventEmitter {
         }
       }
 
-      // Mark channel as having completed initial sync to prevent re-sync on restart
-      try {
-        await prisma.channel.update({
-          where: { id: channelId },
-          data: { hasInitialSync: true },
-        });
-        this.logger.info({ channelId, syncType }, 'Historical sync completed, hasInitialSync flag set');
-      } catch (error) {
-        this.logger.warn({ channelId, error }, 'Failed to update hasInitialSync flag');
+      // IMPORTANT: Only mark sync complete when isLatest=true (final chunk)
+      // History sync comes in multiple chunks with increasing progress
+      // We must wait for the final chunk before marking sync as complete
+      if (isLatest) {
+        try {
+          await prisma.channel.update({
+            where: { id: channelId },
+            data: { hasInitialSync: true },
+          });
+          this.logger.info({ channelId, syncType, progress }, 'Historical sync COMPLETED, hasInitialSync flag set');
+        } catch (error) {
+          this.logger.warn({ channelId, error }, 'Failed to update hasInitialSync flag');
+        }
+      } else {
+        this.logger.debug({ channelId, progress, isLatest }, 'Sync chunk received, waiting for more chunks...');
       }
     });
 
