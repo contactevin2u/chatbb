@@ -176,6 +176,10 @@ model Channel {
   status          ChannelStatus @default(DISCONNECTED)
   config          Json          @default("{}")
   hasInitialSync  Boolean       @default(false) @map("has_initial_sync")
+  // Sync progress tracking - enables resume from interruption
+  syncProgress    Int           @default(0) @map("sync_progress") // 0-100%
+  syncStartedAt   DateTime?     @map("sync_started_at")
+  lastSyncAt      DateTime?     @map("last_sync_at")
   lastConnectedAt DateTime?     @map("last_connected_at")
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")

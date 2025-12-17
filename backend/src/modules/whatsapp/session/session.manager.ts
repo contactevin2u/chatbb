@@ -154,10 +154,27 @@ export class SessionManager extends EventEmitter {
     // Fetch channel to check if initial sync has been completed
     const channel = await prisma.channel.findUnique({
       where: { id: channelId },
-      select: { hasInitialSync: true },
+      select: { hasInitialSync: true, syncProgress: true },
     });
     const needsHistorySync = !channel?.hasInitialSync;
-    this.logger.info({ channelId, needsHistorySync, hasInitialSync: channel?.hasInitialSync }, 'Sync status checked');
+    this.logger.info({
+      channelId,
+      needsHistorySync,
+      hasInitialSync: channel?.hasInitialSync,
+      previousProgress: channel?.syncProgress,
+    }, 'Sync status checked');
+
+    // Reset sync progress if starting a new sync
+    if (needsHistorySync) {
+      await prisma.channel.update({
+        where: { id: channelId },
+        data: {
+          syncProgress: 0,
+          syncStartedAt: null,
+        },
+      });
+      this.logger.info({ channelId }, 'Reset sync progress for new sync');
+    }
 
     // Update channel status to CONNECTING
     await this.updateChannelStatus(channelId, 'CONNECTING');
@@ -460,6 +477,8 @@ export class SessionManager extends EventEmitter {
     // Note: messages is a WAMessage[] flat array, NOT object keyed by JID
     // Sync comes in chunks with progress (0-100%) - only mark complete when isLatest=true
     socket.ev.on('messaging-history.set', async ({ chats, contacts, messages, syncType, isLatest, progress }) => {
+      const currentProgress = typeof progress === 'number' ? progress : 0;
+
       this.logger.info(
         {
           channelId,
@@ -468,10 +487,30 @@ export class SessionManager extends EventEmitter {
           messagesCount: Array.isArray(messages) ? messages.length : 0,
           syncType,
           isLatest,
-          progress,
+          progress: currentProgress,
         },
         'Historical sync chunk received'
       );
+
+      // Update sync progress in database (track each chunk)
+      try {
+        const updateData: any = {
+          syncProgress: currentProgress,
+          lastSyncAt: new Date(),
+        };
+
+        // Set syncStartedAt on first chunk (progress near 0 or no previous sync)
+        if (currentProgress < 10) {
+          updateData.syncStartedAt = new Date();
+        }
+
+        await prisma.channel.update({
+          where: { id: channelId },
+          data: updateData,
+        });
+      } catch (error) {
+        this.logger.warn({ channelId, error }, 'Failed to update sync progress');
+      }
 
       // Emit event for processing by the application
       this.emit('history:sync', channelId, { chats, contacts, messages, syncType });
@@ -498,14 +537,17 @@ export class SessionManager extends EventEmitter {
         try {
           await prisma.channel.update({
             where: { id: channelId },
-            data: { hasInitialSync: true },
+            data: {
+              hasInitialSync: true,
+              syncProgress: 100,
+            },
           });
-          this.logger.info({ channelId, syncType, progress }, 'Historical sync COMPLETED, hasInitialSync flag set');
+          this.logger.info({ channelId, syncType, progress: currentProgress }, 'Historical sync COMPLETED, hasInitialSync flag set');
         } catch (error) {
           this.logger.warn({ channelId, error }, 'Failed to update hasInitialSync flag');
         }
       } else {
-        this.logger.debug({ channelId, progress, isLatest }, 'Sync chunk received, waiting for more chunks...');
+        this.logger.debug({ channelId, progress: currentProgress, isLatest }, 'Sync chunk received, waiting for more chunks...');
       }
     });
 

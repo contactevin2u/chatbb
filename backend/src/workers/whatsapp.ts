@@ -194,6 +194,38 @@ function setupEventHandlers() {
     );
   });
 
+  // Buffer for chunks when Redis is temporarily unavailable
+  const pendingChunks: Map<string, any[]> = new Map();
+
+  // Process buffered chunks when possible
+  const processBufferedChunks = async (channelId: string) => {
+    const chunks = pendingChunks.get(channelId);
+    if (!chunks || chunks.length === 0) return;
+
+    logger.info({ channelId, bufferedChunks: chunks.length }, 'Processing buffered history sync chunks');
+
+    // Try to queue first, fall back to direct processing
+    for (const chunk of chunks) {
+      try {
+        await historySyncQueue.add('sync', chunk, {
+          priority: 10,
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 5000 },
+        });
+      } catch {
+        // Queue still failing, process directly
+        try {
+          await processHistorySyncDirect(channelId, chunk);
+        } catch (processError) {
+          logger.error({ channelId, error: (processError as Error).message }, 'Failed to process buffered chunk');
+        }
+      }
+    }
+
+    // Clear buffer after processing
+    pendingChunks.delete(channelId);
+  };
+
   // Historical sync - queue with LOW priority (non-blocking)
   sessionManager.on('history:sync', async (channelId, data) => {
     try {
@@ -214,15 +246,28 @@ function setupEventHandlers() {
         }
       );
       logger.info(
-        { channelId, chats: data.chats.length, contacts: data.contacts.length },
+        { channelId, chats: data.chats.length, contacts: data.contacts.length, messages: data.messages?.length || 0 },
         'Queued historical sync (non-blocking)'
       );
+
+      // If we had buffered chunks and queue is now working, process them
+      if (pendingChunks.has(channelId)) {
+        await processBufferedChunks(channelId);
+      }
     } catch (error) {
-      // If Redis is down, process directly (fallback)
+      // If Redis is down, buffer the chunk and process directly
       logger.warn(
         { channelId, error: (error as Error).message },
-        'Failed to queue history sync, processing directly'
+        'Failed to queue history sync, buffering and processing directly'
       );
+
+      // Buffer the chunk for later retry
+      if (!pendingChunks.has(channelId)) {
+        pendingChunks.set(channelId, []);
+      }
+      pendingChunks.get(channelId)!.push(data);
+
+      // Process this chunk directly as fallback
       try {
         await processHistorySyncDirect(channelId, data);
       } catch (processError) {
@@ -704,6 +749,53 @@ async function main() {
       logger.info(stats, 'Session health check');
     }, 60000);
 
+    // Sync timeout check - mark sync complete if stale (every 2 minutes)
+    setInterval(async () => {
+      try {
+        const SYNC_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes of inactivity
+        const now = new Date();
+
+        // Find channels with incomplete sync that haven't received chunks recently
+        const staleChannels = await prisma.channel.findMany({
+          where: {
+            hasInitialSync: false,
+            syncProgress: { gte: 80 }, // At least 80% done
+            lastSyncAt: {
+              lt: new Date(now.getTime() - SYNC_TIMEOUT_MS),
+            },
+          },
+          select: {
+            id: true,
+            syncProgress: true,
+            lastSyncAt: true,
+          },
+        });
+
+        for (const channel of staleChannels) {
+          logger.warn({
+            channelId: channel.id,
+            syncProgress: channel.syncProgress,
+            lastSyncAt: channel.lastSyncAt,
+            inactiveMinutes: Math.round((now.getTime() - (channel.lastSyncAt?.getTime() || 0)) / 60000),
+          }, 'Sync timeout - marking as complete (isLatest may have been missed)');
+
+          await prisma.channel.update({
+            where: { id: channel.id },
+            data: {
+              hasInitialSync: true,
+              syncProgress: 100,
+            },
+          });
+        }
+
+        if (staleChannels.length > 0) {
+          logger.info({ count: staleChannels.length }, 'Completed stale syncs via timeout');
+        }
+      } catch (error) {
+        logger.error({ error }, 'Sync timeout check failed');
+      }
+    }, 120000); // Check every 2 minutes
+
     // Scheduled message processor - check every 10 seconds
     setInterval(processScheduledMessages, 10000);
     logger.info('Scheduled message processor started (10s interval)');
@@ -1062,7 +1154,8 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
               externalId,
               direction: isFromMe ? MessageDirection.OUTBOUND : MessageDirection.INBOUND,
               type,
-              content,
+              // Store both parsed content and raw message for Baileys getMessage
+              content: { ...content, message: msg.message },
               status: isFromMe ? MessageStatus.SENT : MessageStatus.DELIVERED,
               sentAt: isFromMe ? originalTimestamp : null,
               deliveredAt: !isFromMe ? originalTimestamp : null,

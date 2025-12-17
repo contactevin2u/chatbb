@@ -324,7 +324,8 @@ async function processMessage(job: Job) {
           externalId,
           direction,
           type,
-          content,
+          // Store both parsed content and raw message for Baileys getMessage
+          content: { ...content, message: msgContent },
           status: isFromMe ? MessageStatus.SENT : MessageStatus.DELIVERED,
           sentAt: isFromMe ? new Date() : null,
           deliveredAt: isFromMe ? null : new Date(),
@@ -613,7 +614,8 @@ async function processHistorySync(job: Job) {
               externalId,
               direction: isFromMe ? MessageDirection.OUTBOUND : MessageDirection.INBOUND,
               type,
-              content,
+              // Store both parsed content and raw message for Baileys getMessage
+              content: { ...content, message: msg.message },
               status: isFromMe ? MessageStatus.SENT : MessageStatus.DELIVERED,
               sentAt: isFromMe ? originalTimestamp : null,
               deliveredAt: !isFromMe ? originalTimestamp : null,
