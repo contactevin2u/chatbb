@@ -854,10 +854,8 @@ async function main() {
         switch (session.status) {
           case 'CONNECTED':
             stats.connected++;
-            // Check socket health - trigger reconnection if socket is in bad state
-            if (session.socket?.ws?.readyState !== 1) { // 1 = OPEN
-              logger.warn({ channelId, readyState: session.socket?.ws?.readyState }, 'Socket unhealthy - will be picked up for reconnection');
-            }
+            // Session status is managed by connection.update events from Baileys
+            // Unhealthy connections will trigger disconnect events automatically
             break;
           case 'CONNECTING':
             stats.connecting++;
