@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
@@ -16,8 +17,6 @@ import {
   ChevronRight,
   PanelLeftClose,
   PanelLeft,
-  Heart,
-  Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { Button } from '@/components/ui/button';
@@ -91,17 +90,15 @@ export function Sidebar() {
           'h-16 flex items-center border-b border-pink-200/30 dark:border-purple-800/30 transition-all duration-200',
           sidebarCollapsed ? 'lg:justify-center lg:px-2 px-4' : 'justify-between px-4'
         )}>
-          <Link href="/dashboard" className="flex items-center gap-2 group">
-            <div className="relative">
-              <Heart className="h-7 w-7 text-pink-500 fill-pink-500 flex-shrink-0 group-hover:animate-heartbeat transition-all" />
-              <Sparkles className="h-3 w-3 text-pink-400 absolute -top-1 -right-1 animate-sparkle" />
-            </div>
-            <span className={cn(
-              'text-xl font-bold transition-all duration-200 text-gradient-pink',
-              sidebarCollapsed ? 'lg:hidden' : ''
-            )}>
-              ChatBaby
-            </span>
+          <Link href="/dashboard" className="flex items-center group">
+            <Image
+              src="/logo.png"
+              alt="ChatBaby"
+              width={sidebarCollapsed ? 40 : 140}
+              height={40}
+              className="object-contain transition-all duration-200"
+              priority
+            />
           </Link>
           {/* Mobile close button */}
           <Button

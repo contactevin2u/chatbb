@@ -1,4 +1,4 @@
-import { MessageSquare } from 'lucide-react';
+import Image from 'next/image';
 import Link from 'next/link';
 
 export default function AuthLayout({
@@ -8,9 +8,15 @@ export default function AuthLayout({
 }) {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-muted/30 p-4">
-      <Link href="/" className="flex items-center gap-2 mb-8">
-        <MessageSquare className="h-8 w-8 text-primary" />
-        <span className="text-2xl font-bold">ChatBaby</span>
+      <Link href="/" className="mb-8">
+        <Image
+          src="/logo.png"
+          alt="ChatBaby"
+          width={180}
+          height={60}
+          className="object-contain"
+          priority
+        />
       </Link>
       <div className="w-full max-w-md">{children}</div>
     </div>
