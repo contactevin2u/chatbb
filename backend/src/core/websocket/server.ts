@@ -14,14 +14,20 @@ import { redisConfig } from '../../config/redis';
 import { logger } from '../../shared/utils/logger';
 import { verifyToken } from '../../shared/utils/jwt';
 import { prisma } from '../database/prisma';
+import { redis } from '../cache/redis.client';
 
 let io: Server | null = null;
+
+// Presence tracking constants
+const PRESENCE_PREFIX = 'conv:viewers:';
+const PRESENCE_TTL = 3600; // 1 hour TTL for presence data
 
 interface AuthenticatedSocket extends Socket {
   data: {
     userId: string;
     organizationId: string;
     role: string;
+    joinedConversations: Set<string>; // Track joined conversations for cleanup on disconnect
   };
 }
 
@@ -87,6 +93,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
         userId: user.id,
         organizationId: user.organizationId,
         role: user.role,
+        joinedConversations: new Set<string>(), // Initialize conversation tracking
       };
 
       next();
@@ -141,7 +148,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
       logger.debug({ socketId: socket.id, channelId: data.channelId }, 'Unsubscribed from channel');
     });
 
-    // Join a conversation room
+    // Join a conversation room with presence tracking
     socket.on('conversation:join', async (data: { conversationId: string }) => {
       // Verify user has access to this conversation
       const conversation = await prisma.conversation.findFirst({
@@ -157,12 +164,71 @@ export function createSocketServer(httpServer: HttpServer): Server {
       }
 
       await socket.join(`conversation:${data.conversationId}`);
+
+      // Track active viewers using Redis sets
+      const presenceKey = `${PRESENCE_PREFIX}${data.conversationId}`;
+      try {
+        // Get user info for presence data
+        const user = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { firstName: true, lastName: true },
+        });
+
+        // Store user presence with name as JSON
+        const presenceData = JSON.stringify({
+          id: userId,
+          firstName: user?.firstName,
+          lastName: user?.lastName,
+          joinedAt: new Date().toISOString(),
+        });
+        await redis.hset(presenceKey, `user:${userId}`, presenceData);
+        await redis.expire(presenceKey, PRESENCE_TTL);
+
+        // Get all current viewers and broadcast to room
+        const viewerData = await redis.hgetall(presenceKey);
+        const viewers = Object.values(viewerData).map(v => JSON.parse(v));
+
+        // Broadcast updated viewers list to everyone in the room (including joiner)
+        io?.to(`conversation:${data.conversationId}`).emit('viewers:update', {
+          conversationId: data.conversationId,
+          viewers,
+        });
+      } catch (error) {
+        // Redis error - continue without presence tracking
+        logger.debug({ conversationId: data.conversationId, error }, 'Failed to track conversation presence');
+      }
+
+      // Track joined conversation for cleanup on disconnect
+      socket.data.joinedConversations.add(data.conversationId);
+
       socket.emit('conversation:joined', { conversationId: data.conversationId });
       logger.debug({ socketId: socket.id, conversationId: data.conversationId }, 'Joined conversation');
     });
 
     socket.on('conversation:leave', async (data: { conversationId: string }) => {
       await socket.leave(`conversation:${data.conversationId}`);
+
+      // Remove from tracking
+      socket.data.joinedConversations.delete(data.conversationId);
+
+      // Remove from presence tracking
+      const presenceKey = `${PRESENCE_PREFIX}${data.conversationId}`;
+      try {
+        await redis.hdel(presenceKey, `user:${userId}`);
+
+        // Broadcast updated viewers list to remaining room members
+        const viewerData = await redis.hgetall(presenceKey);
+        const viewers = Object.values(viewerData).map(v => JSON.parse(v));
+
+        io?.to(`conversation:${data.conversationId}`).emit('viewers:update', {
+          conversationId: data.conversationId,
+          viewers,
+        });
+      } catch (error) {
+        // Redis error - continue without presence update
+        logger.debug({ conversationId: data.conversationId, error }, 'Failed to update conversation presence on leave');
+      }
+
       socket.emit('conversation:left', { conversationId: data.conversationId });
       logger.debug({ socketId: socket.id, conversationId: data.conversationId }, 'Left conversation');
     });
@@ -236,9 +302,29 @@ export function createSocketServer(httpServer: HttpServer): Server {
       socket.emit('pong', { timestamp: Date.now() });
     });
 
-    // Disconnect
+    // Disconnect - cleanup presence for all joined conversations
     socket.on('disconnect', async (reason) => {
       logger.info({ socketId: socket.id, userId, reason }, 'Client disconnected');
+
+      // Clean up presence for all conversations this user was viewing
+      for (const conversationId of socket.data.joinedConversations) {
+        const presenceKey = `${PRESENCE_PREFIX}${conversationId}`;
+        try {
+          await redis.hdel(presenceKey, `user:${userId}`);
+
+          // Broadcast updated viewers list to remaining room members
+          const viewerData = await redis.hgetall(presenceKey);
+          const viewers = Object.values(viewerData).map(v => JSON.parse(v));
+
+          io?.to(`conversation:${conversationId}`).emit('viewers:update', {
+            conversationId,
+            viewers,
+          });
+        } catch (error) {
+          // Redis error - continue cleanup for other conversations
+          logger.debug({ conversationId, error }, 'Failed to cleanup presence on disconnect');
+        }
+      }
 
       // Update last active time
       await prisma.user.update({

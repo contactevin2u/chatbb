@@ -64,15 +64,18 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     }
 
     // Create socket connection (use WS_URL, not API_URL which has /api/v1 suffix)
+    // OPTIMIZED: Faster reconnection for better UX during network hiccups
     const newSocket = io(env.NEXT_PUBLIC_WS_URL, {
       auth: {
         token: tokens.accessToken,
       },
       transports: ['websocket', 'polling'],
       reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
+      reconnectionAttempts: 15,     // More attempts before giving up (was 10)
+      reconnectionDelay: 500,        // Faster initial retry (was 1000ms)
+      reconnectionDelayMax: 3000,    // Faster max delay (was 5000ms)
+      timeout: 20000,                // Connection timeout
+      forceNew: false,               // Reuse existing connection when possible
     });
 
     socketRef.current = newSocket;

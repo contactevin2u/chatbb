@@ -211,11 +211,11 @@ router.put(
 /**
  * @route   POST /api/v1/sequences/:id/execute
  * @desc    Start sequence execution for a conversation
- * @access  Private (automation:update)
+ * @access  Private (automation:read) - executing/using a sequence is reading, not modifying
  */
 router.post(
   '/:id/execute',
-  requirePermission('automation:update'),
+  requirePermission('automation:read'),
   validate(executeSequenceSchema),
   sequenceController.startExecution.bind(sequenceController)
 );

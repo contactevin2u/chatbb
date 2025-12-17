@@ -3,6 +3,9 @@
  *
  * CRITICAL: DO NOT use useMultiFileAuthState in production!
  * This implementation stores all auth state in PostgreSQL with encryption.
+ *
+ * OPTIMIZATION: Redis caching layer for faster reconnections.
+ * Credentials are cached in Redis to avoid PostgreSQL round-trips on reconnect.
  */
 
 import {
@@ -15,6 +18,12 @@ import {
 } from '@whiskeysockets/baileys';
 import { prisma } from '../../../core/database/prisma';
 import { encrypt, decrypt } from '../../../shared/utils/encryption';
+import { redis } from '../../../core/cache/redis.client';
+import { logger } from '../../../shared/utils/logger';
+
+// Redis cache key prefix and TTL
+const CREDS_CACHE_PREFIX = 'auth:creds:';
+const CREDS_CACHE_TTL = 3600; // 1 hour in seconds
 
 // IMPORTANT: Never downgrade Baileys - we migrated to v7 with LID system
 // Baileys v7 requires additional keys for LID system
@@ -40,29 +49,65 @@ interface StoredAuthState {
  *
  * OPTIMIZED: Keys are loaded lazily on-demand, not all at once.
  * This dramatically improves startup time for channels with many sync keys.
+ *
+ * OPTIMIZED: Redis caching layer for credentials.
+ * On reconnection, credentials are loaded from Redis (fast) instead of PostgreSQL (slower).
  */
 export async function usePostgresAuthState(channelId: string): Promise<{
   state: AuthenticationState;
   saveCreds: () => Promise<void>;
   deleteState: () => Promise<void>;
 }> {
-  // Load credentials only (NOT sync keys - they're loaded lazily)
-  const existingAuth = await prisma.whatsAppAuthState.findUnique({
-    where: { channelId },
-    // DO NOT include syncKeys here - causes slow startup with thousands of keys
-    // Keys are loaded on-demand in keys.get()
-  });
-
+  const cacheKey = `${CREDS_CACHE_PREFIX}${channelId}`;
   let creds: AuthenticationCreds;
+  let existingAuth: { id: string; channelId: string; creds: Buffer; createdAt: Date; updatedAt: Date } | null = null;
 
-  if (existingAuth) {
-    // Decrypt and parse existing credentials
-    const decryptedCreds = decrypt(existingAuth.creds);
-    const parsed: StoredAuthState = JSON.parse(decryptedCreds, BufferJSON.reviver);
-    creds = parsed.creds;
-  } else {
-    // Initialize new credentials
-    creds = initAuthCreds();
+  // Try to load credentials from Redis cache first (faster reconnections)
+  try {
+    const cachedCreds = await redis.get(cacheKey);
+    if (cachedCreds) {
+      const parsed: StoredAuthState = JSON.parse(cachedCreds, BufferJSON.reviver);
+      creds = parsed.creds;
+      // Refresh TTL on cache hit
+      await redis.expire(cacheKey, CREDS_CACHE_TTL);
+      logger.debug({ channelId }, 'Auth state loaded from Redis cache');
+
+      // Still need to get existingAuth for sync key operations
+      existingAuth = await prisma.whatsAppAuthState.findUnique({
+        where: { channelId },
+      });
+    }
+  } catch (error) {
+    // Redis error - fall back to PostgreSQL
+    logger.debug({ channelId, error }, 'Redis cache miss or error, falling back to PostgreSQL');
+  }
+
+  // If not in cache, load from PostgreSQL
+  if (!creds!) {
+    existingAuth = await prisma.whatsAppAuthState.findUnique({
+      where: { channelId },
+      // DO NOT include syncKeys here - causes slow startup with thousands of keys
+      // Keys are loaded on-demand in keys.get()
+    });
+
+    if (existingAuth) {
+      // Decrypt and parse existing credentials
+      const decryptedCreds = decrypt(existingAuth.creds);
+      const parsed: StoredAuthState = JSON.parse(decryptedCreds, BufferJSON.reviver);
+      creds = parsed.creds;
+
+      // Cache to Redis for future reconnections
+      try {
+        await redis.setex(cacheKey, CREDS_CACHE_TTL, decryptedCreds);
+        logger.debug({ channelId }, 'Auth state cached to Redis');
+      } catch (error) {
+        // Redis error - continue without caching
+        logger.debug({ channelId, error }, 'Failed to cache auth state to Redis');
+      }
+    } else {
+      // Initialize new credentials
+      creds = initAuthCreds();
+    }
   }
 
   // In-memory cache for loaded keys (lazy loaded from database)
@@ -86,9 +131,25 @@ export async function usePostgresAuthState(channelId: string): Promise<{
         creds: encryptedCreds,
       },
     });
+
+    // Update Redis cache with new credentials
+    try {
+      await redis.setex(cacheKey, CREDS_CACHE_TTL, serialized);
+    } catch (error) {
+      // Redis error - continue without caching
+      logger.debug({ channelId, error }, 'Failed to update auth state cache in Redis');
+    }
   };
 
   const deleteState = async () => {
+    // Delete from Redis cache first
+    try {
+      await redis.del(cacheKey);
+    } catch (error) {
+      // Redis error - continue with deletion
+      logger.debug({ channelId, error }, 'Failed to delete auth state from Redis cache');
+    }
+
     await prisma.whatsAppAuthState.delete({
       where: { channelId },
     }).catch(() => {
@@ -221,6 +282,14 @@ export async function hasAuthState(channelId: string): Promise<boolean> {
  * Use this when you need to clear corrupted session data
  */
 export async function deleteAuthState(channelId: string): Promise<void> {
+  // Delete from Redis cache first
+  try {
+    await redis.del(`${CREDS_CACHE_PREFIX}${channelId}`);
+  } catch (error) {
+    // Redis error - continue with deletion
+    logger.debug({ channelId, error }, 'Failed to delete auth state from Redis cache');
+  }
+
   // First find the auth state to get its ID for deleting sync keys
   const authState = await prisma.whatsAppAuthState.findUnique({
     where: { channelId },

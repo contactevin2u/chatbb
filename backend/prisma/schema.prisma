@@ -198,6 +198,9 @@ model Channel {
   @@unique([organizationId, type, identifier])
   @@index([organizationId])
   @@index([type])
+  // Performance: Composite indexes for session initialization queries
+  @@index([type, status])
+  @@index([organizationId, status])
   @@map("channels")
 }
 
@@ -528,6 +531,8 @@ model Message {
   @@unique([channelId, externalId]) // Composite unique for fast idempotency check + enables findUnique
   @@index([conversationId])
   @@index([createdAt(sort: Desc)])
+  // Performance: Composite for conversation message pagination queries
+  @@index([conversationId, createdAt(sort: Desc)])
   @@map("messages")
 }
 
@@ -666,6 +671,8 @@ model ScheduledMessage {
   @@index([conversationId])
   @@index([scheduledAt])
   @@index([status])
+  // Performance: Composite for due-check queries (WHERE status='PENDING' AND scheduledAt <= NOW())
+  @@index([status, scheduledAt])
   @@map("scheduled_messages")
 }
 
@@ -745,6 +752,8 @@ model SequenceExecution {
   @@index([status])
   @@index([scheduledAt])
   @@index([nextStepAt])
+  // Performance: Composite for step scheduling queries (WHERE status='running' AND nextStepAt <= NOW())
+  @@index([status, nextStepAt])
   @@map("sequence_executions")
 }
 

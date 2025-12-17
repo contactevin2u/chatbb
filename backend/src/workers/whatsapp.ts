@@ -839,7 +839,7 @@ async function main() {
     logger.info('  - Publishes events via Redis pub/sub to API');
     logger.info('  - Queues background jobs to BullMQ');
 
-    // Health check - log session stats every minute
+    // Health check - log session stats every 30 seconds (increased frequency for faster issue detection)
     setInterval(async () => {
       const sessions = sessionManager.getAllSessions();
       const stats = {
@@ -850,10 +850,14 @@ async function main() {
         error: 0,
       };
 
-      for (const [, session] of sessions) {
+      for (const [channelId, session] of sessions) {
         switch (session.status) {
           case 'CONNECTED':
             stats.connected++;
+            // Check socket health - trigger reconnection if socket is in bad state
+            if (session.socket?.ws?.readyState !== 1) { // 1 = OPEN
+              logger.warn({ channelId, readyState: session.socket?.ws?.readyState }, 'Socket unhealthy - will be picked up for reconnection');
+            }
             break;
           case 'CONNECTING':
             stats.connecting++;
@@ -883,7 +887,7 @@ async function main() {
       } catch (error) {
         logger.error({ error }, 'Failed to check/reconnect stale channels');
       }
-    }, 60000);
+    }, 30000); // 30 seconds - faster detection of connection issues
 
     // Sync timeout check - mark sync complete if stale (every 2 minutes)
     setInterval(async () => {
