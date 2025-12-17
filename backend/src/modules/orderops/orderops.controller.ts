@@ -35,11 +35,12 @@ export class OrderOpsController {
   /**
    * Parse and create order from conversation message
    * POST /api/orderops/conversations/:conversationId/parse-create
+   * Automatically links the order to the conversation if created
    */
   async parseAndCreateOrder(req: Request, res: Response, next: NextFunction) {
     try {
       const { conversationId } = req.params;
-      const { text, messageId } = req.body;
+      const { text, messageId, autoLink = true } = req.body;
       const organizationId = req.organizationId!;
 
       // Verify conversation belongs to org
@@ -78,9 +79,34 @@ export class OrderOpsController {
         });
       }
 
+      // Auto-link if order was created
+      let linked = false;
+      let linkedOrder = null;
+      const orderData = parseResult.data?.data;
+
+      if (autoLink && orderData?.order_id) {
+        try {
+          await prisma.conversation.update({
+            where: { id: conversationId },
+            data: {
+              orderOpsOrderId: orderData.order_id,
+              orderOpsOrderCode: orderData.order_code,
+              orderOpsLinkedAt: new Date(),
+            },
+          });
+          linked = true;
+          linkedOrder = await orderOpsService.getOrder(orderData.order_id);
+          logger.info({ conversationId, orderId: orderData.order_id }, 'Order auto-linked to conversation');
+        } catch (linkError: any) {
+          logger.error({ error: linkError.message, conversationId }, 'Failed to auto-link order');
+        }
+      }
+
       res.json({
         success: true,
         parsed: parseResult.data,
+        linked,
+        linkedOrder,
         conversationId,
         contact: {
           name: conversation.contact.displayName || `${conversation.contact.firstName || ''} ${conversation.contact.lastName || ''}`.trim() || conversation.contact.identifier,

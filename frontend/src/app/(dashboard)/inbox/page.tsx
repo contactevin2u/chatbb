@@ -544,15 +544,25 @@ export default function InboxPage() {
     },
   });
 
-  // Parse order mutation
+  // Parse order mutation (auto-links if order created)
   const parseOrderMutation = useMutation({
     mutationFn: (text: string) => {
       if (!selectedConversationId) throw new Error('No conversation selected');
       return parseConversationMessage(selectedConversationId, { text });
     },
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       setParseOrderDialog((prev) => prev ? { ...prev, result: data } : null);
-      toast.success('Message parsed successfully');
+      if (data.linked) {
+        toast.success(`Order #${data.parsed?.data?.order_code || ''} created and linked!`);
+        // Refresh linked order data
+        queryClient.invalidateQueries({ queryKey: ['linkedOrder', selectedConversationId] });
+        // Close dialog after short delay to show success
+        setTimeout(() => setParseOrderDialog(null), 1500);
+      } else if (data.parsed?.data?.order_id) {
+        toast.success('Order created successfully');
+      } else {
+        toast.success('Message parsed successfully');
+      }
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.error || 'Failed to parse message');
@@ -2799,8 +2809,8 @@ export default function InboxPage() {
               className="resize-none"
             />
             {parseOrderDialog?.result && (
-              <div className="border rounded-lg p-3 bg-muted/30">
-                <div className="flex items-center justify-between mb-2">
+              <div className="border rounded-lg p-3 bg-muted/30 space-y-3">
+                <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-muted-foreground">Parse Result:</span>
                   <Button
                     variant="ghost"
@@ -2815,6 +2825,25 @@ export default function InboxPage() {
                     <Copy className="h-3 w-3" />
                   </Button>
                 </div>
+                {/* Show order created + linked info */}
+                {parseOrderDialog.result.parsed?.data?.order_id && (
+                  <div className="flex items-center justify-between p-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800">
+                    <div>
+                      <p className="text-sm font-medium text-green-700 dark:text-green-400">
+                        Order #{parseOrderDialog.result.parsed.data.order_code} created
+                      </p>
+                      <p className="text-xs text-green-600 dark:text-green-500">
+                        ID: {parseOrderDialog.result.parsed.data.order_id}
+                      </p>
+                    </div>
+                    {parseOrderDialog.result.linked && (
+                      <span className="flex items-center gap-1 text-xs font-medium text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/50 px-2 py-1 rounded">
+                        <Check className="h-3 w-3" />
+                        Linked
+                      </span>
+                    )}
+                  </div>
+                )}
                 <pre className="text-xs overflow-auto max-h-40 whitespace-pre-wrap bg-muted rounded p-2">
                   {JSON.stringify(parseOrderDialog.result.parsed, null, 2)}
                 </pre>

@@ -98,12 +98,21 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
   const [copied, setCopied] = useState(false);
   const [selectedPodImage, setSelectedPodImage] = useState<string | null>(null);
 
-  // Parse message mutation
+  // Parse message mutation (auto-links if order created)
   const parseMutation = useMutation({
     mutationFn: (text: string) => parseConversationMessage(conversationId, { text }),
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       setParseResult(data);
-      toast.success('Message parsed successfully');
+      if (data.linked) {
+        toast.success(`Order #${data.parsed?.data?.order_code || ''} created and linked!`);
+        // Refresh the linked order data
+        queryClient.invalidateQueries({ queryKey: ['linkedOrder', conversationId] });
+        setShowParseDialog(false);
+      } else if (data.parsed?.data?.order_id) {
+        toast.success('Order created successfully');
+      } else {
+        toast.success('Message parsed successfully');
+      }
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.error || 'Failed to parse message');
@@ -246,17 +255,24 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
                           ID: {parseResult.parsed.data.order_id}
                         </p>
                       </div>
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          linkMutation.mutate(parseResult.parsed.data.order_id);
-                          setShowParseDialog(false);
-                        }}
-                        disabled={linkMutation.isPending}
-                      >
-                        <Link2 className="h-3 w-3 mr-1" />
-                        Link Order
-                      </Button>
+                      {parseResult.linked ? (
+                        <Badge className="bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Linked
+                        </Badge>
+                      ) : (
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            linkMutation.mutate(parseResult.parsed.data.order_id);
+                            setShowParseDialog(false);
+                          }}
+                          disabled={linkMutation.isPending}
+                        >
+                          <Link2 className="h-3 w-3 mr-1" />
+                          Link Order
+                        </Button>
+                      )}
                     </div>
                   )}
                   <pre className="text-xs overflow-auto max-h-40 whitespace-pre-wrap">
