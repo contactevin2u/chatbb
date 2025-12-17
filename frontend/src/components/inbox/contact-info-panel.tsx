@@ -323,7 +323,7 @@ export const ContactInfoPanel = memo(function ContactInfoPanel({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-48">
-                  {allTags.map((tag) => {
+                  {allTags.filter((tag) => tag?.id).map((tag) => {
                     const isAdded = conversation.tags?.some(t => t.tag?.id === tag.id);
                     return (
                       <DropdownMenuItem

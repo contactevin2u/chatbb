@@ -982,7 +982,7 @@ export default function InboxPage() {
           </div>
           {/* Tag filter chips */}
           <div className="flex gap-1 flex-wrap">
-            {allTags?.map((tag) => (
+            {allTags?.filter((tag) => tag?.id).map((tag) => (
               <Button
                 key={tag.id}
                 variant={selectedTagIds.includes(tag.id) ? 'default' : 'outline'}
@@ -2066,7 +2066,7 @@ export default function InboxPage() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" className="w-48">
-                      {allTags.map((tag) => {
+                      {allTags.filter((tag) => tag?.id).map((tag) => {
                         const isAdded = selectedConversation.tags?.some(t => t.tag?.id === tag.id);
                         return (
                           <DropdownMenuItem
