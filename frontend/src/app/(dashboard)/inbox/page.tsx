@@ -254,7 +254,7 @@ function downloadFile(url: string, filename: string) {
 export default function InboxPage() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
-  const { socket, joinConversation, leaveConversation, startTyping, stopTyping } = useWebSocket();
+  const { socket, joinConversation, leaveConversation, startTyping, stopTyping, broadcastPendingMessage } = useWebSocket();
   const { user } = useAuthStore();
   const { conversationListCollapsed, toggleConversationList } = useUIStore();
 
@@ -379,6 +379,13 @@ export default function InboxPage() {
         };
       });
 
+      // Broadcast to other agents so they see the pending message too (prevents double-reply)
+      broadcastPendingMessage(newMessage.conversationId, {
+        id: optimisticMessage.id,
+        type: optimisticMessage.type,
+        content: optimisticMessage.content,
+        quotedMessageId: newMessage.quotedMessageId,
+      });
       return { previousMessages, conversationId: newMessage.conversationId };
     },
     onSuccess: (_data, variables) => {
@@ -1029,6 +1036,21 @@ export default function InboxPage() {
       queryClient.invalidateQueries({ queryKey: ['messages', selectedConversationId] });
     };
 
+    // Handle pending messages from other agents (shared optimistic UI)
+    const handlePendingMessage = (data: { conversationId: string; message: any }) => {
+      if (data.conversationId === selectedConversationId) {
+        queryClient.setQueryData(['messages', data.conversationId], (old: any) => {
+          if (!old?.messages) return old;
+          // Check if message with this ID already exists (avoid duplicates)
+          if (old.messages.some((m: any) => m.id === data.message.id)) return old;
+          return {
+            ...old,
+            messages: [...old.messages, data.message],
+          };
+        });
+      }
+    };
+
     socket.on('message:new', handleNewMessage);
     socket.on('typing:start', handleTypingStart);
     socket.on('typing:stop', handleTypingStop);
@@ -1036,6 +1058,7 @@ export default function InboxPage() {
     socket.on('agent:active', handleAgentActive);
     socket.on('agent:left', handleAgentLeft);
     socket.on('message:reaction', handleReaction);
+    socket.on('message:pending', handlePendingMessage);
 
     return () => {
       socket.off('message:new', handleNewMessage);
@@ -1045,6 +1068,7 @@ export default function InboxPage() {
       socket.off('agent:active', handleAgentActive);
       socket.off('agent:left', handleAgentLeft);
       socket.off('message:reaction', handleReaction);
+      socket.off('message:pending', handlePendingMessage);
     };
   }, [socket, selectedConversationId, queryClient, user?.id, otherActiveAgent?.id]);
 

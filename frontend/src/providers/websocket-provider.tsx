@@ -6,6 +6,13 @@ import { useAuthStore } from '@/stores/auth-store';
 import { env } from '@/config/env';
 import axios from 'axios';
 
+interface PendingMessage {
+  id: string;
+  type: string;
+  content: { text?: string; url?: string; mimetype?: string; filename?: string };
+  quotedMessageId?: string;
+}
+
 interface WebSocketContextType {
   socket: Socket | null;
   isConnected: boolean;
@@ -15,6 +22,7 @@ interface WebSocketContextType {
   leaveConversation: (conversationId: string) => void;
   startTyping: (conversationId: string) => void;
   stopTyping: (conversationId: string) => void;
+  broadcastPendingMessage: (conversationId: string, message: PendingMessage) => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType>({
@@ -26,6 +34,7 @@ const WebSocketContext = createContext<WebSocketContextType>({
   leaveConversation: () => {},
   startTyping: () => {},
   stopTyping: () => {},
+  broadcastPendingMessage: () => {},
 });
 
 export function useWebSocket() {
@@ -157,6 +166,13 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     }
   }, []);
 
+  // Broadcast pending message to other agents in the conversation (shared optimistic UI)
+  const broadcastPendingMessage = useCallback((conversationId: string, message: PendingMessage) => {
+    if (socketRef.current) {
+      socketRef.current.emit('message:pending', { conversationId, message });
+    }
+  }, []);
+
   return (
     <WebSocketContext.Provider
       value={{
@@ -168,6 +184,7 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
         leaveConversation,
         startTyping,
         stopTyping,
+        broadcastPendingMessage,
       }}
     >
       {children}

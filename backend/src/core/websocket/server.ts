@@ -188,6 +188,39 @@ export function createSocketServer(httpServer: HttpServer): Server {
       });
     });
 
+    // Broadcast pending message to other agents (shared optimistic UI to prevent double-reply)
+    socket.on('message:pending', async (data: {
+      conversationId: string;
+      message: {
+        id: string;
+        type: string;
+        content: { text?: string; url?: string; mimetype?: string; filename?: string };
+        quotedMessageId?: string;
+      };
+    }) => {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { firstName: true, lastName: true },
+      });
+
+      // Broadcast to OTHER agents in the conversation room (excludes sender)
+      socket.to(`conversation:${data.conversationId}`).emit('message:pending', {
+        conversationId: data.conversationId,
+        message: {
+          ...data.message,
+          conversationId: data.conversationId,
+          direction: 'OUTBOUND',
+          status: 'PENDING',
+          createdAt: new Date().toISOString(),
+          sentByUser: {
+            id: userId,
+            firstName: user?.firstName,
+            lastName: user?.lastName,
+          },
+        },
+      });
+    });
+
     // Mark messages as read
     socket.on('messages:read', async (data: { conversationId: string; messageIds: string[] }) => {
       // Broadcast to other users viewing this conversation
