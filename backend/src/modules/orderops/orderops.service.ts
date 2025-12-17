@@ -70,7 +70,7 @@ class OrderOpsService {
 
     this.client = axios.create({
       baseURL: this.config.baseUrl,
-      timeout: 30000,
+      timeout: 120000, // 2 minutes for LLM parsing
       headers: {
         'Content-Type': 'application/json',
       },
