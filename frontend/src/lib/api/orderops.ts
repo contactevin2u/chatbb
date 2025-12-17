@@ -6,6 +6,8 @@ export interface OrderItem {
   quantity: number;
   unit_price: number;
   subtotal: number;
+  item_type?: string;
+  returned?: boolean;
 }
 
 export interface Payment {
@@ -13,6 +15,7 @@ export interface Payment {
   amount: number;
   method: string;
   paid_at: string;
+  category?: string;
 }
 
 export interface OrderDetails {

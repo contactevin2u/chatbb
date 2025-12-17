@@ -537,12 +537,24 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
               </h6>
               <div className="space-y-1.5">
                 {order.items.map((item, index) => (
-                  <div key={item.item_id || index} className="flex justify-between text-xs">
-                    <div className="flex-1">
-                      <span>{item.product_name}</span>
-                      <span className="text-muted-foreground ml-1">x{item.quantity}</span>
+                  <div key={item.item_id || index} className="text-xs">
+                    <div className="flex justify-between">
+                      <div className="flex-1 flex items-center gap-1">
+                        <span>{item.product_name}</span>
+                        <span className="text-muted-foreground">x{item.quantity}</span>
+                        {item.item_type && (
+                          <Badge variant="outline" className="text-[10px] px-1 py-0">
+                            {item.item_type}
+                          </Badge>
+                        )}
+                        {item.returned && (
+                          <Badge variant="destructive" className="text-[10px] px-1 py-0">
+                            Returned
+                          </Badge>
+                        )}
+                      </div>
+                      <span>{formatCurrency(item.subtotal)}</span>
                     </div>
-                    <span>{formatCurrency(item.subtotal)}</span>
                   </div>
                 ))}
               </div>
@@ -562,9 +574,14 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
               <div className="space-y-1.5">
                 {order.payments.map((payment, index) => (
                   <div key={payment.payment_id || index} className="flex justify-between text-xs">
-                    <div>
+                    <div className="flex items-center gap-1">
                       <span>{payment.method}</span>
-                      <span className="text-muted-foreground ml-1">
+                      {payment.category && (
+                        <Badge variant="outline" className="text-[10px] px-1 py-0">
+                          {payment.category}
+                        </Badge>
+                      )}
+                      <span className="text-muted-foreground">
                         {formatDateTime(payment.paid_at)}
                       </span>
                     </div>
