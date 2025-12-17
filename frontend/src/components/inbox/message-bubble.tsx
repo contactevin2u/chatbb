@@ -305,13 +305,13 @@ export const MessageBubble = memo(function MessageBubble({
           </div>
         )}
 
-        {/* Message bubble */}
+        {/* Message bubble - iMessage style */}
         <div
           className={cn(
-            'rounded-2xl px-4 py-2 relative transition-all duration-200',
+            'px-4 py-2.5 relative transition-all duration-200 animate-message-in',
             isOutbound
-              ? 'bg-gray-900 dark:bg-gray-950 text-white rounded-br-sm shadow-lg'
-              : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-bl-sm shadow-sm border border-gray-100 dark:border-gray-700'
+              ? 'bg-gradient-to-br from-hotpink-500 to-purple-500 text-white rounded-[1.25rem] rounded-br-[0.25rem] shadow-[0_2px_12px_rgba(255,26,133,0.25)]'
+              : 'bg-gradient-to-br from-[#faf5ff] to-[#fff0f7] dark:from-purple-900 dark:to-purple-950 text-gray-900 dark:text-gray-100 rounded-[1.25rem] rounded-bl-[0.25rem] shadow-sm border border-hotpink-100/50 dark:border-purple-700/50'
           )}
         >
           {renderContent()}
@@ -332,20 +332,20 @@ export const MessageBubble = memo(function MessageBubble({
 
         {/* Reactions */}
         {message.reactions.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-1">
+          <div className="flex flex-wrap gap-1 mt-1.5">
             {message.reactions.map((reaction) => (
               <button
                 key={reaction.emoji}
                 className={cn(
-                  'flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-all duration-200 hover:scale-105',
+                  'flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-all duration-200 hover:scale-110',
                   reaction.userIds.includes(currentUserId || '')
-                    ? 'bg-pink-50 dark:bg-pink-900/20 border-pink-200 dark:border-pink-800'
-                    : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
+                    ? 'bg-hotpink-50 dark:bg-hotpink-900/30 border-hotpink-200 dark:border-hotpink-700'
+                    : 'bg-white dark:bg-purple-900/50 border-hotpink-100 dark:border-purple-700'
                 )}
                 onClick={() => onReaction?.(message.externalId, reaction.emoji)}
               >
                 <span>{reaction.emoji}</span>
-                <span className="text-gray-600 dark:text-gray-400 font-medium">{reaction.count}</span>
+                <span className="text-hotpink-600 dark:text-hotpink-300 font-medium">{reaction.count}</span>
               </button>
             ))}
           </div>
@@ -363,7 +363,7 @@ export const MessageBubble = memo(function MessageBubble({
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded-full transition-all"
+            className="h-7 w-7 hover:bg-hotpink-50 dark:hover:bg-purple-900/50 text-gray-400 hover:text-hotpink-500 rounded-full transition-all hover:scale-110"
             onClick={() => onReply?.(message)}
           >
             <Reply className="h-3.5 w-3.5" />
@@ -371,7 +371,7 @@ export const MessageBubble = memo(function MessageBubble({
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 hover:bg-pink-50 dark:hover:bg-pink-900/20 text-gray-500 hover:text-pink-500 rounded-full transition-all"
+            className="h-7 w-7 hover:bg-hotpink-50 dark:hover:bg-hotpink-900/30 text-gray-400 hover:text-hotpink-500 rounded-full transition-all hover:scale-110"
             onClick={() => onReaction?.(message.externalId, '❤️')}
           >
             <Heart className="h-3.5 w-3.5" />
@@ -379,7 +379,7 @@ export const MessageBubble = memo(function MessageBubble({
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-gray-500 hover:text-amber-500 rounded-full transition-all"
+            className="h-7 w-7 hover:bg-purple-50 dark:hover:bg-purple-900/30 text-gray-400 hover:text-purple-500 rounded-full transition-all hover:scale-110"
             onClick={() => onReaction?.(message.externalId, '👍')}
           >
             <ThumbsUp className="h-3.5 w-3.5" />

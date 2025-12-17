@@ -57,9 +57,9 @@ export default function LoginPage() {
   };
 
   return (
-    <Card>
-      <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl">Sign in</CardTitle>
+    <Card className="border-hotpink-200/50 dark:border-purple-700/50 shadow-[0_8px_30px_rgba(255,26,133,0.12)]">
+      <CardHeader className="space-y-1 text-center">
+        <CardTitle className="text-2xl bg-gradient-to-r from-hotpink-500 to-purple-500 bg-clip-text text-transparent">Welcome Back</CardTitle>
         <CardDescription>
           Enter your email and password to access your account
         </CardDescription>

@@ -194,10 +194,10 @@ export const MessageInput = memo(function MessageInput({
   }, [slashCommandOpen, onSend]);
 
   return (
-    <div className="p-4 border-t border-pink-200/50 dark:border-purple-800/50 bg-gradient-to-r from-white via-pink-50/30 to-lavender-50/30 dark:from-purple-950 dark:via-purple-900/30 dark:to-pink-950/30">
+    <div className="p-4 border-t border-hotpink-200/30 dark:border-purple-700/50 bg-gradient-to-r from-white via-hotpink-50/20 to-lavender-50/30 dark:from-purple-950 dark:via-purple-900/30 dark:to-hotpink-950/20">
       {/* Reply Preview */}
       {replyToMessage && (
-        <div className="mb-3 p-2 bg-pink-100/50 dark:bg-purple-900/30 rounded-xl border-l-4 border-pink-500">
+        <div className="mb-3 p-2 bg-hotpink-100/40 dark:bg-purple-900/40 rounded-xl border-l-4 border-hotpink-500">
           <div className="flex items-start justify-between">
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium text-primary flex items-center gap-1">
@@ -224,7 +224,7 @@ export const MessageInput = memo(function MessageInput({
 
       {/* Media Preview */}
       {selectedMedia && (
-        <div className="mb-3 p-2 bg-pink-100/50 dark:bg-purple-900/30 rounded-xl">
+        <div className="mb-3 p-2 bg-hotpink-100/40 dark:bg-purple-900/40 rounded-xl">
           <div className="flex items-start gap-2">
             <div className="flex-1">
               {selectedMedia.type === 'image' && (
@@ -320,7 +320,7 @@ export const MessageInput = memo(function MessageInput({
             size="icon"
             onClick={() => fileInputRef.current?.click()}
             disabled={isClosed}
-            className="hover:bg-pink-100 dark:hover:bg-purple-900/50 text-pink-600 dark:text-pink-400 rounded-full transition-all hover:scale-110"
+            className="hover:bg-hotpink-100 dark:hover:bg-purple-900/50 text-hotpink-500 dark:text-hotpink-400 rounded-full transition-all hover:scale-110"
           >
             <Paperclip className="h-5 w-5" />
           </Button>
@@ -345,7 +345,7 @@ export const MessageInput = memo(function MessageInput({
               disabled={isClosed}
             />
           </div>
-          <Button variant="ghost" size="icon" className="hover:bg-pink-100 dark:hover:bg-purple-900/50 text-pink-600 dark:text-pink-400 rounded-full transition-all hover:scale-110">
+          <Button variant="ghost" size="icon" className="hover:bg-hotpink-100 dark:hover:bg-purple-900/50 text-hotpink-500 dark:text-hotpink-400 rounded-full transition-all hover:scale-110">
             <Smile className="h-5 w-5" />
           </Button>
           {/* Poll button */}
@@ -355,7 +355,7 @@ export const MessageInput = memo(function MessageInput({
             onClick={() => setPollDialogOpen(true)}
             disabled={isClosed}
             title="Create poll"
-            className="hover:bg-pink-100 dark:hover:bg-purple-900/50 text-pink-600 dark:text-pink-400 rounded-full transition-all hover:scale-110"
+            className="hover:bg-hotpink-100 dark:hover:bg-purple-900/50 text-hotpink-500 dark:text-hotpink-400 rounded-full transition-all hover:scale-110"
           >
             <BarChart3 className="h-5 w-5" />
           </Button>
@@ -367,7 +367,7 @@ export const MessageInput = memo(function MessageInput({
               onClick={() => setScheduleDialogOpen(true)}
               disabled={isClosed}
               title="Schedule message"
-              className="hover:bg-pink-100 dark:hover:bg-purple-900/50 text-pink-600 dark:text-pink-400 rounded-full transition-all hover:scale-110"
+              className="hover:bg-hotpink-100 dark:hover:bg-purple-900/50 text-hotpink-500 dark:text-hotpink-400 rounded-full transition-all hover:scale-110"
             >
               <Clock className="h-5 w-5" />
             </Button>
@@ -380,7 +380,7 @@ export const MessageInput = memo(function MessageInput({
               onClick={onStartRecording}
               disabled={isClosed}
               title="Record voice note"
-              className="hover:bg-pink-100 dark:hover:bg-purple-900/50 text-pink-600 dark:text-pink-400 rounded-full transition-all hover:scale-110"
+              className="hover:bg-hotpink-100 dark:hover:bg-purple-900/50 text-hotpink-500 dark:text-hotpink-400 rounded-full transition-all hover:scale-110"
             >
               <Mic className="h-5 w-5" />
             </Button>
@@ -388,7 +388,7 @@ export const MessageInput = memo(function MessageInput({
             <Button
               onClick={onSend}
               disabled={!hasContent || isSending || isUploading || isClosed}
-              className="rounded-full shadow-pink-md hover:shadow-pink-lg transition-all hover:scale-105"
+              className="rounded-full shadow-[0_4px_15px_rgba(255,26,133,0.4)] hover:shadow-[0_6px_20px_rgba(255,26,133,0.5)] transition-all hover:scale-110 hover:animate-jelly"
             >
               {isUploading ? (
                 <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
@@ -420,10 +420,10 @@ export const MessageInput = memo(function MessageInput({
       />
 
       {isClosed && (
-        <p className="text-xs text-pink-500 dark:text-pink-400 mt-2 text-center">
+        <p className="text-xs text-hotpink-500 dark:text-hotpink-400 mt-2 text-center">
           This conversation is closed.{' '}
           <button
-            className="text-pink-600 dark:text-pink-300 hover:underline font-medium"
+            className="text-hotpink-600 dark:text-hotpink-300 hover:underline font-medium"
             onClick={() => onReopen(conversationId)}
           >
             Reopen it

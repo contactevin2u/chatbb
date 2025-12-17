@@ -4,57 +4,62 @@
 
 @layer base {
   :root {
-    /* Feminine Pink/Lavender Theme - Light Mode */
+    /* Hot Pink + Purple Kawaii Theme - Light Mode */
     --background: 330 100% 99%; /* Soft cream-pink */
-    --foreground: 330 30% 20%; /* Warm dark brown-pink */
+    --foreground: 330 40% 15%; /* Darker for better contrast */
     --card: 330 60% 99%; /* Soft pink-white */
-    --card-foreground: 330 30% 20%;
+    --card-foreground: 330 40% 15%;
     --popover: 0 0% 100%;
-    --popover-foreground: 330 30% 20%;
-    --primary: 330 85% 60%; /* Beautiful rose pink */
+    --popover-foreground: 330 40% 15%;
+    --primary: 330 100% 55%; /* HOT PINK - bolder! */
     --primary-foreground: 0 0% 100%;
-    --secondary: 280 60% 95%; /* Soft lavender */
-    --secondary-foreground: 280 40% 30%;
+    --secondary: 280 70% 93%; /* Soft lavender */
+    --secondary-foreground: 280 50% 25%;
     --muted: 330 40% 96%; /* Soft pink-gray */
-    --muted-foreground: 330 15% 45%;
-    --accent: 280 70% 92%; /* Light purple accent */
-    --accent-foreground: 280 50% 30%;
-    --destructive: 0 72% 60%;
+    --muted-foreground: 330 20% 40%;
+    --accent: 280 85% 65%; /* Vivid purple accent */
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 55%;
     --destructive-foreground: 0 0% 100%;
-    --border: 330 30% 90%; /* Soft pink border */
+    --border: 330 40% 88%; /* Slightly more visible border */
     --input: 330 30% 92%;
-    --ring: 330 85% 60%;
+    --ring: 330 100% 55%; /* Hot pink focus ring */
     --radius: 1rem; /* More rounded corners */
 
-    /* Custom cute colors */
-    --peach: 20 100% 92%;
-    --mint: 160 60% 90%;
-    --lavender: 280 60% 92%;
-    --blush: 350 80% 94%;
-    --cream: 40 60% 97%;
+    /* Hot Pink Palette */
+    --hotpink: 330 100% 55%;
+    --hotpink-light: 330 100% 94%;
+    --purple: 280 85% 65%;
+    --purple-light: 280 70% 93%;
   }
 
   .dark {
-    /* Feminine Dark Mode - Soft, warm dark */
-    --background: 280 30% 8%; /* Deep purple-black */
-    --foreground: 330 20% 95%; /* Soft pink-white */
-    --card: 280 25% 12%; /* Dark purple card */
-    --card-foreground: 330 20% 95%;
-    --popover: 280 25% 10%;
-    --popover-foreground: 330 20% 95%;
-    --primary: 330 80% 65%; /* Brighter pink for dark mode */
-    --primary-foreground: 280 30% 8%;
-    --secondary: 280 40% 20%; /* Deep lavender */
-    --secondary-foreground: 280 20% 90%;
-    --muted: 280 30% 15%;
-    --muted-foreground: 330 15% 65%;
-    --accent: 280 50% 25%;
-    --accent-foreground: 280 20% 95%;
+    /* Hot Pink Dark Mode - Vibrant in the dark */
+    --background: 280 35% 7%; /* Deep purple-black */
+    --foreground: 330 25% 95%; /* Soft pink-white */
+    --card: 280 30% 11%; /* Dark purple card */
+    --card-foreground: 330 25% 95%;
+    --popover: 280 30% 9%;
+    --popover-foreground: 330 25% 95%;
+    --primary: 330 100% 60%; /* Hot pink - slightly brighter for dark */
+    --primary-foreground: 280 35% 7%;
+    --secondary: 280 45% 18%; /* Deep lavender */
+    --secondary-foreground: 280 25% 90%;
+    --muted: 280 35% 14%;
+    --muted-foreground: 330 20% 60%;
+    --accent: 280 70% 55%;
+    --accent-foreground: 0 0% 100%;
     --destructive: 0 62% 45%;
     --destructive-foreground: 0 0% 100%;
-    --border: 280 30% 18%;
-    --input: 280 30% 18%;
-    --ring: 330 80% 60%;
+    --border: 280 35% 16%;
+    --input: 280 35% 16%;
+    --ring: 330 100% 60%;
+
+    /* Hot Pink Palette Dark */
+    --hotpink: 330 100% 60%;
+    --hotpink-light: 330 60% 20%;
+    --purple: 280 70% 55%;
+    --purple-light: 280 45% 18%;
   }
 }
 
@@ -68,24 +73,25 @@
   }
 }
 
-/* Cute custom scrollbar with pink theme */
+/* Kawaii custom scrollbar with hot pink theme */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-pink-50 dark:bg-purple-950 rounded-full;
+  @apply bg-hotpink-50 dark:bg-purple-950 rounded-full;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-gradient-to-b from-pink-300 to-pink-400 dark:from-pink-600 dark:to-purple-600 rounded-full;
+  background: linear-gradient(180deg, #ff55a5 0%, #a855f7 100%);
+  @apply rounded-full;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  @apply from-pink-400 to-pink-500 dark:from-pink-500 dark:to-purple-500;
+  background: linear-gradient(180deg, #ff1a85 0%, #9333ea 100%);
 }
 
 /* Hide scrollbar for chat container but keep functionality */
@@ -111,22 +117,40 @@
   background: linear-gradient(135deg, hsl(20, 100%, 95%) 0%, hsl(330, 80%, 95%) 100%);
 }
 
-/* Soft pink glow effect */
+/* Hot pink glow effect */
 .glow-pink {
-  box-shadow: 0 0 20px rgba(236, 72, 153, 0.15),
-              0 0 40px rgba(236, 72, 153, 0.1),
-              0 0 60px rgba(236, 72, 153, 0.05);
+  box-shadow: 0 0 20px rgba(255, 26, 133, 0.3),
+              0 0 40px rgba(255, 26, 133, 0.2),
+              0 0 60px rgba(255, 26, 133, 0.1);
 }
 
-/* Cute button hover effects */
+/* Kawaii button hover effects */
 .btn-cute {
-  @apply transition-all duration-300 ease-out;
-  @apply hover:scale-105 hover:shadow-lg;
-  @apply active:scale-95;
+  @apply transition-all ease-out;
+  transition-duration: 200ms;
+  transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .btn-cute:hover {
-  box-shadow: 0 4px 20px rgba(236, 72, 153, 0.3);
+  transform: scale(1.05);
+  box-shadow: 0 8px 25px rgba(255, 26, 133, 0.4);
+}
+
+.btn-cute:active {
+  transform: scale(0.95);
+}
+
+/* Jelly button effect */
+.btn-jelly:hover {
+  animation: jelly 0.5s ease-in-out;
+}
+
+@keyframes jelly {
+  0% { transform: scale(1, 1); }
+  25% { transform: scale(0.95, 1.05); }
+  50% { transform: scale(1.05, 0.95); }
+  75% { transform: scale(0.98, 1.02); }
+  100% { transform: scale(1, 1); }
 }
 
 /* Floating animation for cute elements */
@@ -232,16 +256,16 @@
   animation: heartbeat 1s ease-in-out infinite;
 }
 
-/* Soft card shadow */
+/* Kawaii card shadow */
 .card-cute {
   @apply rounded-2xl;
-  box-shadow: 0 4px 6px -1px rgba(236, 72, 153, 0.1),
-              0 2px 4px -1px rgba(236, 72, 153, 0.06);
+  box-shadow: 0 4px 12px rgba(255, 26, 133, 0.08);
+  @apply transition-all duration-300;
 }
 
 .card-cute:hover {
-  box-shadow: 0 10px 15px -3px rgba(236, 72, 153, 0.15),
-              0 4px 6px -2px rgba(236, 72, 153, 0.1);
+  box-shadow: 0 8px 25px rgba(255, 26, 133, 0.15);
+  transform: translateY(-2px);
 }
 
 /* Glass morphism with pink tint */
@@ -313,38 +337,80 @@
   @apply ring-2 ring-offset-2 ring-offset-background ring-pink-400;
 }
 
-/* Notification badge */
+/* Notification badge - Kawaii pop effect */
 .badge-cute {
-  @apply bg-gradient-to-r from-pink-500 to-rose-500;
+  background: linear-gradient(135deg, #ff1a85 0%, #ff55a5 100%);
   @apply text-white text-xs font-bold;
   @apply rounded-full px-2 py-0.5;
-  @apply shadow-lg;
-  box-shadow: 0 2px 8px rgba(236, 72, 153, 0.4);
+  box-shadow: 0 2px 10px rgba(255, 26, 133, 0.5);
 }
 
-/* Message bubble styling */
+.badge-pop {
+  animation: pop 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+@keyframes pop {
+  0% { transform: scale(0); opacity: 0; }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* iMessage-style bubble styling */
 .bubble-outbound {
-  @apply bg-gradient-to-br from-pink-500 to-pink-600;
-  @apply text-white rounded-2xl rounded-br-md;
+  background: linear-gradient(135deg, #ff1a85 0%, #a855f7 100%);
+  @apply text-white;
+  border-radius: 1.25rem 1.25rem 0.25rem 1.25rem; /* tail bottom-right */
+  box-shadow: 0 2px 12px rgba(255, 26, 133, 0.25);
 }
 
 .bubble-inbound {
-  @apply bg-gradient-to-br from-white to-pink-50 dark:from-purple-900 dark:to-purple-950;
-  @apply rounded-2xl rounded-bl-md;
-  @apply border border-pink-100 dark:border-purple-800;
+  background: linear-gradient(135deg, #faf5ff 0%, #fff0f7 100%);
+  @apply text-gray-900 dark:text-gray-100;
+  border-radius: 1.25rem 1.25rem 1.25rem 0.25rem; /* tail bottom-left */
+  border: 1px solid rgba(255, 26, 133, 0.1);
 }
 
-/* Sidebar item hover effect */
+.dark .bubble-inbound {
+  background: linear-gradient(135deg, #3b0764 0%, #4c0757 100%);
+  border: 1px solid rgba(168, 85, 247, 0.2);
+}
+
+/* Message entry animation */
+.message-animate-in {
+  animation: message-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes message-in {
+  0% { opacity: 0; transform: translateY(10px) scale(0.95); }
+  60% { transform: translateY(-2px) scale(1.02); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Sidebar item hover effect - Kawaii style */
 .sidebar-item {
   @apply transition-all duration-200 ease-out;
-  @apply hover:bg-pink-100 dark:hover:bg-purple-900/50;
+  @apply hover:bg-hotpink-100 dark:hover:bg-purple-900/50;
   @apply rounded-xl;
 }
 
+.sidebar-item:hover .sidebar-icon {
+  @apply scale-110;
+  animation: wiggle 0.4s ease-in-out;
+}
+
 .sidebar-item.active {
-  @apply bg-gradient-to-r from-pink-100 to-purple-100;
-  @apply dark:from-pink-900/30 dark:to-purple-900/30;
-  @apply border-l-4 border-pink-500;
+  background: linear-gradient(135deg, #ff1a85 0%, #a855f7 100%);
+  @apply text-white;
+  box-shadow: 0 4px 15px rgba(255, 26, 133, 0.4);
+}
+
+.sidebar-item.active .sidebar-icon {
+  @apply text-white;
+}
+
+@keyframes wiggle {
+  0%, 100% { transform: rotate(-3deg) scale(1.1); }
+  50% { transform: rotate(3deg) scale(1.1); }
 }
 
 /* Tab styling */

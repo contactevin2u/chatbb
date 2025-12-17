@@ -48,7 +48,19 @@ const config: Config = {
         telegram: '#0088cc',
         instagram: '#E4405F',
         facebook: '#1877F2',
-        // Cute feminine colors
+        // Hot Pink + Purple Kawaii Theme
+        hotpink: {
+          50: '#fff0f7',
+          100: '#ffe1ef',
+          200: '#ffc2df',
+          300: '#ff94c7',
+          400: '#ff55a5',
+          500: '#ff1a85',
+          600: '#f00070',
+          700: '#d1005e',
+          800: '#ad004f',
+          900: '#8f0044',
+        },
         peach: {
           50: '#fff7ed',
           100: '#ffedd5',
@@ -105,6 +117,11 @@ const config: Config = {
         'pink-glow': '0 0 20px rgba(236, 72, 153, 0.15), 0 0 40px rgba(236, 72, 153, 0.1)',
         'lavender': '0 4px 6px -1px rgba(168, 85, 247, 0.1), 0 2px 4px -1px rgba(168, 85, 247, 0.06)',
         'lavender-lg': '0 10px 15px -3px rgba(168, 85, 247, 0.15), 0 4px 6px -2px rgba(168, 85, 247, 0.1)',
+        // Hotpink shadows
+        'hotpink': '0 4px 15px rgba(255, 26, 133, 0.3)',
+        'hotpink-lg': '0 8px 25px rgba(255, 26, 133, 0.4)',
+        'hotpink-glow': '0 0 20px rgba(255, 26, 133, 0.4), 0 0 40px rgba(255, 26, 133, 0.2)',
+        'bubble': '0 2px 12px rgba(255, 26, 133, 0.2)',
       },
       keyframes: {
         'accordion-down': {
@@ -151,6 +168,32 @@ const config: Config = {
           '0%': { backgroundPosition: '-200% 0' },
           '100%': { backgroundPosition: '200% 0' },
         },
+        // Kawaii animations
+        'jelly': {
+          '0%': { transform: 'scale(1, 1)' },
+          '25%': { transform: 'scale(0.95, 1.05)' },
+          '50%': { transform: 'scale(1.05, 0.95)' },
+          '75%': { transform: 'scale(0.98, 1.02)' },
+          '100%': { transform: 'scale(1, 1)' },
+        },
+        'pop': {
+          '0%': { transform: 'scale(0)', opacity: '0' },
+          '50%': { transform: 'scale(1.2)' },
+          '100%': { transform: 'scale(1)', opacity: '1' },
+        },
+        'wiggle-more': {
+          '0%, 100%': { transform: 'rotate(-6deg)' },
+          '50%': { transform: 'rotate(6deg)' },
+        },
+        'message-in': {
+          '0%': { opacity: '0', transform: 'translateY(10px) scale(0.95)' },
+          '60%': { transform: 'translateY(-2px) scale(1.02)' },
+          '100%': { opacity: '1', transform: 'translateY(0) scale(1)' },
+        },
+        'glow-pulse': {
+          '0%, 100%': { boxShadow: '0 0 5px rgba(255, 26, 133, 0.4)' },
+          '50%': { boxShadow: '0 0 20px rgba(255, 26, 133, 0.6)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -163,12 +206,22 @@ const config: Config = {
         'heartbeat': 'heartbeat 1s ease-in-out infinite',
         'pulse-soft': 'pulse-soft 2s ease-in-out infinite',
         'shimmer': 'shimmer 2s linear infinite',
+        // Kawaii animations
+        'jelly': 'jelly 0.5s ease-in-out',
+        'pop': 'pop 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55)',
+        'wiggle-more': 'wiggle-more 0.4s ease-in-out',
+        'message-in': 'message-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        'glow-pulse': 'glow-pulse 2s ease-in-out infinite',
       },
       backgroundImage: {
         'gradient-pink': 'linear-gradient(135deg, hsl(330, 80%, 95%) 0%, hsl(280, 60%, 95%) 100%)',
         'gradient-lavender': 'linear-gradient(135deg, hsl(280, 60%, 95%) 0%, hsl(330, 80%, 95%) 100%)',
         'gradient-peach': 'linear-gradient(135deg, hsl(20, 100%, 95%) 0%, hsl(330, 80%, 95%) 100%)',
         'gradient-cute': 'linear-gradient(135deg, #ec4899 0%, #a855f7 100%)',
+        'gradient-hotpink': 'linear-gradient(135deg, #ff1a85 0%, #a855f7 100%)',
+        'gradient-hotpink-soft': 'linear-gradient(135deg, rgba(255, 26, 133, 0.15) 0%, rgba(168, 85, 247, 0.15) 100%)',
+        'gradient-bubble-out': 'linear-gradient(135deg, #ff1a85 0%, #a855f7 100%)',
+        'gradient-bubble-in': 'linear-gradient(135deg, #faf5ff 0%, #fff0f7 100%)',
         'shimmer': 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)',
       },
     },

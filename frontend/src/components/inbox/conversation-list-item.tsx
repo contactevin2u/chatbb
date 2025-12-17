@@ -144,17 +144,17 @@ export const ConversationListItem = memo(function ConversationListItem({
   return (
     <button
       className={cn(
-        'w-full flex items-start gap-3 p-3 hover:bg-pink-100/50 dark:hover:bg-purple-900/30 transition-all duration-200 text-left rounded-xl mx-1 my-0.5',
-        isSelected && 'bg-gradient-to-r from-pink-100 to-lavender-100 dark:from-purple-900/50 dark:to-pink-900/50 shadow-pink-sm',
-        conversation.isPinned && 'border-l-3 border-l-pink-500'
+        'w-full flex items-start gap-3 p-3 hover:bg-hotpink-50 dark:hover:bg-purple-900/40 transition-all duration-200 text-left rounded-xl mx-1 my-0.5',
+        isSelected && 'bg-gradient-to-r from-hotpink-100/80 to-lavender-100/80 dark:from-purple-900/60 dark:to-hotpink-900/40 shadow-[0_2px_10px_rgba(255,26,133,0.1)] border-l-3 border-l-hotpink-500',
+        conversation.isPinned && !isSelected && 'border-l-3 border-l-hotpink-400'
       )}
       onClick={() => onClick(conversation.id)}
     >
       {/* Avatar */}
       <div className="relative flex-shrink-0">
-        <Avatar className="ring-2 ring-pink-200/50 dark:ring-purple-700/50">
+        <Avatar className="ring-2 ring-hotpink-200/40 dark:ring-purple-600/50 transition-all duration-200 hover:ring-hotpink-300">
           <AvatarImage src={conversation.contact.avatarUrl || undefined} />
-          <AvatarFallback className={isGroup ? 'bg-gradient-to-br from-emerald-400 to-teal-400 text-white' : 'bg-gradient-to-br from-pink-400 to-purple-400 text-white'}>
+          <AvatarFallback className={isGroup ? 'bg-gradient-to-br from-emerald-400 to-teal-400 text-white' : 'bg-gradient-to-br from-hotpink-400 to-purple-500 text-white'}>
             {isGroup ? <Users className="h-4 w-4" /> : getContactInitials(conversation.contact)}
           </AvatarFallback>
         </Avatar>

@@ -79,10 +79,10 @@ export function Sidebar() {
       <aside
         className={cn(
           'fixed inset-y-0 left-0 z-50 flex flex-col transition-all duration-300 ease-out',
-          'bg-gradient-to-b from-pink-50 via-white to-lavender-50',
-          'dark:from-purple-950 dark:via-purple-900/95 dark:to-pink-950/90',
-          'border-r border-pink-200/50 dark:border-purple-800/50',
-          'shadow-pink-sm',
+          'bg-gradient-to-b from-hotpink-50 via-white to-lavender-50',
+          'dark:from-purple-950 dark:via-purple-900 dark:to-hotpink-950/80',
+          'border-r border-hotpink-200/30 dark:border-purple-700/50',
+          'shadow-[0_0_30px_rgba(255,26,133,0.08)]',
           // Desktop: collapsed = icon-only (w-16), expanded = full (w-64)
           sidebarCollapsed ? 'lg:w-16' : 'lg:w-64',
           // Mobile: controlled by mobileMenuOpen
@@ -129,11 +129,11 @@ export function Sidebar() {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  'flex items-center gap-3 rounded-xl text-sm font-medium transition-all duration-200',
+                  'group flex items-center gap-3 rounded-xl text-sm font-medium transition-all duration-200',
                   sidebarCollapsed ? 'lg:justify-center lg:px-0 lg:py-2.5 px-3 py-2.5' : 'px-3 py-2.5',
                   isActive
-                    ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-pink-md'
-                    : 'text-pink-700 dark:text-pink-200 hover:bg-pink-100 dark:hover:bg-purple-900/50 hover:text-pink-900 dark:hover:text-pink-100 hover:scale-[1.02]'
+                    ? 'bg-gradient-to-r from-hotpink-500 to-purple-500 text-white shadow-[0_4px_15px_rgba(255,26,133,0.4)]'
+                    : 'text-hotpink-700 dark:text-hotpink-200 hover:bg-hotpink-100 dark:hover:bg-purple-900/50 hover:text-hotpink-900 dark:hover:text-hotpink-100'
                 )}
                 onClick={() => {
                   // Close sidebar on mobile after navigation
@@ -143,9 +143,9 @@ export function Sidebar() {
                 }}
               >
                 <Icon className={cn(
-                  'h-5 w-5 flex-shrink-0 transition-transform',
+                  'h-5 w-5 flex-shrink-0 transition-all duration-200',
                   sidebarCollapsed && 'lg:h-5 lg:w-5',
-                  !isActive && 'group-hover:scale-110'
+                  !isActive && 'group-hover:scale-110 group-hover:animate-wiggle'
                 )} />
                 <span className={cn(
                   'transition-all duration-200',
@@ -176,7 +176,7 @@ export function Sidebar() {
 
         {/* Collapse Toggle (Desktop only) */}
         <div className={cn(
-          'hidden lg:flex border-t border-pink-200/30 dark:border-purple-800/30 p-2',
+          'hidden lg:flex border-t border-hotpink-200/30 dark:border-purple-700/30 p-2',
           sidebarCollapsed ? 'justify-center' : 'justify-end'
         )}>
           <Tooltip>
@@ -185,7 +185,7 @@ export function Sidebar() {
                 variant="ghost"
                 size="icon"
                 onClick={toggleSidebar}
-                className="h-8 w-8 text-pink-600 dark:text-pink-400 hover:bg-pink-100 dark:hover:bg-purple-900/50 hover:text-pink-700 dark:hover:text-pink-300 transition-all duration-200 rounded-lg"
+                className="h-8 w-8 text-hotpink-500 dark:text-hotpink-400 hover:bg-hotpink-100 dark:hover:bg-purple-900/50 hover:text-hotpink-600 dark:hover:text-hotpink-300 transition-all duration-200 rounded-lg hover:scale-110"
               >
                 {sidebarCollapsed ? (
                   <PanelLeft className="h-4 w-4" />
@@ -194,7 +194,7 @@ export function Sidebar() {
                 )}
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="right" className="tooltip-cute">
+            <TooltipContent side="right" className="bg-gradient-to-r from-hotpink-500 to-purple-500 text-white border-0">
               {sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} <kbd className="ml-2 text-xs opacity-60">[</kbd>
             </TooltipContent>
           </Tooltip>
