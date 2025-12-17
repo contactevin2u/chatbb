@@ -337,15 +337,60 @@ export default function InboxPage() {
     }
   }, [urlConversationId]);
 
-  // Send message mutation
+  // Send message mutation with optimistic updates for instant UI feedback
   const sendMessageMutation = useMutation({
     mutationFn: sendMessage,
-    onSuccess: () => {
-      setMessageText('');
-      queryClient.invalidateQueries({ queryKey: ['messages', selectedConversationId] });
+    onMutate: async (newMessage) => {
+      // Cancel outgoing refetches to avoid overwriting optimistic update
+      await queryClient.cancelQueries({ queryKey: ['messages', newMessage.conversationId] });
+
+      // Snapshot previous messages for rollback
+      const previousMessages = queryClient.getQueryData(['messages', newMessage.conversationId]);
+
+      // Optimistically add the message to the UI immediately
+      const optimisticMessage = {
+        id: `temp-${Date.now()}`,
+        conversationId: newMessage.conversationId,
+        direction: 'OUTBOUND',
+        type: newMessage.media?.type?.toUpperCase() || 'TEXT',
+        content: {
+          text: newMessage.text,
+          ...(newMessage.media && {
+            url: newMessage.media.url,
+            mimetype: newMessage.media.mimetype,
+            filename: newMessage.media.filename,
+          }),
+        },
+        status: 'PENDING',
+        createdAt: new Date().toISOString(),
+        sentByUser: user ? {
+          id: user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+        } : null,
+        metadata: newMessage.quotedMessageId ? { quotedMessageId: newMessage.quotedMessageId } : null,
+      };
+
+      queryClient.setQueryData(['messages', newMessage.conversationId], (old: any) => {
+        if (!old?.messages) return old;
+        return {
+          ...old,
+          messages: [...old.messages, optimisticMessage],
+        };
+      });
+
+      return { previousMessages, conversationId: newMessage.conversationId };
+    },
+    onSuccess: (_data, variables) => {
+      // Refetch to get the real message with server ID
+      queryClient.invalidateQueries({ queryKey: ['messages', variables.conversationId] });
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
     },
-    onError: (error: Error) => {
+    onError: (error: Error, variables, context) => {
+      // Rollback on error
+      if (context?.previousMessages) {
+        queryClient.setQueryData(['messages', context.conversationId], context.previousMessages);
+      }
       toast.error(error.message || 'Failed to send message');
     },
   });
