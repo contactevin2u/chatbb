@@ -291,10 +291,10 @@ export const MessageBubble = memo(function MessageBubble({
         {message.quotedMessage && (
           <div
             className={cn(
-              'text-xs p-2 rounded border-l-2 mb-1 w-full min-w-[120px]',
+              'text-xs p-2 rounded-lg border-l-2 mb-1 w-full min-w-[120px]',
               isOutbound
-                ? 'bg-white/20 border-white/50'
-                : 'bg-muted border-muted-foreground/50'
+                ? 'bg-gray-800 border-gray-600 text-gray-300'
+                : 'bg-gray-50 dark:bg-gray-700 border-pink-300 dark:border-pink-600 text-gray-600 dark:text-gray-300'
             )}
           >
             <p className="line-clamp-2 break-words">
@@ -308,10 +308,10 @@ export const MessageBubble = memo(function MessageBubble({
         {/* Message bubble */}
         <div
           className={cn(
-            'rounded-2xl px-4 py-2 relative shadow-pink-sm transition-all duration-200',
+            'rounded-2xl px-4 py-2 relative transition-all duration-200',
             isOutbound
-              ? 'bg-gradient-to-br from-pink-500 to-pink-600 text-white rounded-br-md hover:shadow-pink'
-              : 'bg-gradient-to-br from-white to-pink-50 dark:from-purple-900 dark:to-purple-950 rounded-bl-md border border-pink-100 dark:border-purple-800'
+              ? 'bg-gray-900 dark:bg-gray-950 text-white rounded-br-sm shadow-lg'
+              : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-bl-sm shadow-sm border border-gray-100 dark:border-gray-700'
           )}
         >
           {renderContent()}
@@ -337,15 +337,15 @@ export const MessageBubble = memo(function MessageBubble({
               <button
                 key={reaction.emoji}
                 className={cn(
-                  'flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-all duration-200 hover:scale-110',
+                  'flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-all duration-200 hover:scale-105',
                   reaction.userIds.includes(currentUserId || '')
-                    ? 'bg-pink-100 dark:bg-pink-900/30 border-pink-300 dark:border-pink-700'
-                    : 'bg-white dark:bg-purple-900/50 border-pink-200 dark:border-purple-700'
+                    ? 'bg-pink-50 dark:bg-pink-900/20 border-pink-200 dark:border-pink-800'
+                    : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
                 )}
                 onClick={() => onReaction?.(message.externalId, reaction.emoji)}
               >
                 <span>{reaction.emoji}</span>
-                <span className="text-pink-600 dark:text-pink-400">{reaction.count}</span>
+                <span className="text-gray-600 dark:text-gray-400 font-medium">{reaction.count}</span>
               </button>
             ))}
           </div>
@@ -356,14 +356,14 @@ export const MessageBubble = memo(function MessageBubble({
       {showActions && (
         <div
           className={cn(
-            'flex items-center gap-1 self-center opacity-0 group-hover:opacity-100 transition-all duration-200',
+            'flex items-center gap-0.5 self-center opacity-0 group-hover:opacity-100 transition-all duration-200',
             isOutbound ? 'flex-row-reverse' : ''
           )}
         >
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 hover:bg-pink-100 dark:hover:bg-purple-900/50 hover:text-pink-600 dark:hover:text-pink-400 rounded-full transition-all hover:scale-110"
+            className="h-7 w-7 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded-full transition-all"
             onClick={() => onReply?.(message)}
           >
             <Reply className="h-3.5 w-3.5" />
@@ -371,7 +371,7 @@ export const MessageBubble = memo(function MessageBubble({
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 hover:bg-pink-100 dark:hover:bg-purple-900/50 hover:text-rose-500 rounded-full transition-all hover:scale-110"
+            className="h-7 w-7 hover:bg-pink-50 dark:hover:bg-pink-900/20 text-gray-500 hover:text-pink-500 rounded-full transition-all"
             onClick={() => onReaction?.(message.externalId, '❤️')}
           >
             <Heart className="h-3.5 w-3.5" />
@@ -379,7 +379,7 @@ export const MessageBubble = memo(function MessageBubble({
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 hover:bg-pink-100 dark:hover:bg-purple-900/50 hover:text-amber-500 rounded-full transition-all hover:scale-110"
+            className="h-7 w-7 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-gray-500 hover:text-amber-500 rounded-full transition-all"
             onClick={() => onReaction?.(message.externalId, '👍')}
           >
             <ThumbsUp className="h-3.5 w-3.5" />
@@ -391,7 +391,7 @@ export const MessageBubble = memo(function MessageBubble({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 hover:bg-pink-100 dark:hover:bg-purple-900/50 rounded-full transition-all hover:scale-110"
+                  className="h-7 w-7 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded-full transition-all"
                 >
                   <MoreVertical className="h-3.5 w-3.5" />
                 </Button>
