@@ -31,6 +31,10 @@ import { sequenceRoutes } from './modules/sequence/sequence.routes.js';
 export function createApp(): Express {
   const app = express();
 
+  // Trust proxy (required for Render, Heroku, etc. behind load balancer)
+  // Needed for express-rate-limit to get real client IP from X-Forwarded-For
+  app.set('trust proxy', 1);
+
   // Security middleware
   app.use(helmet());
 
