@@ -76,8 +76,17 @@ import { cn } from '@/lib/utils/cn';
 import { formatWhatsAppText } from '@/lib/utils/whatsapp-formatting';
 import { updateContact } from '@/lib/api/contacts';
 import { setIncognitoMode as setIncognitoModeApi, getIncognitoStatus } from '@/lib/api/channels';
+import {
+  getLinkedOrder,
+  searchOrdersByContact,
+  linkOrder,
+  unlinkOrder,
+  type OrderDetails,
+} from '@/lib/api/orderops';
 import { useWebSocket } from '@/providers/websocket-provider';
 import { useAuthStore } from '@/stores/auth-store';
+import { OrderPanel } from '@/components/inbox/order-panel';
+import { OrderOpsTab } from '@/components/inbox/orderops-tab';
 import { useUIStore } from '@/stores/ui-store';
 import { useKeyboardShortcuts, KeyboardShortcut } from '@/hooks/use-keyboard-shortcuts';
 import { SlashCommand, SlashCommandItem } from '@/components/slash-command';
@@ -270,6 +279,7 @@ export default function InboxPage() {
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [messageText, setMessageText] = useState('');
   const [showContactPanel, setShowContactPanel] = useState(true);
+  const [showOrderPanel, setShowOrderPanel] = useState(false);
   const [typingUsers, setTypingUsers] = useState<Map<string, string>>(new Map());
   const [editContactOpen, setEditContactOpen] = useState(false);
   const [editContactName, setEditContactName] = useState('');
@@ -1519,8 +1529,18 @@ export default function InboxPage() {
                   variant="ghost"
                   size="icon"
                   onClick={() => setShowContactPanel(!showContactPanel)}
+                  title="Contact Info"
                 >
                   <User className="h-5 w-5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowOrderPanel(!showOrderPanel)}
+                  title="Order Details"
+                  className={showOrderPanel ? 'bg-pink-100 dark:bg-purple-900/50' : ''}
+                >
+                  <Package className="h-5 w-5" />
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -2613,24 +2633,18 @@ export default function InboxPage() {
 
             {/* OrderOps Tab */}
             <TabsContent value="orderops" className="flex-1 m-0">
-              <ScrollArea className="h-[calc(100vh-280px)]">
-                <div className="p-4 space-y-4">
-                  <div className="text-center py-8">
-                    <Package className="h-12 w-12 mx-auto text-muted-foreground/50 mb-3" />
-                    <h5 className="text-sm font-medium mb-1">Order Operations</h5>
-                    <p className="text-xs text-muted-foreground mb-4">
-                      Manage orders and operations for this contact
-                    </p>
-                    <Button variant="outline" size="sm" disabled>
-                      <Plus className="h-3 w-3 mr-1" />
-                      Coming Soon
-                    </Button>
-                  </div>
-                </div>
-              </ScrollArea>
+              <OrderOpsTab conversationId={selectedConversation.id} />
             </TabsContent>
           </Tabs>
         </div>
+      )}
+
+      {/* Standalone Order Panel (alternative view) */}
+      {showOrderPanel && selectedConversation && (
+        <OrderPanel
+          conversationId={selectedConversation.id}
+          onClose={() => setShowOrderPanel(false)}
+        />
       )}
 
       {/* Edit Contact Name Dialog */}

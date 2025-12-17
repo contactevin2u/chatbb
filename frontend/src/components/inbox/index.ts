@@ -23,3 +23,6 @@ export type {
   GroupParticipant,
   GroupParticipantsData,
 } from './contact-info-panel';
+
+export { OrderPanel } from './order-panel';
+export { OrderOpsTab } from './orderops-tab';

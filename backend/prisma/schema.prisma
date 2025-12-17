@@ -361,6 +361,10 @@ model Conversation {
   closedAt         DateTime?          @map("closed_at")
   isPinned         Boolean            @default(false) @map("is_pinned")
   pinnedAt         DateTime?          @map("pinned_at")
+  // OrderOps integration
+  orderOpsOrderId   Int?              @map("orderops_order_id")
+  orderOpsOrderCode String?           @map("orderops_order_code")
+  orderOpsLinkedAt  DateTime?         @map("orderops_linked_at")
   createdAt        DateTime           @default(now()) @map("created_at")
   updatedAt        DateTime           @updatedAt @map("updated_at")
 
@@ -383,6 +387,7 @@ model Conversation {
   @@index([status])
   @@index([lastMessageAt(sort: Desc)])
   @@index([isPinned, pinnedAt(sort: Desc)])
+  @@index([orderOpsOrderId])
   @@map("conversations")
 }
 
