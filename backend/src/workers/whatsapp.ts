@@ -1055,6 +1055,10 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
 
           const isFromMe = msg.key?.fromMe || false;
 
+          // Use original message timestamp for createdAt (not sync time)
+          // messageTimestamp is Unix epoch in seconds
+          const originalTimestamp = new Date(Number(msg.messageTimestamp) * 1000);
+
           const createdMsg = await prisma.message.create({
             data: {
               conversationId: conversation.id,
@@ -1064,8 +1068,10 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
               type,
               content,
               status: isFromMe ? MessageStatus.SENT : MessageStatus.DELIVERED,
-              sentAt: isFromMe ? new Date(Number(msg.messageTimestamp) * 1000) : null,
-              deliveredAt: !isFromMe ? new Date(Number(msg.messageTimestamp) * 1000) : null,
+              sentAt: isFromMe ? originalTimestamp : null,
+              deliveredAt: !isFromMe ? originalTimestamp : null,
+              // IMPORTANT: Set createdAt to original message time, not sync time
+              createdAt: originalTimestamp,
               metadata: { timestamp: Number(msg.messageTimestamp), isHistorical: true },
             },
           });
