@@ -192,7 +192,7 @@ class OrderOpsService {
   }
 
   /**
-   * Get order details by ID
+   * Get order details by ID (enriched with driver_name from search endpoint)
    */
   async getOrder(orderId: number): Promise<OrderDetails | null> {
     try {
@@ -200,6 +200,18 @@ class OrderOpsService {
       const raw = response.data?.data || response.data;
 
       if (!raw) return null;
+
+      // Get driver_name and related orders from search endpoint (which joins Driver table)
+      let driverName: string | undefined;
+      let relatedOrders: RelatedOrder[] = [];
+
+      if (raw.code) {
+        const searchResult = await this.getOrderWithRelated(raw.code);
+        if (searchResult) {
+          driverName = searchResult.driver_name;
+          relatedOrders = searchResult.related_orders || [];
+        }
+      }
 
       // Transform API response to match our interface
       return {
@@ -216,34 +228,20 @@ class OrderOpsService {
         paid_amount: parseFloat(raw.paid_amount) || 0,
         balance: parseFloat(raw.balance) || 0,
         outstanding: parseFloat(raw.balance) || 0,
-        // Trip/Driver info - check multiple possible API response structures
+        // Trip/Driver info - driver_name from search endpoint
         trip_id: raw.trip?.id || raw.trip_id,
         trip_status: raw.trip?.status || raw.trip_status,
         driver_id: raw.trip?.driver_id || raw.trip?.driver?.id || raw.driver_id,
-        driver_name: raw.trip?.driver_name || raw.trip?.driver?.name || raw.driver_name || raw.driver?.name,
+        driver_name: driverName || raw.trip?.driver_name || raw.trip?.driver?.name,
         planned_at: raw.trip?.planned_at || raw.planned_at,
         delivered_at: raw.trip?.delivered_at || raw.trip_delivered_at || raw.delivered_at,
         pod_photo_urls: raw.trip?.pod_photo_urls || raw.pod_photo_urls || [],
         signature_url: raw.trip?.signature_url || raw.signature_url,
         notes: raw.notes,
-        // Related orders
+        // Related orders from search by base code
         parent_id: raw.parent_id,
-        parent: raw.parent ? {
-          order_id: raw.parent.id,
-          order_code: raw.parent.code,
-          type: raw.parent.type,
-          status: raw.parent.status,
-          total: parseFloat(raw.parent.total) || 0,
-          balance: parseFloat(raw.parent.balance) || 0,
-        } : undefined,
-        adjustments: (raw.adjustments || []).map((adj: any) => ({
-          order_id: adj.id,
-          order_code: adj.code,
-          type: adj.type,
-          status: adj.status,
-          total: parseFloat(adj.total) || 0,
-          balance: parseFloat(adj.balance) || 0,
-        })),
+        parent: undefined,
+        adjustments: relatedOrders,
         items: (raw.items || []).map((item: any) => ({
           item_id: item.id,
           product_name: item.name,
@@ -320,6 +318,44 @@ class OrderOpsService {
    */
   async searchByPhone(phone: string): Promise<OrderDetails[]> {
     return this.listOrders({ customer_phone: phone, limit: 10 });
+  }
+
+  /**
+   * Get order with driver_name and related orders by searching base code
+   * e.g., KP905-R → searches "KP905" → finds KP905, KP905-R, KP905-B
+   */
+  async getOrderWithRelated(orderCode: string): Promise<{
+    driver_name?: string;
+    related_orders: RelatedOrder[];
+  } | null> {
+    try {
+      // Extract base code (strip suffix like -R, -B, -C, -S)
+      const baseCode = orderCode.replace(/-[RBCS]$/i, '');
+
+      const response = await this.client.get('/orders', { params: { q: baseCode, limit: 20 } });
+      const items = response.data?.data?.items || response.data?.items || [];
+
+      // Find current order's driver_name
+      const currentOrder = items.find((o: any) => o.code === orderCode);
+      const driverName = currentOrder?.trip?.driver_name;
+
+      // Find related orders (same base code, different from current)
+      const relatedOrders: RelatedOrder[] = items
+        .filter((o: any) => o.code !== orderCode && o.code.startsWith(baseCode))
+        .map((o: any) => ({
+          order_id: o.id,
+          order_code: o.code,
+          type: o.type,
+          status: o.status,
+          total: parseFloat(o.total) || 0,
+          balance: parseFloat(o.balance) || 0,
+        }));
+
+      return { driver_name: driverName, related_orders: relatedOrders };
+    } catch (error: any) {
+      logger.error({ error: error.message, orderCode }, 'OrderOps get order with related failed');
+      return null;
+    }
   }
 
   /**
