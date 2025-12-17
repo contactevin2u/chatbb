@@ -678,6 +678,10 @@ async function main() {
         });
 
         logger.info({ recipientId, messageId: result?.key?.id }, 'Broadcast sent');
+
+        // Delay 1-2 seconds between broadcasts to avoid WhatsApp rate limits/bans
+        const delay = 1000 + Math.random() * 1000;
+        await new Promise(resolve => setTimeout(resolve, delay));
       } catch (error) {
         await prisma.broadcastRecipient.update({
           where: { id: recipientId },

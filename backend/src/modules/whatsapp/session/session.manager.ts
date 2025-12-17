@@ -225,6 +225,8 @@ export class SessionManager extends EventEmitter {
       shouldSyncHistoryMessage: () => needsHistorySync,
       // Set to false to receive phone notifications on the device
       markOnlineOnConnect: false,
+      // Ignore status broadcasts and other non-essential JIDs to reduce event noise
+      shouldIgnoreJid: (jid) => jid?.endsWith('@broadcast') || jid === 'status@broadcast',
       // Cache group metadata to prevent rate limiting (recommended by Baileys)
       cachedGroupMetadata: async (jid) => {
         const cached = await redisClient.get(`group:${jid}:metadata`);
