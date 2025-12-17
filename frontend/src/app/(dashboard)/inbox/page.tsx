@@ -312,9 +312,10 @@ export default function InboxPage() {
   const messageInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch all tags for the organization
-  const { data: allTags } = useQuery({
+  const { data: allTags = [] } = useQuery({
     queryKey: ['tags'],
     queryFn: listTags,
+    select: (data) => Array.isArray(data) ? data : [],
   });
 
   // Fetch conversations
@@ -724,11 +725,12 @@ export default function InboxPage() {
   });
 
   // Fetch scheduled messages
-  const { data: scheduledMessages } = useQuery({
+  const { data: scheduledMessages = [] } = useQuery({
     queryKey: ['scheduledMessages', selectedConversationId],
-    queryFn: () => selectedConversationId ? listScheduledMessages(selectedConversationId) : null,
+    queryFn: () => selectedConversationId ? listScheduledMessages(selectedConversationId) : [],
     enabled: !!selectedConversationId,
     refetchInterval: 30000, // Refresh every 30 seconds to update times
+    select: (data) => Array.isArray(data) ? data : [],
   });
 
   // Cancel scheduled message mutation
@@ -2031,7 +2033,7 @@ export default function InboxPage() {
             </div>
 
             {/* Scheduled Messages Banner */}
-            {scheduledMessages && scheduledMessages.filter(m => m.status === 'PENDING').length > 0 && (
+            {scheduledMessages.filter(m => m.status === 'PENDING').length > 0 && (
               <div className="px-4 py-2 border-t bg-blue-50/50 dark:bg-blue-900/10">
                 <div className="flex items-center gap-2 mb-2">
                   <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
