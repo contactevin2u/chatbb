@@ -44,6 +44,8 @@ import {
   Trash2,
   PanelLeftClose,
   PanelLeft,
+  ShoppingBag,
+  Package,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -67,6 +69,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils/cn';
 import { formatWhatsAppText } from '@/lib/utils/whatsapp-formatting';
 import { updateContact } from '@/lib/api/contacts';
@@ -1914,290 +1917,345 @@ export default function InboxPage() {
               <X className="h-5 w-5" />
             </Button>
           </div>
-          <ScrollArea className="flex-1">
-            <div className="p-4 space-y-6">
-              {/* Contact Avatar & Name */}
-              <div className="text-center">
-                <div className="relative inline-block">
-                  <Avatar className="h-20 w-20 mx-auto mb-3">
-                    <AvatarImage src={selectedConversation.contact.avatarUrl || undefined} className="object-cover" />
-                    <AvatarFallback className="text-2xl">
-                      {isGroupContact(selectedConversation.contact) ? (
-                        <Users className="h-8 w-8" />
-                      ) : (
-                        getContactInitials(selectedConversation.contact)
-                      )}
-                    </AvatarFallback>
-                  </Avatar>
-                  {isGroupContact(selectedConversation.contact) && (
-                    <span className="absolute bottom-2 right-0 h-6 w-6 rounded-full bg-green-500 text-white flex items-center justify-center">
-                      <Users className="h-3.5 w-3.5" />
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center justify-center gap-2">
-                  <h4 className="font-semibold text-lg">
-                    {getContactName(selectedConversation.contact)}
-                  </h4>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={handleEditContact}
-                  >
-                    <Edit className="h-3 w-3" />
-                  </Button>
-                </div>
-                {isGroupContact(selectedConversation.contact) ? (
-                  <p className="text-sm text-green-600 font-medium">WhatsApp Group</p>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    +{selectedConversation.contact.identifier}
-                  </p>
-                )}
-              </div>
 
-              {/* Contact/Group Details */}
-              <div className="space-y-3">
-                {isGroupContact(selectedConversation.contact) ? (
-                  <div className="flex items-center gap-3">
-                    <Users className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">Group ID: {selectedConversation.contact.identifier}</span>
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex items-center gap-3">
-                      <Phone className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm">+{selectedConversation.contact.identifier}</span>
-                    </div>
-                    {selectedConversation.contact.firstName && (
-                      <div className="flex items-center gap-3">
-                        <User className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm">
-                          {selectedConversation.contact.firstName} {selectedConversation.contact.lastName}
-                        </span>
-                      </div>
+          {/* Contact Avatar & Name - Always visible */}
+          <div className="p-4 border-b">
+            <div className="text-center">
+              <div className="relative inline-block">
+                <Avatar className="h-16 w-16 mx-auto mb-2">
+                  <AvatarImage src={selectedConversation.contact.avatarUrl || undefined} className="object-cover" />
+                  <AvatarFallback className="text-xl">
+                    {isGroupContact(selectedConversation.contact) ? (
+                      <Users className="h-6 w-6" />
+                    ) : (
+                      getContactInitials(selectedConversation.contact)
                     )}
-                  </>
+                  </AvatarFallback>
+                </Avatar>
+                {isGroupContact(selectedConversation.contact) && (
+                  <span className="absolute bottom-1 right-0 h-5 w-5 rounded-full bg-green-500 text-white flex items-center justify-center">
+                    <Users className="h-3 w-3" />
+                  </span>
                 )}
               </div>
-
-              {/* Channel Info */}
-              <div className="border-t pt-4">
-                <h5 className="text-sm font-medium mb-3">Channel</h5>
-                <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded bg-green-500/10 flex items-center justify-center">
-                    <MessageSquare className="h-4 w-4 text-green-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{selectedConversation.channel.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      +{selectedConversation.channel.identifier}
-                    </p>
-                  </div>
-                </div>
+              <div className="flex items-center justify-center gap-1">
+                <h4 className="font-semibold text-sm">
+                  {getContactName(selectedConversation.contact)}
+                </h4>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5"
+                  onClick={handleEditContact}
+                >
+                  <Edit className="h-2.5 w-2.5" />
+                </Button>
               </div>
+              <p className="text-xs text-muted-foreground">
+                {isGroupContact(selectedConversation.contact) ? 'WhatsApp Group' : `+${selectedConversation.contact.identifier}`}
+              </p>
+            </div>
+          </div>
 
-              {/* Conversation Info */}
-              <div className="border-t pt-4">
-                <h5 className="text-sm font-medium mb-3">Conversation</h5>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Status</span>
-                    <StatusBadge status={selectedConversation.status} />
+          {/* Tabs */}
+          <Tabs defaultValue="info" className="flex-1 flex flex-col">
+            <TabsList className="w-full justify-start rounded-none border-b bg-transparent h-auto p-0">
+              <TabsTrigger
+                value="info"
+                className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-2 text-xs"
+              >
+                <User className="h-3 w-3 mr-1" />
+                Info
+              </TabsTrigger>
+              <TabsTrigger
+                value="tags"
+                className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-2 text-xs"
+              >
+                <TagIcon className="h-3 w-3 mr-1" />
+                Tags
+              </TabsTrigger>
+              <TabsTrigger
+                value="orderops"
+                className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-2 text-xs"
+              >
+                <Package className="h-3 w-3 mr-1" />
+                Orders
+              </TabsTrigger>
+            </TabsList>
+
+            {/* Info Tab */}
+            <TabsContent value="info" className="flex-1 m-0">
+              <ScrollArea className="h-[calc(100vh-280px)]">
+                <div className="p-4 space-y-4">
+                  {/* Contact/Group Details */}
+                  <div className="space-y-2">
+                    <h5 className="text-xs font-medium text-muted-foreground uppercase">Details</h5>
+                    {isGroupContact(selectedConversation.contact) ? (
+                      <div className="flex items-center gap-2 text-sm">
+                        <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-muted-foreground text-xs">ID: {selectedConversation.contact.identifier}</span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-2 text-sm">
+                          <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="text-xs">+{selectedConversation.contact.identifier}</span>
+                        </div>
+                        {selectedConversation.contact.firstName && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <User className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span className="text-xs">
+                              {selectedConversation.contact.firstName} {selectedConversation.contact.lastName}
+                            </span>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Priority</span>
-                    <span>{selectedConversation.priority}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Created</span>
-                    <span>{new Date(selectedConversation.createdAt).toLocaleDateString()}</span>
-                  </div>
-                  {selectedConversation.assignedUser && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Assigned to</span>
-                      <span>
-                        {selectedConversation.assignedUser.firstName}{' '}
-                        {selectedConversation.assignedUser.lastName}
-                      </span>
+
+                  {/* Channel Info */}
+                  <div className="border-t pt-4">
+                    <h5 className="text-xs font-medium text-muted-foreground uppercase mb-2">Channel</h5>
+                    <div className="flex items-center gap-2">
+                      <div className="h-7 w-7 rounded bg-green-500/10 flex items-center justify-center">
+                        <MessageSquare className="h-3.5 w-3.5 text-green-500" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium">{selectedConversation.channel.name}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          +{selectedConversation.channel.identifier}
+                        </p>
+                      </div>
                     </div>
-                  )}
-                </div>
-              </div>
+                  </div>
 
-              {/* Tags */}
-              <div className="border-t pt-4">
-                <h5 className="text-sm font-medium mb-3 flex items-center gap-2">
-                  <TagIcon className="h-4 w-4" />
-                  Tags
-                </h5>
-                <div className="flex flex-wrap gap-1.5">
-                  {selectedConversation.tags && selectedConversation.tags.length > 0 ? (
-                    selectedConversation.tags.filter((tagRelation) => tagRelation.tag).map((tagRelation) => (
-                      <span
-                        key={tagRelation.tag.id}
-                        className="px-2 py-1 rounded text-xs font-medium flex items-center gap-1"
-                        style={{
-                          backgroundColor: `${tagRelation.tag.color || '#6b7280'}20`,
-                          color: tagRelation.tag.color || '#6b7280',
-                        }}
-                      >
-                        {tagRelation.tag.name}
-                        <button
-                          onClick={() => removeConversationTag(selectedConversation.id, tagRelation.tag.id)
-                            .then(() => queryClient.invalidateQueries({ queryKey: ['conversations'] }))}
-                          className="hover:bg-black/10 rounded"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-xs text-muted-foreground">No tags</span>
-                  )}
-                </div>
-                {allTags && allTags.length > 0 && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className="mt-2 w-full">
-                        <Plus className="h-3 w-3 mr-1" />
-                        Add Tag
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-48">
-                      {allTags.filter((tag) => tag?.id).map((tag) => {
-                        const isAdded = selectedConversation.tags?.some(t => t.tag?.id === tag.id);
-                        return (
-                          <DropdownMenuItem
-                            key={tag.id}
-                            disabled={isAdded}
-                            onClick={() => addConversationTag(selectedConversation.id, tag.id)
-                              .then(() => queryClient.invalidateQueries({ queryKey: ['conversations'] }))}
-                          >
-                            <span
-                              className="w-3 h-3 rounded-full mr-2"
-                              style={{ backgroundColor: tag.color || '#6b7280' }}
-                            />
-                            {tag.name}
-                            {isAdded && <Check className="h-3 w-3 ml-auto" />}
-                          </DropdownMenuItem>
-                        );
-                      })}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-              </div>
-
-              {/* Group Participants */}
-              {isGroupContact(selectedConversation.contact) && groupParticipants?.isGroup && (
-                <div className="border-t pt-4">
-                  <h5 className="text-sm font-medium mb-3 flex items-center gap-2">
-                    <Users className="h-4 w-4" />
-                    Participants ({groupParticipants.participantCount})
-                  </h5>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {groupParticipants.participants.slice(0, 20).map((participant) => (
-                      <div key={participant.id} className="flex items-center gap-2 text-sm">
-                        <Avatar className="h-6 w-6">
-                          {participant.avatarUrl && (
-                            <AvatarImage src={participant.avatarUrl} className="object-cover" />
-                          )}
-                          <AvatarFallback className="text-[10px]">
-                            {(participant.displayName || participant.identifier).slice(-2).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className="flex-1 truncate">
-                          {participant.displayName || `+${participant.identifier}`}
-                        </span>
-                        {participant.admin && (
-                          <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded">
-                            {participant.admin === 'superadmin' ? 'Owner' : 'Admin'}
+                  {/* Conversation Info */}
+                  <div className="border-t pt-4">
+                    <h5 className="text-xs font-medium text-muted-foreground uppercase mb-2">Conversation</h5>
+                    <div className="space-y-1.5 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Status</span>
+                        <StatusBadge status={selectedConversation.status} />
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Priority</span>
+                        <span>{selectedConversation.priority}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Created</span>
+                        <span>{new Date(selectedConversation.createdAt).toLocaleDateString()}</span>
+                      </div>
+                      {selectedConversation.assignedUser && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Assigned</span>
+                          <span>
+                            {selectedConversation.assignedUser.firstName} {selectedConversation.assignedUser.lastName}
                           </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Group Participants */}
+                  {isGroupContact(selectedConversation.contact) && groupParticipants?.isGroup && (
+                    <div className="border-t pt-4">
+                      <h5 className="text-xs font-medium text-muted-foreground uppercase mb-2 flex items-center gap-1">
+                        <Users className="h-3 w-3" />
+                        Participants ({groupParticipants.participantCount})
+                      </h5>
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                        {groupParticipants.participants.slice(0, 20).map((participant) => (
+                          <div key={participant.id} className="flex items-center gap-2 text-xs">
+                            <Avatar className="h-5 w-5">
+                              {participant.avatarUrl && (
+                                <AvatarImage src={participant.avatarUrl} className="object-cover" />
+                              )}
+                              <AvatarFallback className="text-[8px]">
+                                {(participant.displayName || participant.identifier).slice(-2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span className="flex-1 truncate">
+                              {participant.displayName || `+${participant.identifier}`}
+                            </span>
+                            {participant.admin && (
+                              <span className="text-[8px] bg-primary/10 text-primary px-1 py-0.5 rounded">
+                                {participant.admin === 'superadmin' ? 'Owner' : 'Admin'}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                        {groupParticipants.participantCount > 20 && (
+                          <p className="text-[10px] text-muted-foreground text-center">
+                            +{groupParticipants.participantCount - 20} more
+                          </p>
                         )}
                       </div>
-                    ))}
-                    {groupParticipants.participantCount > 20 && (
-                      <p className="text-xs text-muted-foreground text-center">
-                        +{groupParticipants.participantCount - 20} more
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Notes */}
-              <div className="border-t pt-4">
-                <h5 className="text-sm font-medium mb-3 flex items-center gap-2">
-                  <StickyNote className="h-4 w-4" />
-                  Notes
-                </h5>
-                <div className="space-y-3">
-                  {/* Add note form */}
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Add a note..."
-                      value={newNoteContent}
-                      onChange={(e) => setNewNoteContent(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && newNoteContent.trim()) {
-                          addNoteMutation.mutate({
-                            conversationId: selectedConversation.id,
-                            content: newNoteContent.trim(),
-                          });
-                          setNewNoteContent('');
-                        }
-                      }}
-                      className="h-8 text-sm"
-                    />
-                    <Button
-                      size="sm"
-                      className="h-8 px-2"
-                      disabled={!newNoteContent.trim() || addNoteMutation.isPending}
-                      onClick={() => {
-                        if (newNoteContent.trim()) {
-                          addNoteMutation.mutate({
-                            conversationId: selectedConversation.id,
-                            content: newNoteContent.trim(),
-                          });
-                          setNewNoteContent('');
-                        }
-                      }}
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  {/* Notes list */}
-                  {conversationNotes && conversationNotes.length > 0 ? (
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                      {conversationNotes.map((note) => (
-                        <div key={note.id} className="bg-muted/50 rounded p-2 text-sm">
-                          <div className="flex items-start justify-between gap-2">
-                            <p className="flex-1 whitespace-pre-wrap break-words">{note.content}</p>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-5 w-5 flex-shrink-0"
-                              onClick={() => deleteNoteMutation.mutate(note.id)}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </div>
-                          <div className="flex items-center gap-1 mt-1 text-[10px] text-muted-foreground">
-                            <span>{note.user.firstName} {note.user.lastName}</span>
-                            <span>·</span>
-                            <span>{formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}</span>
-                          </div>
-                        </div>
-                      ))}
                     </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">No notes yet</p>
                   )}
                 </div>
-              </div>
-            </div>
-          </ScrollArea>
+              </ScrollArea>
+            </TabsContent>
+
+            {/* Tags & Notes Tab */}
+            <TabsContent value="tags" className="flex-1 m-0">
+              <ScrollArea className="h-[calc(100vh-280px)]">
+                <div className="p-4 space-y-4">
+                  {/* Tags */}
+                  <div>
+                    <h5 className="text-xs font-medium text-muted-foreground uppercase mb-2 flex items-center gap-1">
+                      <TagIcon className="h-3 w-3" />
+                      Tags
+                    </h5>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedConversation.tags && selectedConversation.tags.length > 0 ? (
+                        selectedConversation.tags.filter((tagRelation) => tagRelation.tag).map((tagRelation) => (
+                          <span
+                            key={tagRelation.tag.id}
+                            className="px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1"
+                            style={{
+                              backgroundColor: `${tagRelation.tag.color || '#6b7280'}20`,
+                              color: tagRelation.tag.color || '#6b7280',
+                            }}
+                          >
+                            {tagRelation.tag.name}
+                            <button
+                              onClick={() => removeConversationTag(selectedConversation.id, tagRelation.tag.id)
+                                .then(() => queryClient.invalidateQueries({ queryKey: ['conversations'] }))}
+                              className="hover:bg-black/10 rounded"
+                            >
+                              <X className="h-2.5 w-2.5" />
+                            </button>
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-xs text-muted-foreground">No tags</span>
+                      )}
+                    </div>
+                    {allTags && allTags.length > 0 && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm" className="mt-2 w-full h-7 text-xs">
+                            <Plus className="h-3 w-3 mr-1" />
+                            Add Tag
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-48">
+                          {allTags.filter((tag) => tag?.id).map((tag) => {
+                            const isAdded = selectedConversation.tags?.some(t => t.tag?.id === tag.id);
+                            return (
+                              <DropdownMenuItem
+                                key={tag.id}
+                                disabled={isAdded}
+                                onClick={() => addConversationTag(selectedConversation.id, tag.id)
+                                  .then(() => queryClient.invalidateQueries({ queryKey: ['conversations'] }))}
+                              >
+                                <span
+                                  className="w-2.5 h-2.5 rounded-full mr-2"
+                                  style={{ backgroundColor: tag.color || '#6b7280' }}
+                                />
+                                <span className="text-xs">{tag.name}</span>
+                                {isAdded && <Check className="h-3 w-3 ml-auto" />}
+                              </DropdownMenuItem>
+                            );
+                          })}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </div>
+
+                  {/* Notes */}
+                  <div className="border-t pt-4">
+                    <h5 className="text-xs font-medium text-muted-foreground uppercase mb-2 flex items-center gap-1">
+                      <StickyNote className="h-3 w-3" />
+                      Notes
+                    </h5>
+                    <div className="space-y-2">
+                      {/* Add note form */}
+                      <div className="flex gap-1.5">
+                        <Input
+                          placeholder="Add a note..."
+                          value={newNoteContent}
+                          onChange={(e) => setNewNoteContent(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && newNoteContent.trim()) {
+                              addNoteMutation.mutate({
+                                conversationId: selectedConversation.id,
+                                content: newNoteContent.trim(),
+                              });
+                              setNewNoteContent('');
+                            }
+                          }}
+                          className="h-7 text-xs"
+                        />
+                        <Button
+                          size="sm"
+                          className="h-7 px-2"
+                          disabled={!newNoteContent.trim() || addNoteMutation.isPending}
+                          onClick={() => {
+                            if (newNoteContent.trim()) {
+                              addNoteMutation.mutate({
+                                conversationId: selectedConversation.id,
+                                content: newNoteContent.trim(),
+                              });
+                              setNewNoteContent('');
+                            }
+                          }}
+                        >
+                          <Plus className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      {/* Notes list */}
+                      {conversationNotes && conversationNotes.length > 0 ? (
+                        <div className="space-y-1.5 max-h-60 overflow-y-auto">
+                          {conversationNotes.map((note) => (
+                            <div key={note.id} className="bg-muted/50 rounded p-2 text-xs">
+                              <div className="flex items-start justify-between gap-1">
+                                <p className="flex-1 whitespace-pre-wrap break-words">{note.content}</p>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-4 w-4 flex-shrink-0"
+                                  onClick={() => deleteNoteMutation.mutate(note.id)}
+                                >
+                                  <Trash2 className="h-2.5 w-2.5" />
+                                </Button>
+                              </div>
+                              <div className="flex items-center gap-1 mt-1 text-[9px] text-muted-foreground">
+                                <span>{note.user.firstName} {note.user.lastName}</span>
+                                <span>·</span>
+                                <span>{formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">No notes yet</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </ScrollArea>
+            </TabsContent>
+
+            {/* OrderOps Tab */}
+            <TabsContent value="orderops" className="flex-1 m-0">
+              <ScrollArea className="h-[calc(100vh-280px)]">
+                <div className="p-4 space-y-4">
+                  <div className="text-center py-8">
+                    <Package className="h-12 w-12 mx-auto text-muted-foreground/50 mb-3" />
+                    <h5 className="text-sm font-medium mb-1">Order Operations</h5>
+                    <p className="text-xs text-muted-foreground mb-4">
+                      Manage orders and operations for this contact
+                    </p>
+                    <Button variant="outline" size="sm" disabled>
+                      <Plus className="h-3 w-3 mr-1" />
+                      Coming Soon
+                    </Button>
+                  </div>
+                </div>
+              </ScrollArea>
+            </TabsContent>
+          </Tabs>
         </div>
       )}
 
