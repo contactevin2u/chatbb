@@ -65,7 +65,7 @@ export function TagDropdown({ conversationId, currentTags, onTagsChange }: TagDr
   });
 
   // Get current tag IDs for comparison
-  const currentTagIds = currentTags.map((t) => t.tag.id);
+  const currentTagIds = currentTags.filter((t) => t.tag?.id).map((t) => t.tag.id);
 
   // Add tag mutation
   const addTagMutation = useMutation({
@@ -155,7 +155,7 @@ export function TagDropdown({ conversationId, currentTags, onTagsChange }: TagDr
 
   // Sort tags: recent first, then alphabetically
   const sortedTags = allTags
-    ? [...allTags].sort((a, b) => {
+    ? [...allTags].filter((tag) => tag?.id).sort((a, b) => {
         const aRecent = recentTagIds.indexOf(a.id);
         const bRecent = recentTagIds.indexOf(b.id);
         if (aRecent !== -1 && bRecent !== -1) return aRecent - bRecent;
