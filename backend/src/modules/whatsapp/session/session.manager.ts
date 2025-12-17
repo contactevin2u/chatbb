@@ -1083,6 +1083,95 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
+   * Send a poll message
+   */
+  async sendPoll(
+    channelId: string,
+    to: string,
+    poll: {
+      name: string; // Poll question
+      options: string[]; // Poll options (2-12 options)
+      selectableCount?: number; // Number of options user can select (default: 1)
+    }
+  ): Promise<WAMessage | undefined> {
+    const session = this.sessions.get(channelId);
+    if (!session || session.status !== 'CONNECTED') {
+      throw new Error('Channel not connected');
+    }
+
+    if (!poll.options || poll.options.length < 2) {
+      throw new Error('Poll must have at least 2 options');
+    }
+    if (poll.options.length > 12) {
+      throw new Error('Poll cannot have more than 12 options');
+    }
+
+    await this.checkRateLimit(channelId);
+    const jid = this.formatJid(to);
+
+    const result = await session.socket.sendMessage(jid, {
+      poll: {
+        name: poll.name,
+        values: poll.options,
+        selectableCount: poll.selectableCount || 1,
+      },
+    });
+
+    this.logger.info({ channelId, to: jid, messageId: result?.key?.id, pollName: poll.name }, 'Poll sent');
+    return result;
+  }
+
+  /**
+   * Edit a previously sent message
+   */
+  async editMessage(
+    channelId: string,
+    messageKey: WAMessageKey,
+    newText: string
+  ): Promise<WAMessage | undefined> {
+    const session = this.sessions.get(channelId);
+    if (!session || session.status !== 'CONNECTED') {
+      throw new Error('Channel not connected');
+    }
+
+    if (!messageKey.remoteJid) {
+      throw new Error('Message key must have remoteJid');
+    }
+
+    const result = await session.socket.sendMessage(messageKey.remoteJid, {
+      text: newText,
+      edit: messageKey,
+    });
+
+    this.logger.info({ channelId, messageId: messageKey.id, newText: newText.substring(0, 50) }, 'Message edited');
+    return result;
+  }
+
+  /**
+   * Delete a message
+   */
+  async deleteMessage(
+    channelId: string,
+    messageKey: WAMessageKey
+  ): Promise<WAMessage | undefined> {
+    const session = this.sessions.get(channelId);
+    if (!session || session.status !== 'CONNECTED') {
+      throw new Error('Channel not connected');
+    }
+
+    if (!messageKey.remoteJid) {
+      throw new Error('Message key must have remoteJid');
+    }
+
+    const result = await session.socket.sendMessage(messageKey.remoteJid, {
+      delete: messageKey,
+    });
+
+    this.logger.info({ channelId, messageId: messageKey.id }, 'Message deleted');
+    return result;
+  }
+
+  /**
    * Download media from a message (returns reupload function for session)
    */
   getMediaDownloader(channelId: string): ((msg: WAMessage) => Promise<WAMessage>) | undefined {
