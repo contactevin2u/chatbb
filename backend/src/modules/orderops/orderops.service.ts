@@ -56,7 +56,7 @@ interface OrderDue {
 
 class OrderOpsService {
   private client: AxiosInstance;
-  private token: string | null = null;
+  private cookieToken: string | null = null;
   private tokenExpiry: Date | null = null;
   private config: OrderOpsConfig;
 
@@ -75,11 +75,11 @@ class OrderOpsService {
       },
     });
 
-    // Add interceptor to attach auth token
+    // Add interceptor to attach auth cookie
     this.client.interceptors.request.use(async (config) => {
       const token = await this.getToken();
       if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+        config.headers.Cookie = `token=${token}`;
       }
       return config;
     });
@@ -87,8 +87,8 @@ class OrderOpsService {
 
   private async getToken(): Promise<string | null> {
     // Return cached token if still valid (with 5 min buffer)
-    if (this.token && this.tokenExpiry && new Date() < this.tokenExpiry) {
-      return this.token;
+    if (this.cookieToken && this.tokenExpiry && new Date() < this.tokenExpiry) {
+      return this.cookieToken;
     }
 
     try {
@@ -97,12 +97,21 @@ class OrderOpsService {
         password: this.config.password,
       });
 
-      this.token = response.data.access_token;
-      // Set expiry to 55 minutes (assuming 1 hour token validity)
-      this.tokenExpiry = new Date(Date.now() + 55 * 60 * 1000);
+      // Extract token from set-cookie header
+      const cookies = response.headers['set-cookie'];
+      if (cookies) {
+        const tokenCookie = cookies.find((c: string) => c.includes('token='));
+        if (tokenCookie) {
+          this.cookieToken = tokenCookie.split('token=')[1].split(';')[0];
+          // Set expiry to 23 hours (cookie is valid for 24 hours)
+          this.tokenExpiry = new Date(Date.now() + 23 * 60 * 60 * 1000);
+          logger.info('OrderOps authentication successful');
+          return this.cookieToken;
+        }
+      }
 
-      logger.info('OrderOps authentication successful');
-      return this.token;
+      logger.error('OrderOps login did not return token cookie');
+      return null;
     } catch (error: any) {
       logger.error({ error: error.message }, 'OrderOps authentication failed');
       return null;
