@@ -131,11 +131,23 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
   const {
     data: linkedOrderData,
     isLoading: isLoadingLinked,
+    isFetching: isRefetching,
     refetch: refetchLinked,
   } = useQuery({
     queryKey: ['linkedOrder', conversationId],
     queryFn: () => getLinkedOrder(conversationId),
+    staleTime: 0, // Always fetch fresh data
   });
+
+  const handleRefresh = async () => {
+    toast.loading('Refreshing order...', { id: 'refresh-order' });
+    try {
+      await refetchLinked();
+      toast.success('Order data refreshed', { id: 'refresh-order' });
+    } catch {
+      toast.error('Failed to refresh', { id: 'refresh-order' });
+    }
+  };
 
   // Fetch available orders (for linking)
   const { data: availableOrders, isLoading: isLoadingSearch } = useQuery({
@@ -376,8 +388,13 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
             </div>
             <p className="text-xs text-muted-foreground">Type: {order.type}</p>
           </div>
-          <Button variant="ghost" size="icon" onClick={() => refetchLinked()}>
-            <RefreshCw className="h-4 w-4" />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleRefresh}
+            disabled={isRefetching}
+          >
+            <RefreshCw className={cn("h-4 w-4", isRefetching && "animate-spin")} />
           </Button>
         </div>
 
