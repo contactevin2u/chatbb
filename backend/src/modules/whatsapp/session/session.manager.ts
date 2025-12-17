@@ -1193,7 +1193,7 @@ export class SessionManager extends EventEmitter {
       // Handle "Record to update not found" error gracefully
       // This happens when a channel was deleted but worker still has the session
       if (error.code === 'P2025') {
-        this.logger.warn({ channelId, status }, 'Channel not found in database, removing session');
+        this.logger.warn({ channelId, status }, 'Channel not found in database, removing session and cleaning up auth state');
         // Close the socket first to stop it from generating more events
         const session = this.sessions.get(channelId);
         if (session?.socket) {
@@ -1203,6 +1203,17 @@ export class SessionManager extends EventEmitter {
             // Ignore close errors
           }
         }
+        // Delete orphaned auth state to prevent reconnection attempts
+        if (session?.deleteState) {
+          try {
+            await session.deleteState();
+            this.logger.info({ channelId }, 'Deleted orphaned auth state for non-existent channel');
+          } catch (e) {
+            // Ignore delete errors
+          }
+        }
+        // Release any distributed lock
+        await releaseLock(channelId);
         // Remove the session since the channel no longer exists
         this.sessions.delete(channelId);
         return;
