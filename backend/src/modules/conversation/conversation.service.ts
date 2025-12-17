@@ -4,9 +4,10 @@
  * Business logic for conversation management
  */
 
-import { ConversationStatus, Priority, Prisma } from '@prisma/client';
+import { ConversationStatus, Priority, Prisma, MessageDirection } from '@prisma/client';
 import { prisma } from '../../core/database/prisma';
 import { socketServer } from '../../core/websocket/server';
+import { whatsappService } from '../whatsapp/whatsapp.service';
 
 export interface ListConversationsInput {
   organizationId: string;
@@ -331,7 +332,7 @@ export class ConversationService {
   }
 
   /**
-   * Mark conversation as read (reset unread count)
+   * Mark conversation as read (reset unread count + send read receipts to WhatsApp)
    */
   async markAsRead(conversationId: string, organizationId: string) {
     const conversation = await prisma.conversation.findFirst({
@@ -339,10 +340,53 @@ export class ConversationService {
         id: conversationId,
         organizationId,
       },
+      include: {
+        contact: true,
+        channel: true,
+      },
     });
 
     if (!conversation) {
       throw new Error('Conversation not found');
+    }
+
+    // Get unread inbound messages to send read receipts for
+    const unreadMessages = await prisma.message.findMany({
+      where: {
+        conversationId,
+        direction: MessageDirection.INBOUND,
+        externalId: { not: null },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50, // Limit to last 50 messages to avoid rate limits
+      select: {
+        externalId: true,
+      },
+    });
+
+    // Send read receipts to WhatsApp if there are unread messages
+    if (unreadMessages.length > 0 && conversation.channel.type === 'WHATSAPP') {
+      try {
+        const isGroup = conversation.contact.isGroup;
+        const remoteJid = isGroup
+          ? `${conversation.contact.identifier}@g.us`
+          : `${conversation.contact.identifier}@s.whatsapp.net`;
+
+        const messageKeys = unreadMessages
+          .filter(m => m.externalId)
+          .map(m => ({
+            remoteJid,
+            id: m.externalId!,
+            fromMe: false,
+          }));
+
+        if (messageKeys.length > 0) {
+          await whatsappService.markMessagesAsRead(conversation.channelId, messageKeys);
+        }
+      } catch (error) {
+        // Log but don't fail - read receipts are not critical
+        console.error('Failed to send WhatsApp read receipts:', error);
+      }
     }
 
     const updated = await prisma.conversation.update({

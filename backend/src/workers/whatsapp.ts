@@ -384,6 +384,11 @@ async function setupCommandSubscriber() {
           await handleIncognitoCommand(channelId, data);
           break;
 
+        case 'read':
+          // Mark messages as read (send read receipts)
+          await handleReadCommand(channelId, data);
+          break;
+
         default:
           logger.warn({ command }, 'Unknown command');
       }
@@ -709,6 +714,25 @@ async function handleIncognitoCommand(channelId: string, data: {
       enabled: data.enabled,
     }));
     logger.info({ channelId, enabled: data.enabled }, 'Incognito mode updated');
+  } catch (error) {
+    await redisClient.publish(`whatsapp:response:${data.requestId}`, JSON.stringify({
+      success: false,
+      error: (error as Error).message,
+    }));
+  }
+}
+
+async function handleReadCommand(channelId: string, data: {
+  keys: Array<{ remoteJid: string; id: string; fromMe: boolean }>;
+  requestId: string;
+}) {
+  try {
+    await sessionManager.markAsRead(channelId, data.keys);
+    await redisClient.publish(`whatsapp:response:${data.requestId}`, JSON.stringify({
+      success: true,
+      count: data.keys.length,
+    }));
+    logger.debug({ channelId, count: data.keys.length }, 'Read receipts sent');
   } catch (error) {
     await redisClient.publish(`whatsapp:response:${data.requestId}`, JSON.stringify({
       success: false,

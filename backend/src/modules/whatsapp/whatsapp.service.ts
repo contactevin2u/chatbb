@@ -707,6 +707,23 @@ export class WhatsAppService {
   }
 
   /**
+   * Mark messages as read via WhatsApp Worker
+   * Sends read receipts to WhatsApp (blue ticks)
+   */
+  async markMessagesAsRead(
+    channelId: string,
+    messageKeys: Array<{ remoteJid: string; id: string; fromMe: boolean }>
+  ): Promise<void> {
+    if (messageKeys.length === 0) return;
+
+    await this.sendCommand(
+      'read',
+      channelId,
+      { keys: messageKeys }
+    );
+  }
+
+  /**
    * Get incognito mode status for a channel
    * Reads directly from Redis (no worker communication needed)
    */
