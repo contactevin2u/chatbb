@@ -247,16 +247,36 @@ export async function mergeDuplicateContacts(
     if (!lidContact || !phoneContact) {
       // If only LID contact exists, update its identifier to phone number
       if (lidContact && !phoneContact) {
-        await prisma.contact.update({
-          where: { id: lidContact.id },
-          data: { identifier: phoneIdentifier },
-        });
-        logger.info({
-          channelId,
-          contactId: lidContact.id,
-          oldIdentifier: lidIdentifier,
-          newIdentifier: phoneIdentifier,
-        }, 'Updated LID contact identifier to phone number');
+        try {
+          await prisma.contact.update({
+            where: { id: lidContact.id },
+            data: { identifier: phoneIdentifier },
+          });
+          logger.info({
+            channelId,
+            contactId: lidContact.id,
+            oldIdentifier: lidIdentifier,
+            newIdentifier: phoneIdentifier,
+          }, 'Updated LID contact identifier to phone number');
+        } catch (error: any) {
+          // Race condition: phone contact was created between our check and update
+          if (error.code === 'P2002') {
+            logger.info({
+              channelId,
+              lidIdentifier,
+              phoneIdentifier,
+            }, 'Phone contact appeared during update, will merge on next encounter');
+            // Just delete the LID contact since phone contact now exists
+            try {
+              await prisma.contact.delete({ where: { id: lidContact.id } });
+              logger.info({ channelId, contactId: lidContact.id }, 'Deleted orphan LID contact');
+            } catch {
+              // Ignore deletion errors
+            }
+          } else {
+            throw error;
+          }
+        }
       }
       return;
     }
