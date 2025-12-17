@@ -551,7 +551,7 @@ export default function InboxPage() {
     },
     onMutate: () => {
       // Show loading toast immediately
-      toast.loading('Parsing order...', { id: 'parse-order', duration: 120000 });
+      toast.loading('Parsing order...', { id: 'parse-order' });
     },
     onSuccess: (data: any) => {
       toast.dismiss('parse-order');
