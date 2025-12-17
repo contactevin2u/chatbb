@@ -139,6 +139,24 @@ export async function sendWhatsAppMessage(channelId: string, input: SendMessageI
   return response.data.data;
 }
 
+// Incognito Mode
+
+export async function getIncognitoStatus(channelId: string): Promise<{ enabled: boolean }> {
+  const response = await apiClient.get<{
+    success: boolean;
+    data: { enabled: boolean };
+  }>(`/channels/whatsapp/${channelId}/incognito`);
+  return response.data.data;
+}
+
+export async function setIncognitoMode(channelId: string, enabled: boolean): Promise<{ enabled: boolean }> {
+  const response = await apiClient.post<{
+    success: boolean;
+    data: { enabled: boolean };
+  }>(`/channels/whatsapp/${channelId}/incognito`, { enabled });
+  return response.data.data;
+}
+
 // Generic Channels
 
 export async function listChannels(): Promise<Channel[]> {

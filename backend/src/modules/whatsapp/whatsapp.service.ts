@@ -705,6 +705,56 @@ export class WhatsAppService {
       { messageKey }
     );
   }
+
+  /**
+   * Get incognito mode status for a channel
+   * Reads directly from Redis (no worker communication needed)
+   */
+  async getIncognitoStatus(channelId: string, organizationId: string): Promise<{ enabled: boolean }> {
+    // Verify channel ownership
+    const channel = await prisma.channel.findFirst({
+      where: {
+        id: channelId,
+        organizationId,
+        type: ChannelType.WHATSAPP,
+      },
+    });
+
+    if (!channel) {
+      throw new Error('Channel not found');
+    }
+
+    // Read incognito state directly from Redis
+    const { redisClient } = await import('../../core/cache/redis.client.js');
+    const value = await redisClient.get(`incognito:${channelId}`);
+    return { enabled: value === 'true' };
+  }
+
+  /**
+   * Set incognito mode for a channel via WhatsApp Worker
+   * When enabled: hides online status, typing indicators, and read receipts
+   */
+  async setIncognitoMode(channelId: string, organizationId: string, enabled: boolean): Promise<void> {
+    // Verify channel ownership
+    const channel = await prisma.channel.findFirst({
+      where: {
+        id: channelId,
+        organizationId,
+        type: ChannelType.WHATSAPP,
+      },
+    });
+
+    if (!channel) {
+      throw new Error('Channel not found');
+    }
+
+    // Send command to worker to set incognito mode and update presence
+    await this.sendCommand(
+      'incognito',
+      channelId,
+      { enabled }
+    );
+  }
 }
 
 // Singleton instance

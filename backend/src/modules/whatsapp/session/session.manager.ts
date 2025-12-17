@@ -802,21 +802,28 @@ export class SessionManager extends EventEmitter {
     // Format recipient JID
     const jid = this.formatJid(to);
 
-    // Show typing indicator before sending (improves perceived speed)
-    try {
-      await session.socket.sendPresenceUpdate('composing', jid);
-    } catch (e) {
-      // Ignore presence errors - not critical
+    // Check incognito mode - skip presence updates if enabled
+    const isIncognito = await this.isIncognitoMode(channelId);
+
+    // Show typing indicator before sending (skip in incognito mode)
+    if (!isIncognito) {
+      try {
+        await session.socket.sendPresenceUpdate('composing', jid);
+      } catch (e) {
+        // Ignore presence errors - not critical
+      }
     }
 
     const options = quotedMessage ? { quoted: quotedMessage } : undefined;
     const result = await session.socket.sendMessage(jid, { text }, options);
 
-    // Clear typing indicator
-    try {
-      await session.socket.sendPresenceUpdate('paused', jid);
-    } catch (e) {
-      // Ignore presence errors
+    // Clear typing indicator (skip in incognito mode)
+    if (!isIncognito) {
+      try {
+        await session.socket.sendPresenceUpdate('paused', jid);
+      } catch (e) {
+        // Ignore presence errors
+      }
     }
 
     this.logger.info({ channelId, to: jid, messageId: result?.key?.id, isReply: !!quotedMessage }, 'Message sent');
@@ -850,13 +857,18 @@ export class SessionManager extends EventEmitter {
 
     const jid = this.formatJid(to);
 
-    // Show typing/recording indicator before sending
-    try {
-      // Use 'recording' for audio, 'composing' for others
-      const presenceType = media.type === 'audio' ? 'recording' : 'composing';
-      await session.socket.sendPresenceUpdate(presenceType, jid);
-    } catch (e) {
-      // Ignore presence errors - not critical
+    // Check incognito mode - skip presence updates if enabled
+    const isIncognito = await this.isIncognitoMode(channelId);
+
+    // Show typing/recording indicator before sending (skip in incognito mode)
+    if (!isIncognito) {
+      try {
+        // Use 'recording' for audio, 'composing' for others
+        const presenceType = media.type === 'audio' ? 'recording' : 'composing';
+        await session.socket.sendPresenceUpdate(presenceType, jid);
+      } catch (e) {
+        // Ignore presence errors - not critical
+      }
     }
 
     let content: any;
@@ -896,11 +908,13 @@ export class SessionManager extends EventEmitter {
     const options = quotedMessage ? { quoted: quotedMessage } : undefined;
     const result = await session.socket.sendMessage(jid, content, options);
 
-    // Clear presence indicator
-    try {
-      await session.socket.sendPresenceUpdate('paused', jid);
-    } catch (e) {
-      // Ignore presence errors
+    // Clear presence indicator (skip in incognito mode)
+    if (!isIncognito) {
+      try {
+        await session.socket.sendPresenceUpdate('paused', jid);
+      } catch (e) {
+        // Ignore presence errors
+      }
     }
 
     this.logger.info({ channelId, to: jid, type: media.type, messageId: result?.key?.id, isReply: !!quotedMessage }, 'Media sent');
@@ -910,8 +924,15 @@ export class SessionManager extends EventEmitter {
 
   /**
    * Mark messages as read
+   * Skipped in incognito mode to prevent sending read receipts
    */
   async markAsRead(channelId: string, keys: WAMessageKey[]): Promise<void> {
+    // Skip if incognito mode is enabled
+    if (await this.isIncognitoMode(channelId)) {
+      this.logger.debug({ channelId, count: keys.length }, 'Skipping read receipts (incognito mode)');
+      return;
+    }
+
     const session = this.sessions.get(channelId);
     if (!session || session.status !== 'CONNECTED') {
       throw new Error('Channel not connected');
@@ -1493,6 +1514,60 @@ export class SessionManager extends EventEmitter {
     if (hourCount > RATE_LIMIT.MESSAGES_PER_HOUR) {
       throw new Error(`Rate limit exceeded: ${RATE_LIMIT.MESSAGES_PER_HOUR} messages per hour`);
     }
+  }
+
+  // ==================== INCOGNITO MODE ====================
+
+  /**
+   * Check if incognito mode is enabled for a channel
+   */
+  async isIncognitoMode(channelId: string): Promise<boolean> {
+    const value = await redisClient.get(`incognito:${channelId}`);
+    return value === 'true';
+  }
+
+  /**
+   * Set incognito mode for a channel
+   * When enabled: hides online status, typing indicators, and read receipts
+   */
+  async setIncognitoMode(channelId: string, enabled: boolean): Promise<void> {
+    const session = this.sessions.get(channelId);
+
+    if (enabled) {
+      // Store incognito state in Redis
+      await redisClient.set(`incognito:${channelId}`, 'true');
+
+      // Send unavailable presence to appear offline
+      if (session?.socket && session.status === 'CONNECTED') {
+        try {
+          await session.socket.sendPresenceUpdate('unavailable');
+          this.logger.info({ channelId }, 'Incognito mode enabled - presence set to unavailable');
+        } catch (e) {
+          this.logger.warn({ channelId, error: e }, 'Failed to update presence for incognito mode');
+        }
+      }
+    } else {
+      // Remove incognito state
+      await redisClient.del(`incognito:${channelId}`);
+
+      // Send available presence to appear online
+      if (session?.socket && session.status === 'CONNECTED') {
+        try {
+          await session.socket.sendPresenceUpdate('available');
+          this.logger.info({ channelId }, 'Incognito mode disabled - presence set to available');
+        } catch (e) {
+          this.logger.warn({ channelId, error: e }, 'Failed to update presence');
+        }
+      }
+    }
+  }
+
+  /**
+   * Get incognito status for a channel
+   */
+  async getIncognitoStatus(channelId: string): Promise<{ enabled: boolean }> {
+    const enabled = await this.isIncognitoMode(channelId);
+    return { enabled };
   }
 
 }

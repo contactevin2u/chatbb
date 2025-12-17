@@ -171,4 +171,26 @@ router.delete(
   whatsappController.deleteChannel.bind(whatsappController)
 );
 
+/**
+ * @route   GET /api/v1/channels/whatsapp/:channelId/incognito
+ * @desc    Get incognito mode status
+ * @access  Private (channels:view)
+ */
+router.get(
+  '/:channelId/incognito',
+  requirePermission('channels:view'),
+  whatsappController.getIncognitoStatus.bind(whatsappController)
+);
+
+/**
+ * @route   POST /api/v1/channels/whatsapp/:channelId/incognito
+ * @desc    Toggle incognito mode (stealth mode - no online status, typing, read receipts)
+ * @access  Private (channels:edit)
+ */
+router.post(
+  '/:channelId/incognito',
+  requirePermission('channels:edit'),
+  whatsappController.setIncognitoMode.bind(whatsappController)
+);
+
 export const whatsappRoutes = router;

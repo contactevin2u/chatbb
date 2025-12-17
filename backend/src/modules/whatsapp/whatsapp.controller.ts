@@ -264,6 +264,58 @@ export class WhatsAppController {
       next(error);
     }
   }
+
+  /**
+   * Get incognito mode status for a channel
+   * GET /api/v1/channels/whatsapp/:channelId/incognito
+   */
+  async getIncognitoStatus(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId } = req.user!;
+      const { channelId } = req.params;
+
+      const status = await whatsappService.getIncognitoStatus(channelId, organizationId);
+
+      res.json({
+        success: true,
+        data: status,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Toggle incognito mode for a channel
+   * POST /api/v1/channels/whatsapp/:channelId/incognito
+   * Body: { enabled: boolean }
+   */
+  async setIncognitoMode(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId } = req.user!;
+      const { channelId } = req.params;
+      const { enabled } = req.body;
+
+      if (typeof enabled !== 'boolean') {
+        return res.status(400).json({
+          success: false,
+          error: 'enabled must be a boolean',
+        });
+      }
+
+      await whatsappService.setIncognitoMode(channelId, organizationId, enabled);
+
+      res.json({
+        success: true,
+        data: { enabled },
+        message: enabled
+          ? 'Incognito mode enabled - You appear offline, no typing indicators or read receipts'
+          : 'Incognito mode disabled - Normal presence restored',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const whatsappController = new WhatsAppController();

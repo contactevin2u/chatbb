@@ -75,6 +75,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils/cn';
 import { formatWhatsAppText } from '@/lib/utils/whatsapp-formatting';
 import { updateContact } from '@/lib/api/contacts';
+import { setIncognitoMode as setIncognitoModeApi, getIncognitoStatus } from '@/lib/api/channels';
 import { useWebSocket } from '@/providers/websocket-provider';
 import { useAuthStore } from '@/stores/auth-store';
 import { useUIStore } from '@/stores/ui-store';
@@ -1202,13 +1203,29 @@ export default function InboxPage() {
                 <Button
                   variant={incognitoMode ? 'default' : 'ghost'}
                   size="icon"
-                  onClick={() => {
+                  onClick={async () => {
                     const newValue = !incognitoMode;
                     setIncognitoMode(newValue);
                     localStorage.setItem('incognitoMode', String(newValue));
-                    toast.success(newValue ? 'Incognito mode ON - Read receipts disabled' : 'Incognito mode OFF - Read receipts enabled');
+
+                    // Call backend API to set incognito mode on the channel
+                    if (selectedConversation?.channelId) {
+                      try {
+                        await setIncognitoModeApi(selectedConversation.channelId, newValue);
+                        toast.success(
+                          newValue
+                            ? 'Stealth mode ON - You appear offline, no typing indicators or read receipts'
+                            : 'Stealth mode OFF - Normal presence restored'
+                        );
+                      } catch (error) {
+                        toast.error('Failed to update incognito mode on server');
+                        // Still works locally even if backend fails
+                      }
+                    } else {
+                      toast.success(newValue ? 'Incognito mode ON - Read receipts disabled' : 'Incognito mode OFF - Read receipts enabled');
+                    }
                   }}
-                  title={incognitoMode ? 'Incognito ON (click to disable)' : 'Incognito OFF (click to enable)'}
+                  title={incognitoMode ? 'Stealth ON (click to disable)' : 'Stealth OFF (click to enable)'}
                   className={incognitoMode ? 'bg-purple-600 hover:bg-purple-700 text-white' : ''}
                 >
                   {incognitoMode ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}

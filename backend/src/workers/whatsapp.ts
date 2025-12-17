@@ -379,6 +379,11 @@ async function setupCommandSubscriber() {
           await handleDeleteCommand(channelId, data);
           break;
 
+        case 'incognito':
+          // Set incognito mode (stealth mode)
+          await handleIncognitoCommand(channelId, data);
+          break;
+
         default:
           logger.warn({ command }, 'Unknown command');
       }
@@ -685,6 +690,25 @@ async function handleDeleteCommand(channelId: string, data: {
     await redisClient.publish(`whatsapp:response:${data.requestId}`, JSON.stringify({
       success: true,
     }));
+  } catch (error) {
+    await redisClient.publish(`whatsapp:response:${data.requestId}`, JSON.stringify({
+      success: false,
+      error: (error as Error).message,
+    }));
+  }
+}
+
+async function handleIncognitoCommand(channelId: string, data: {
+  enabled: boolean;
+  requestId: string;
+}) {
+  try {
+    await sessionManager.setIncognitoMode(channelId, data.enabled);
+    await redisClient.publish(`whatsapp:response:${data.requestId}`, JSON.stringify({
+      success: true,
+      enabled: data.enabled,
+    }));
+    logger.info({ channelId, enabled: data.enabled }, 'Incognito mode updated');
   } catch (error) {
     await redisClient.publish(`whatsapp:response:${data.requestId}`, JSON.stringify({
       success: false,
