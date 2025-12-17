@@ -17,6 +17,8 @@ import {
   ChevronRight,
   PanelLeftClose,
   PanelLeft,
+  BookOpen,
+  Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { Button } from '@/components/ui/button';
@@ -43,6 +45,8 @@ const navItems: NavItem[] = [
   { title: 'Contacts', href: '/contacts', icon: Users, permission: 'contacts:view' },
   { title: 'Channels', href: '/channels', icon: Radio, permission: 'channels:view' },
   { title: 'Team', href: '/team', icon: UsersRound, permission: 'team:view' },
+  { title: 'Knowledge', href: '/knowledge', icon: BookOpen, permission: 'knowledge:view' },
+  { title: 'AI Settings', href: '/settings/ai', icon: Sparkles, permission: 'ai:view' },
   { title: 'Automation', href: '/automation', icon: Bot, permission: 'automation:view' },
   { title: 'Broadcasts', href: '/broadcasts', icon: Megaphone, permission: 'broadcasts:view' },
   { title: 'Reports', href: '/reports', icon: BarChart3, permission: 'reports:view' },

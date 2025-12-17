@@ -45,7 +45,15 @@ export type Permission =
   | 'settings:organization'
   | 'settings:billing'
   | 'settings:integrations'
-  | 'settings:api_keys';
+  | 'settings:api_keys'
+  // Knowledge permissions
+  | 'knowledge:view'
+  | 'knowledge:create'
+  | 'knowledge:edit'
+  | 'knowledge:delete'
+  // AI permissions
+  | 'ai:view'
+  | 'ai:configure';
 
 export const rolePermissions: Record<UserRole, Permission[]> = {
   OWNER: [
@@ -86,6 +94,12 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     'settings:billing',
     'settings:integrations',
     'settings:api_keys',
+    'knowledge:view',
+    'knowledge:create',
+    'knowledge:edit',
+    'knowledge:delete',
+    'ai:view',
+    'ai:configure',
   ],
 
   ADMIN: [
@@ -123,6 +137,12 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     'settings:view',
     'settings:integrations',
     'settings:api_keys',
+    'knowledge:view',
+    'knowledge:create',
+    'knowledge:edit',
+    'knowledge:delete',
+    'ai:view',
+    'ai:configure',
   ],
 
   SUPERVISOR: [
@@ -140,6 +160,8 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     'reports:view',
     'reports:view:team',
     'settings:view',
+    'knowledge:view',
+    'ai:view',
   ],
 
   AGENT: [
@@ -152,6 +174,8 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     'automation:view',
     'reports:view',
     'settings:view',
+    'knowledge:view',
+    'ai:view',
   ],
 };
 
