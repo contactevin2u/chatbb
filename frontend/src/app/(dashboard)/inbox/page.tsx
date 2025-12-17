@@ -48,6 +48,9 @@ import {
   Package,
   Eye,
   EyeOff,
+  Wand2,
+  Copy,
+  RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -79,6 +82,8 @@ import { setIncognitoMode as setIncognitoModeApi, getIncognitoStatus } from '@/l
 import { useWebSocket } from '@/providers/websocket-provider';
 import { useAuthStore } from '@/stores/auth-store';
 import { OrderOpsTab } from '@/components/inbox/orderops-tab';
+import { parseConversationMessage } from '@/lib/api/orderops';
+import { Textarea } from '@/components/ui/textarea';
 import { useUIStore } from '@/stores/ui-store';
 import { useKeyboardShortcuts, KeyboardShortcut } from '@/hooks/use-keyboard-shortcuts';
 import { SlashCommand, SlashCommandItem } from '@/components/slash-command';
@@ -290,6 +295,7 @@ export default function InboxPage() {
   const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
   const [deletingMessage, setDeletingMessage] = useState<{ id: string; forEveryone: boolean } | null>(null);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [parseOrderDialog, setParseOrderDialog] = useState<{ open: boolean; text: string; result: any } | null>(null);
   const [incognitoMode, setIncognitoMode] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('incognitoMode') === 'true';
@@ -535,6 +541,21 @@ export default function InboxPage() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', selectedConversationId] });
+    },
+  });
+
+  // Parse order mutation
+  const parseOrderMutation = useMutation({
+    mutationFn: (text: string) => {
+      if (!selectedConversationId) throw new Error('No conversation selected');
+      return parseConversationMessage(selectedConversationId, { text });
+    },
+    onSuccess: (data) => {
+      setParseOrderDialog((prev) => prev ? { ...prev, result: data } : null);
+      toast.success('Message parsed successfully');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.error || 'Failed to parse message');
     },
   });
 
@@ -1678,6 +1699,15 @@ export default function InboxPage() {
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align={message.direction === 'OUTBOUND' ? 'end' : 'start'}>
+                                  {/* Parse Order - for text messages */}
+                                  {message.type === 'TEXT' && message.content.text && (
+                                    <DropdownMenuItem
+                                      onClick={() => setParseOrderDialog({ open: true, text: message.content.text || '', result: null })}
+                                    >
+                                      <Wand2 className="h-4 w-4 mr-2" />
+                                      Parse Order
+                                    </DropdownMenuItem>
+                                  )}
                                   {/* Edit - only for outbound text messages */}
                                   {message.direction === 'OUTBOUND' && message.type === 'TEXT' && message.externalId && (
                                     <DropdownMenuItem
@@ -2740,6 +2770,80 @@ export default function InboxPage() {
           conversationId={selectedConversationId}
         />
       )}
+
+      {/* Parse Order Dialog */}
+      <Dialog
+        open={!!parseOrderDialog?.open}
+        onOpenChange={(open) => !open && setParseOrderDialog(null)}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wand2 className="h-5 w-5 text-primary" />
+              Parse Order Message
+            </DialogTitle>
+            <DialogDescription>
+              Extract order details using AI (4-stage LLM pipeline)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Textarea
+              placeholder="Message text..."
+              value={parseOrderDialog?.text || ''}
+              onChange={(e) =>
+                setParseOrderDialog((prev) =>
+                  prev ? { ...prev, text: e.target.value } : null
+                )
+              }
+              rows={5}
+              className="resize-none"
+            />
+            {parseOrderDialog?.result && (
+              <div className="border rounded-lg p-3 bg-muted/30">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-muted-foreground">Parse Result:</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(
+                        JSON.stringify(parseOrderDialog.result.parsed, null, 2)
+                      );
+                      toast.success('Copied to clipboard');
+                    }}
+                  >
+                    <Copy className="h-3 w-3" />
+                  </Button>
+                </div>
+                <pre className="text-xs overflow-auto max-h-40 whitespace-pre-wrap bg-muted rounded p-2">
+                  {JSON.stringify(parseOrderDialog.result.parsed, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setParseOrderDialog(null)}>
+              Close
+            </Button>
+            <Button
+              onClick={() => parseOrderDialog?.text && parseOrderMutation.mutate(parseOrderDialog.text)}
+              disabled={!parseOrderDialog?.text?.trim() || parseOrderMutation.isPending}
+            >
+              {parseOrderMutation.isPending ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Parsing...
+                </>
+              ) : (
+                <>
+                  <Wand2 className="h-4 w-4 mr-2" />
+                  Parse
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={!!deletingMessage} onOpenChange={(open) => !open && setDeletingMessage(null)}>

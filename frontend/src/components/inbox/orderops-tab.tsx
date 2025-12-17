@@ -18,7 +18,10 @@ import {
   AlertCircle,
   CheckCircle,
   FileText,
-  ExternalLink,
+  Wand2,
+  Send,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -33,11 +36,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils/cn';
+import { Textarea } from '@/components/ui/textarea';
+import { toast } from 'sonner';
 import {
   getLinkedOrder,
   searchOrdersByContact,
   linkOrder,
   unlinkOrder,
+  parseConversationMessage,
   type OrderDetails,
 } from '@/lib/api/orderops';
 
@@ -86,7 +92,31 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
   const queryClient = useQueryClient();
   const [showLinkDialog, setShowLinkDialog] = useState(false);
   const [showUnlinkDialog, setShowUnlinkDialog] = useState(false);
+  const [showParseDialog, setShowParseDialog] = useState(false);
+  const [parseText, setParseText] = useState('');
+  const [parseResult, setParseResult] = useState<any>(null);
+  const [copied, setCopied] = useState(false);
   const [selectedPodImage, setSelectedPodImage] = useState<string | null>(null);
+
+  // Parse message mutation
+  const parseMutation = useMutation({
+    mutationFn: (text: string) => parseConversationMessage(conversationId, { text }),
+    onSuccess: (data) => {
+      setParseResult(data);
+      toast.success('Message parsed successfully');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.error || 'Failed to parse message');
+    },
+  });
+
+  const handleCopyResult = () => {
+    if (parseResult) {
+      navigator.clipboard.writeText(JSON.stringify(parseResult.parsed, null, 2));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   // Fetch linked order
   const {
@@ -137,18 +167,103 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
 
   if (!isLinked || !order) {
     return (
-      <div className="p-4">
-        <div className="text-center py-8">
-          <Package className="h-12 w-12 mx-auto text-muted-foreground/50 mb-3" />
+      <div className="p-4 space-y-4">
+        {/* Parse Message Section */}
+        <div className="border rounded-lg p-3">
+          <h6 className="text-xs font-medium text-muted-foreground uppercase mb-2 flex items-center gap-1">
+            <Wand2 className="h-3 w-3" />
+            Parse Order Message
+          </h6>
+          <p className="text-xs text-muted-foreground mb-2">
+            Paste a WhatsApp message to extract order details using AI
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={() => {
+              setParseText('');
+              setParseResult(null);
+              setShowParseDialog(true);
+            }}
+          >
+            <Wand2 className="h-3 w-3 mr-1" />
+            Parse Message
+          </Button>
+        </div>
+
+        <Separator />
+
+        {/* Link Order Section */}
+        <div className="text-center py-4">
+          <Package className="h-10 w-10 mx-auto text-muted-foreground/50 mb-2" />
           <h5 className="text-sm font-medium mb-1">No Order Linked</h5>
-          <p className="text-xs text-muted-foreground mb-4">
-            Link an order to track it from this conversation
+          <p className="text-xs text-muted-foreground mb-3">
+            Link an existing order to track it
           </p>
           <Button variant="outline" size="sm" onClick={() => setShowLinkDialog(true)}>
             <Link2 className="h-3 w-3 mr-1" />
             Link Order
           </Button>
         </div>
+
+        {/* Parse Message Dialog */}
+        <Dialog open={showParseDialog} onOpenChange={setShowParseDialog}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Wand2 className="h-5 w-5" />
+                Parse Order Message
+              </DialogTitle>
+              <DialogDescription>
+                Paste a WhatsApp message to extract order details using AI (4-stage LLM pipeline)
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Textarea
+                placeholder="Paste WhatsApp message here...&#10;&#10;Example:&#10;Customer: Ahmad&#10;Phone: 0123456789&#10;Address: 123 Jalan ABC&#10;Order: 2x Item A, 1x Item B&#10;Total: RM500"
+                value={parseText}
+                onChange={(e) => setParseText(e.target.value)}
+                rows={6}
+                className="resize-none"
+              />
+              {parseResult && (
+                <div className="border rounded-lg p-3 bg-muted/30">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-muted-foreground">Parse Result:</span>
+                    <Button variant="ghost" size="sm" onClick={handleCopyResult}>
+                      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                    </Button>
+                  </div>
+                  <pre className="text-xs overflow-auto max-h-40 whitespace-pre-wrap">
+                    {JSON.stringify(parseResult.parsed, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowParseDialog(false)}>
+                Close
+              </Button>
+              <Button
+                onClick={() => parseMutation.mutate(parseText)}
+                disabled={!parseText.trim() || parseMutation.isPending}
+              >
+                {parseMutation.isPending ? (
+                  <>
+                    <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                    Parsing...
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-3 w-3 mr-1" />
+                    Parse
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Link Order Dialog */}
         <Dialog open={showLinkDialog} onOpenChange={setShowLinkDialog}>

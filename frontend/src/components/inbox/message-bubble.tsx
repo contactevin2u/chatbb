@@ -20,6 +20,7 @@ import {
   Pencil,
   Trash2,
   MoreVertical,
+  Wand2,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -80,6 +81,7 @@ interface MessageBubbleProps {
   onReaction?: (messageId: string, emoji: string) => void;
   onEdit?: (message: MessageData) => void;
   onDelete?: (message: MessageData) => void;
+  onParseOrder?: (message: MessageData) => void;
   playingAudioId?: string | null;
   onAudioPlay?: (id: string) => void;
   onAudioPause?: () => void;
@@ -122,6 +124,7 @@ export const MessageBubble = memo(function MessageBubble({
   onReaction,
   onEdit,
   onDelete,
+  onParseOrder,
   playingAudioId,
   onAudioPlay,
   onAudioPause,
@@ -394,6 +397,12 @@ export const MessageBubble = memo(function MessageBubble({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align={isOutbound ? 'end' : 'start'}>
+                {onParseOrder && message.type === 'TEXT' && (
+                  <DropdownMenuItem onClick={() => onParseOrder(message)}>
+                    <Wand2 className="h-4 w-4 mr-2" />
+                    Parse Order
+                  </DropdownMenuItem>
+                )}
                 {canEdit && (
                   <DropdownMenuItem onClick={() => onEdit?.(message)}>
                     <Pencil className="h-4 w-4 mr-2" />
