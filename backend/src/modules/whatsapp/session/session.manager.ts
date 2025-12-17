@@ -208,10 +208,17 @@ export class SessionManager extends EventEmitter {
       defaultQueryTimeoutMs: 60_000, // 60 seconds for queries
       // Retry configuration
       retryRequestDelayMs: 250, // 250ms between retries
+      maxMsgRetryCount: 5, // Max retry attempts for failed messages
+      // QR code timeout - time to wait before generating next QR
+      qrTimeout: 40_000, // 40 seconds per QR code
 
-      // Essential options from official example
+      // === MESSAGE RELIABILITY OPTIONS ===
       generateHighQualityLinkPreview: true,
       msgRetryCounterCache: this.msgRetryCache,
+      // Auto recreate session when message send fails due to session issues
+      enableAutoSessionRecreation: true,
+      // Cache recent messages in memory for retry handling
+      enableRecentMessageCache: true,
       // History sync settings - only sync if this channel hasn't completed initial sync
       // This prevents re-syncing entire history on every server restart
       syncFullHistory: needsHistorySync,
