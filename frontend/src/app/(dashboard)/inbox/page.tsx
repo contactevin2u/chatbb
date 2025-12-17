@@ -83,6 +83,7 @@ import { useKeyboardShortcuts, KeyboardShortcut } from '@/hooks/use-keyboard-sho
 import { SlashCommand, SlashCommandItem } from '@/components/slash-command';
 import { startSequenceExecution } from '@/lib/api/sequences';
 import { ScheduleMessageDialog } from '@/components/schedule-message-dialog';
+import { EditMessageDialog } from '@/components/edit-message-dialog';
 import { TagDropdown } from '@/components/tag-dropdown';
 import { QuickReply } from '@/lib/api/quick-replies';
 import { listScheduledMessages, cancelScheduledMessage, ScheduledMessage } from '@/lib/api/scheduled-messages';
@@ -108,6 +109,9 @@ import {
   deleteConversationNote,
   getGroupParticipants,
   listTags,
+  editMessage,
+  deleteMessage,
+  deleteMessageForEveryone,
   type Conversation,
   type Message,
   type ConversationStatus,
@@ -281,6 +285,8 @@ export default function InboxPage() {
   const [newNoteContent, setNewNoteContent] = useState('');
   const [slashCommandOpen, setSlashCommandOpen] = useState(false);
   const [slashSearchTerm, setSlashSearchTerm] = useState('');
+  const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
+  const [deletingMessage, setDeletingMessage] = useState<{ id: string; forEveryone: boolean } | null>(null);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [incognitoMode, setIncognitoMode] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -477,6 +483,114 @@ export default function InboxPage() {
     },
     onSettled: () => {
       // Refetch to ensure consistency with server
+      queryClient.invalidateQueries({ queryKey: ['messages', selectedConversationId] });
+    },
+  });
+
+  // Edit message mutation with optimistic update
+  const editMessageMutation = useMutation({
+    mutationFn: ({ messageId, text }: { messageId: string; text: string }) =>
+      editMessage(messageId, text),
+    onMutate: async ({ messageId, text }) => {
+      await queryClient.cancelQueries({ queryKey: ['messages', selectedConversationId] });
+      const previousMessages = queryClient.getQueryData(['messages', selectedConversationId]);
+
+      // Optimistically update the message
+      queryClient.setQueryData(['messages', selectedConversationId], (old: any) => {
+        if (!old?.messages) return old;
+        return {
+          ...old,
+          messages: old.messages.map((msg: any) =>
+            msg.id === messageId
+              ? { ...msg, content: { ...msg.content, text, isEdited: true } }
+              : msg
+          ),
+        };
+      });
+
+      return { previousMessages };
+    },
+    onSuccess: () => {
+      toast.success('Message edited');
+      setEditingMessage(null);
+    },
+    onError: (error: Error, _variables, context) => {
+      if (context?.previousMessages) {
+        queryClient.setQueryData(['messages', selectedConversationId], context.previousMessages);
+      }
+      toast.error(error.message || 'Failed to edit message');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages', selectedConversationId] });
+    },
+  });
+
+  // Delete message mutation (local only)
+  const deleteMessageMutation = useMutation({
+    mutationFn: (messageId: string) => deleteMessage(messageId),
+    onMutate: async (messageId) => {
+      await queryClient.cancelQueries({ queryKey: ['messages', selectedConversationId] });
+      const previousMessages = queryClient.getQueryData(['messages', selectedConversationId]);
+
+      // Optimistically remove the message
+      queryClient.setQueryData(['messages', selectedConversationId], (old: any) => {
+        if (!old?.messages) return old;
+        return {
+          ...old,
+          messages: old.messages.filter((msg: any) => msg.id !== messageId),
+        };
+      });
+
+      return { previousMessages };
+    },
+    onSuccess: () => {
+      toast.success('Message deleted');
+      setDeletingMessage(null);
+    },
+    onError: (error: Error, _variables, context) => {
+      if (context?.previousMessages) {
+        queryClient.setQueryData(['messages', selectedConversationId], context.previousMessages);
+      }
+      toast.error(error.message || 'Failed to delete message');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages', selectedConversationId] });
+    },
+  });
+
+  // Delete message for everyone mutation
+  const deleteForEveryoneMutation = useMutation({
+    mutationFn: (messageId: string) => deleteMessageForEveryone(messageId),
+    onMutate: async (messageId) => {
+      await queryClient.cancelQueries({ queryKey: ['messages', selectedConversationId] });
+      const previousMessages = queryClient.getQueryData(['messages', selectedConversationId]);
+
+      // Optimistically mark as deleted
+      queryClient.setQueryData(['messages', selectedConversationId], (old: any) => {
+        if (!old?.messages) return old;
+        return {
+          ...old,
+          messages: old.messages.map((msg: any) =>
+            msg.id === messageId
+              ? { ...msg, content: { deleted: true }, type: 'SYSTEM' }
+              : msg
+          ),
+        };
+      });
+
+      return { previousMessages };
+    },
+    onSuccess: () => {
+      toast.success('Message deleted for everyone');
+      setDeletingMessage(null);
+    },
+    onError: (error: Error, _variables, context) => {
+      if (context?.previousMessages) {
+        queryClient.setQueryData(['messages', selectedConversationId], context.previousMessages);
+      }
+      toast.error(error.message || 'Failed to delete message');
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', selectedConversationId] });
     },
   });
@@ -2574,6 +2688,54 @@ export default function InboxPage() {
           }}
         />
       )}
+
+      {/* Edit Message Dialog */}
+      {editingMessage && selectedConversationId && (
+        <EditMessageDialog
+          open={!!editingMessage}
+          onOpenChange={(open) => !open && setEditingMessage(null)}
+          messageId={editingMessage.id}
+          currentText={editingMessage.text}
+          conversationId={selectedConversationId}
+        />
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deletingMessage} onOpenChange={(open) => !open && setDeletingMessage(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-destructive" />
+              Delete Message
+            </DialogTitle>
+            <DialogDescription>
+              {deletingMessage?.forEveryone
+                ? 'This message will be deleted for everyone in this conversation. This action cannot be undone.'
+                : 'This message will be deleted from your view only. Others can still see it.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setDeletingMessage(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (deletingMessage) {
+                  if (deletingMessage.forEveryone) {
+                    deleteForEveryoneMutation.mutate(deletingMessage.id);
+                  } else {
+                    deleteMessageMutation.mutate(deletingMessage.id);
+                  }
+                }
+              }}
+              disabled={deleteMessageMutation.isPending || deleteForEveryoneMutation.isPending}
+            >
+              {(deleteMessageMutation.isPending || deleteForEveryoneMutation.isPending) ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
