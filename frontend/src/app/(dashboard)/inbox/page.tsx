@@ -368,16 +368,54 @@ export default function InboxPage() {
     },
   });
 
-  // React to message mutation
+  // React to message mutation with optimistic updates for instant UI feedback
   const reactToMessageMutation = useMutation({
     mutationFn: ({ messageId, emoji }: { messageId: string; emoji: string }) =>
       reactToMessage(messageId, emoji),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['messages', selectedConversationId] });
+    onMutate: async ({ messageId, emoji }) => {
+      // Close emoji picker immediately for instant feedback
       setShowEmojiPicker(null);
+
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['messages', selectedConversationId] });
+
+      // Snapshot previous messages
+      const previousMessages = queryClient.getQueryData(['messages', selectedConversationId]);
+
+      // Optimistically update the message with the reaction
+      queryClient.setQueryData(['messages', selectedConversationId], (old: any) => {
+        if (!old?.messages) return old;
+        return {
+          ...old,
+          messages: old.messages.map((msg: any) => {
+            if (msg.id === messageId) {
+              const currentReactions = msg.metadata?.reactions || [];
+              const filteredReactions = currentReactions.filter((r: any) => r.senderId !== 'me');
+              const newReactions = emoji
+                ? [...filteredReactions, { emoji, senderId: 'me', timestamp: Date.now() }]
+                : filteredReactions;
+              return {
+                ...msg,
+                metadata: { ...msg.metadata, reactions: newReactions },
+              };
+            }
+            return msg;
+          }),
+        };
+      });
+
+      return { previousMessages };
     },
-    onError: (error: Error) => {
+    onError: (error: Error, _variables, context) => {
+      // Rollback on error
+      if (context?.previousMessages) {
+        queryClient.setQueryData(['messages', selectedConversationId], context.previousMessages);
+      }
       toast.error(error.message || 'Failed to send reaction');
+    },
+    onSettled: () => {
+      // Refetch to ensure consistency with server
+      queryClient.invalidateQueries({ queryKey: ['messages', selectedConversationId] });
     },
   });
 
