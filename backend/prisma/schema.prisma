@@ -37,6 +37,7 @@ model Organization {
   auditLogs         AuditLog[]
   knowledgeItems    KnowledgeItem[]
   aiConfig          AIConfig?
+  paymentReminders  PaymentReminder[]
 
   @@map("organizations")
 }
@@ -348,26 +349,26 @@ model ContactCustomField {
 // ==================== CONVERSATIONS & MESSAGES ====================
 
 model Conversation {
-  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId   String             @map("organization_id") @db.Uuid
-  channelId        String             @map("channel_id") @db.Uuid
-  contactId        String             @map("contact_id") @db.Uuid
-  assignedUserId   String?            @map("assigned_user_id") @db.Uuid
-  activeAgentId    String?            @map("active_agent_id") @db.Uuid
-  activeAgentSince DateTime?          @map("active_agent_since")
-  status           ConversationStatus @default(OPEN)
-  priority         Priority           @default(NORMAL)
-  lastMessageAt    DateTime?          @map("last_message_at")
-  unreadCount      Int                @default(0) @map("unread_count")
-  closedAt         DateTime?          @map("closed_at")
-  isPinned         Boolean            @default(false) @map("is_pinned")
-  pinnedAt         DateTime?          @map("pinned_at")
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId    String             @map("organization_id") @db.Uuid
+  channelId         String             @map("channel_id") @db.Uuid
+  contactId         String             @map("contact_id") @db.Uuid
+  assignedUserId    String?            @map("assigned_user_id") @db.Uuid
+  activeAgentId     String?            @map("active_agent_id") @db.Uuid
+  activeAgentSince  DateTime?          @map("active_agent_since")
+  status            ConversationStatus @default(OPEN)
+  priority          Priority           @default(NORMAL)
+  lastMessageAt     DateTime?          @map("last_message_at")
+  unreadCount       Int                @default(0) @map("unread_count")
+  closedAt          DateTime?          @map("closed_at")
+  isPinned          Boolean            @default(false) @map("is_pinned")
+  pinnedAt          DateTime?          @map("pinned_at")
   // OrderOps integration
-  orderOpsOrderId   Int?              @map("orderops_order_id")
-  orderOpsOrderCode String?           @map("orderops_order_code")
-  orderOpsLinkedAt  DateTime?         @map("orderops_linked_at")
-  createdAt        DateTime           @default(now()) @map("created_at")
-  updatedAt        DateTime           @updatedAt @map("updated_at")
+  orderOpsOrderId   Int?               @map("orderops_order_id")
+  orderOpsOrderCode String?            @map("orderops_order_code")
+  orderOpsLinkedAt  DateTime?          @map("orderops_linked_at")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
 
   organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   channel            Channel             @relation(fields: [channelId], references: [id], onDelete: Cascade)
@@ -381,6 +382,7 @@ model Conversation {
   scheduledMessages  ScheduledMessage[]
   sequenceExecutions SequenceExecution[]
   linkedOrders       ConversationOrder[]
+  PaymentReminder    PaymentReminder[]
 
   @@unique([channelId, contactId])
   @@index([organizationId])
@@ -409,6 +411,32 @@ model ConversationOrder {
   @@index([conversationId])
   @@index([orderId])
   @@map("conversation_orders")
+}
+
+// Track payment reminder messages sent to avoid spam
+model PaymentReminder {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   String   @map("organization_id") @db.Uuid
+  conversationId   String   @map("conversation_id") @db.Uuid
+  orderId          Int      @map("order_id")
+  orderCode        String   @map("order_code")
+  customerPhone    String   @map("customer_phone")
+  amountDue        Decimal  @map("amount_due") @db.Decimal(10, 2)
+  daysPastDue      Int      @map("days_past_due")
+  messageId        String?  @map("message_id") @db.Uuid
+  sentAt           DateTime @default(now()) @map("sent_at")
+  nextReminderAt   DateTime @map("next_reminder_at") // sentAt + 15 days
+  reminderSequence Int      @default(1) @map("reminder_sequence") // 1st, 2nd, 3rd reminder
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([orderId])
+  @@index([customerPhone])
+  @@index([nextReminderAt])
+  @@map("payment_reminders")
 }
 
 // Multi-agent assignment for collaborative conversations
@@ -497,7 +525,7 @@ model Message {
   sentByUser   User?               @relation("SentByUser", fields: [sentByUserId], references: [id])
   attachments  MessageAttachment[]
 
-  @@unique([channelId, externalId])  // Composite unique for fast idempotency check + enables findUnique
+  @@unique([channelId, externalId]) // Composite unique for fast idempotency check + enables findUnique
   @@index([conversationId])
   @@index([createdAt(sort: Desc)])
   @@map("messages")
@@ -663,7 +691,7 @@ model MessageSequence {
   id             String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId String                @map("organization_id") @db.Uuid
   name           String
-  shortcut       String?               // Optional shortcut for /command access (e.g., "welcome" for /welcome)
+  shortcut       String? // Optional shortcut for /command access (e.g., "welcome" for /welcome)
   description    String?
   status         MessageSequenceStatus @default(DRAFT)
   triggerType    String                @default("manual") @map("trigger_type") // manual, keyword, tag_added, etc.
@@ -906,34 +934,34 @@ enum KnowledgeType {
 }
 
 model AIConfig {
-  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId    String   @unique @map("organization_id") @db.Uuid
+  id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @unique @map("organization_id") @db.Uuid
 
   // OpenAI Settings
-  openaiApiKey      String?  @map("openai_api_key")
-  model             String   @default("gpt-4o-mini")
+  openaiApiKey String? @map("openai_api_key")
+  model        String  @default("gpt-4o-mini")
 
   // Auto-Reply Settings
-  isEnabled         Boolean  @default(false) @map("is_enabled")
-  replyToAll        Boolean  @default(false) @map("reply_to_all")
-  responseDelayMs   Int      @default(2000) @map("response_delay_ms")
+  isEnabled       Boolean @default(false) @map("is_enabled")
+  replyToAll      Boolean @default(false) @map("reply_to_all")
+  responseDelayMs Int     @default(2000) @map("response_delay_ms")
 
   // Business Hours (Malaysia Time UTC+8)
-  businessHoursOnly Boolean  @default(false) @map("business_hours_only")
-  businessStart     String?  @map("business_start")
-  businessEnd       String?  @map("business_end")
-  offHoursMessage   String?  @map("off_hours_message")
+  businessHoursOnly Boolean @default(false) @map("business_hours_only")
+  businessStart     String? @map("business_start")
+  businessEnd       String? @map("business_end")
+  offHoursMessage   String? @map("off_hours_message")
 
   // Handoff Settings
-  handoffKeywords   String[] @map("handoff_keywords")
-  handoffMessage    String?  @map("handoff_message")
+  handoffKeywords String[] @map("handoff_keywords")
+  handoffMessage  String?  @map("handoff_message")
 
   // Prompt Settings
-  systemPrompt      String?  @map("system_prompt") @db.Text
-  companyName       String?  @map("company_name")
+  systemPrompt String? @map("system_prompt") @db.Text
+  companyName  String? @map("company_name")
 
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 

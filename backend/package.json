@@ -11,6 +11,7 @@
     "start:whatsapp": "node dist/workers/whatsapp.js",
     "job:aggregate-analytics": "node dist/jobs/aggregate-analytics.js",
     "job:cleanup-sessions": "node dist/jobs/cleanup-sessions.js",
+    "job:payment-chase": "node dist/jobs/payment-chase.js",
     "dev:worker": "tsx src/workers/index.ts",
     "dev:whatsapp": "tsx src/workers/whatsapp.ts",
     "db:generate": "prisma generate",
