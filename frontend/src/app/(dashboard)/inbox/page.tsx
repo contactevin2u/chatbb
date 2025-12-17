@@ -340,7 +340,7 @@ export default function InboxPage() {
   // Send message mutation with optimistic updates for instant UI feedback
   const sendMessageMutation = useMutation({
     mutationFn: sendMessage,
-    onMutate: async (newMessage) => {
+    onMutate: async (newMessage: any) => {
       // Cancel outgoing refetches to avoid overwriting optimistic update
       await queryClient.cancelQueries({ queryKey: ['messages', newMessage.conversationId] });
 
@@ -352,10 +352,16 @@ export default function InboxPage() {
         id: `temp-${Date.now()}`,
         conversationId: newMessage.conversationId,
         direction: 'OUTBOUND',
-        type: newMessage.media?.type?.toUpperCase() || 'TEXT',
+        type: newMessage.localPreview?.type?.toUpperCase() || newMessage.media?.type?.toUpperCase() || 'TEXT',
         content: {
           text: newMessage.text,
-          ...(newMessage.media && {
+          // Use local preview URL for instant display, falls back to uploaded URL
+          ...(newMessage.localPreview && {
+            url: newMessage.localPreview.url,
+            mimetype: newMessage.localPreview.mimetype || 'application/octet-stream',
+            filename: newMessage.localPreview.filename,
+          }),
+          ...(!newMessage.localPreview && newMessage.media && {
             url: newMessage.media.url,
             mimetype: newMessage.media.mimetype,
             filename: newMessage.media.filename,
@@ -380,10 +386,14 @@ export default function InboxPage() {
       });
 
       // Broadcast to other agents so they see the pending message too (prevents double-reply)
+      // Don't send local blob URLs - send placeholder for uploading media
+      const broadcastContent = newMessage.localPreview
+        ? { text: optimisticMessage.content.text, isUploading: true }
+        : optimisticMessage.content;
       broadcastPendingMessage(newMessage.conversationId, {
         id: optimisticMessage.id,
         type: optimisticMessage.type,
-        content: optimisticMessage.content,
+        content: broadcastContent,
         quotedMessageId: newMessage.quotedMessageId,
       });
       return { previousMessages, conversationId: newMessage.conversationId };
@@ -845,43 +855,72 @@ export default function InboxPage() {
   const handleSendMessage = useCallback(async () => {
     if ((!messageText.trim() && !selectedMedia) || !selectedConversationId) return;
 
-    try {
-      let mediaData: { type: 'image' | 'video' | 'audio' | 'document'; url: string; mimetype: string; filename: string } | undefined;
+    // Capture values before clearing
+    const textToSend = messageText.trim() || undefined;
+    const mediaToUpload = selectedMedia;
+    const quoteId = replyToMessage?.externalId || undefined;
 
-      // Upload media if selected
-      if (selectedMedia) {
+    // Clear input immediately for better UX
+    setMessageText('');
+    clearSelectedMedia();
+    setReplyToMessage(null);
+
+    try {
+      // If we have media, show optimistic message with local preview immediately
+      if (mediaToUpload) {
+        // Create local preview data for instant display
+        const localPreview = {
+          type: mediaToUpload.type,
+          url: mediaToUpload.preview,
+          mimetype: mediaToUpload.file.type,
+          filename: mediaToUpload.file.name,
+        };
+
+        // Show optimistic message immediately with local preview
+        sendMessageMutation.mutate({
+          conversationId: selectedConversationId,
+          text: textToSend,
+          localPreview,
+          quotedMessageId: quoteId,
+        } as any);
+
+        // Upload media in background
         setIsUploading(true);
         try {
-          const uploaded = await uploadMedia(selectedMedia.file);
-          mediaData = {
-            type: uploaded.type,
-            url: uploaded.url,
-            mimetype: uploaded.mimetype,
-            filename: uploaded.filename,
-          };
+          const uploaded = await uploadMedia(mediaToUpload.file);
+          // Now send the actual message with uploaded URL
+          // The optimistic update will be replaced by server response
+          await sendMessage({
+            conversationId: selectedConversationId,
+            text: textToSend,
+            media: {
+              type: uploaded.type,
+              url: uploaded.url,
+              mimetype: uploaded.mimetype,
+              filename: uploaded.filename,
+            },
+            quotedMessageId: quoteId,
+          });
+          // Refetch to get the real message
+          queryClient.invalidateQueries({ queryKey: ['messages', selectedConversationId] });
         } catch (error) {
           toast.error('Failed to upload media');
+          // Rollback will happen via mutation error handling
+        } finally {
           setIsUploading(false);
-          return;
         }
-        setIsUploading(false);
+      } else {
+        // Text-only message - simple optimistic flow
+        sendMessageMutation.mutate({
+          conversationId: selectedConversationId,
+          text: textToSend,
+          quotedMessageId: quoteId,
+        });
       }
-
-      // Send message
-      sendMessageMutation.mutate({
-        conversationId: selectedConversationId,
-        text: messageText.trim() || undefined,
-        media: mediaData,
-        quotedMessageId: replyToMessage?.externalId || undefined,
-      });
-
-      // Clear media and reply after sending
-      clearSelectedMedia();
-      setReplyToMessage(null);
     } catch (error) {
       toast.error('Failed to send message');
     }
-  }, [messageText, selectedMedia, selectedConversationId, sendMessageMutation, clearSelectedMedia, replyToMessage]);
+  }, [messageText, selectedMedia, selectedConversationId, sendMessageMutation, clearSelectedMedia, replyToMessage, queryClient]);
 
   // Handle typing
   const handleTyping = useCallback(() => {
