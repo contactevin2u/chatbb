@@ -7,6 +7,7 @@
 
 import { connectDatabase, disconnectDatabase, prisma } from '../core/database/prisma';
 import { logger } from '../shared/utils/logger';
+import { runPaymentChase } from './payment-chase';
 
 async function aggregateAnalytics() {
   logger.info('Starting analytics aggregation job');
@@ -194,11 +195,20 @@ async function upsertAnalytics(
 async function main() {
   try {
     await connectDatabase();
+    
+    // Run analytics aggregation
+    logger.info('Running analytics aggregation...');
     await aggregateAnalytics();
+    
+    // Run payment chase (sends reminders for overdue orders)
+    logger.info('Running payment chase...');
+    await runPaymentChase();
+    
     await disconnectDatabase();
+    logger.info('All cron jobs completed successfully');
     process.exit(0);
   } catch (error) {
-    logger.error({ error }, 'Job failed');
+    logger.error({ error }, 'Cron job failed');
     process.exit(1);
   }
 }

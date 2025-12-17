@@ -481,6 +481,10 @@ async function runPaymentChase() {
   );
 }
 
+// Export for use in combined cron job
+export { runPaymentChase };
+
+// Standalone execution
 async function main() {
   try {
     await connectDatabase();
@@ -493,4 +497,7 @@ async function main() {
   }
 }
 
-main();
+// Only run if called directly
+if (require.main === module) {
+  main();
+}
