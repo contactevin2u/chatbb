@@ -130,6 +130,14 @@ export class SessionManager extends EventEmitter {
 
     this.logger.info({ channelId, organizationId }, 'Creating new WhatsApp session');
 
+    // Fetch channel to check if initial sync has been completed
+    const channel = await prisma.channel.findUnique({
+      where: { id: channelId },
+      select: { hasInitialSync: true },
+    });
+    const needsHistorySync = !channel?.hasInitialSync;
+    this.logger.info({ channelId, needsHistorySync, hasInitialSync: channel?.hasInitialSync }, 'Sync status checked');
+
     // Update channel status to CONNECTING
     await this.updateChannelStatus(channelId, 'CONNECTING');
 
@@ -166,9 +174,10 @@ export class SessionManager extends EventEmitter {
       // Essential options from official example
       generateHighQualityLinkPreview: true,
       msgRetryCounterCache: this.msgRetryCache,
-      // History sync settings - emulate desktop for full history
-      syncFullHistory: true,
-      shouldSyncHistoryMessage: () => true,
+      // History sync settings - only sync if this channel hasn't completed initial sync
+      // This prevents re-syncing entire history on every server restart
+      syncFullHistory: needsHistorySync,
+      shouldSyncHistoryMessage: () => needsHistorySync,
       // Set to false to receive phone notifications on the device
       markOnlineOnConnect: false,
       // Cache group metadata to prevent rate limiting (recommended by Baileys)
@@ -385,9 +394,10 @@ export class SessionManager extends EventEmitter {
     });
 
     // Historical message sync (requires macOS Desktop browser + syncFullHistory: true)
+    // Note: messages is a WAMessage[] flat array, NOT object keyed by JID
     socket.ev.on('messaging-history.set', async ({ chats, contacts, messages, syncType }) => {
       this.logger.info(
-        { channelId, chatsCount: chats.length, contactsCount: contacts.length, messagesCount: Object.keys(messages).length, syncType },
+        { channelId, chatsCount: chats.length, contactsCount: contacts.length, messagesCount: Array.isArray(messages) ? messages.length : 0, syncType },
         'Historical sync received'
       );
 
@@ -409,7 +419,16 @@ export class SessionManager extends EventEmitter {
         }
       }
 
-      this.logger.info({ channelId, syncType }, 'Historical sync processed');
+      // Mark channel as having completed initial sync to prevent re-sync on restart
+      try {
+        await prisma.channel.update({
+          where: { id: channelId },
+          data: { hasInitialSync: true },
+        });
+        this.logger.info({ channelId, syncType }, 'Historical sync completed, hasInitialSync flag set');
+      } catch (error) {
+        this.logger.warn({ channelId, error }, 'Failed to update hasInitialSync flag');
+      }
     });
 
     // Group metadata updates - cache for performance and sync to database

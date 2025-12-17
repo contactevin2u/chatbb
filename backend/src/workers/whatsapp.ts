@@ -979,83 +979,100 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
     }
   }
 
-  // Process messages (limit to avoid timeout)
-  const messageLimit = 100; // Process max 100 messages per sync to avoid timeout
+  // Process messages - Baileys provides WAMessage[] (flat array), NOT object keyed by JID
+  // Limit to avoid timeout in direct fallback (Redis OOM scenario)
+  const messageLimit = 500; // Increased limit since we're handling flat array now
   let messageCount = 0;
 
-  for (const [jid, msgs] of Object.entries(data.messages || {})) {
-    if (!Array.isArray(msgs) || messageCount >= messageLimit) continue;
+  // Group messages by JID for efficient contact/conversation lookup
+  const messagesByJid = new Map<string, any[]>();
+  for (const msg of (data.messages as any[]) || []) {
+    const jid = msg.key?.remoteJid;
+    if (!jid) continue;
+    if (!messagesByJid.has(jid)) {
+      messagesByJid.set(jid, []);
+    }
+    messagesByJid.get(jid)!.push(msg);
+  }
 
-    const identifier = normalizeIdentifier(jid);
+  for (const [jid, msgs] of messagesByJid) {
+    if (messageCount >= messageLimit) break;
 
-    const contact = await prisma.contact.findFirst({
-      where: { organizationId: orgId, channelType: ChannelType.WHATSAPP, identifier },
-    });
-    if (!contact) continue;
+    try {
+      // Use resolveIdentifier for proper LID→phone mapping
+      const identifier = await resolveIdentifier(channelId, jid);
 
-    const conversation = await prisma.conversation.findFirst({
-      where: { channelId, contactId: contact.id },
-    });
-    if (!conversation) continue;
+      const contact = await prisma.contact.findFirst({
+        where: { organizationId: orgId, channelType: ChannelType.WHATSAPP, identifier },
+      });
+      if (!contact) continue;
 
-    for (const msg of msgs as any[]) {
-      if (messageCount >= messageLimit) break;
+      const conversation = await prisma.conversation.findFirst({
+        where: { channelId, contactId: contact.id },
+      });
+      if (!conversation) continue;
 
-      try {
-        const externalId = msg.key?.id;
-        if (!externalId) continue;
+      for (const msg of msgs) {
+        if (messageCount >= messageLimit) break;
 
-        // Skip if exists
-        const exists = await prisma.message.findFirst({ where: { externalId, channelId } });
-        if (exists) continue;
+        try {
+          const externalId = msg.key?.id;
+          if (!externalId) continue;
 
-        // Parse content
-        const msgContent = msg.message || {};
-        let type: typeof MessageType[keyof typeof MessageType] = MessageType.TEXT;
-        let content: any = {};
+          // Skip if exists
+          const exists = await prisma.message.findFirst({ where: { externalId, channelId } });
+          if (exists) continue;
 
-        if (msgContent.conversation) {
-          content = { text: msgContent.conversation };
-        } else if (msgContent.extendedTextMessage) {
-          content = { text: msgContent.extendedTextMessage.text };
-        } else if (msgContent.imageMessage) {
-          type = MessageType.IMAGE;
-          content = { caption: msgContent.imageMessage.caption };
-        } else if (msgContent.videoMessage) {
-          type = MessageType.VIDEO;
-        } else if (msgContent.audioMessage) {
-          type = MessageType.AUDIO;
-        } else if (msgContent.documentMessage) {
-          type = MessageType.DOCUMENT;
-          content = { filename: msgContent.documentMessage.fileName };
+          // Parse content
+          const msgContent = msg.message || {};
+          let type: typeof MessageType[keyof typeof MessageType] = MessageType.TEXT;
+          let content: any = {};
+
+          if (msgContent.conversation) {
+            content = { text: msgContent.conversation };
+          } else if (msgContent.extendedTextMessage) {
+            content = { text: msgContent.extendedTextMessage.text };
+          } else if (msgContent.imageMessage) {
+            type = MessageType.IMAGE;
+            content = { caption: msgContent.imageMessage.caption };
+          } else if (msgContent.videoMessage) {
+            type = MessageType.VIDEO;
+          } else if (msgContent.audioMessage) {
+            type = MessageType.AUDIO;
+          } else if (msgContent.documentMessage) {
+            type = MessageType.DOCUMENT;
+            content = { filename: msgContent.documentMessage.fileName };
+          }
+
+          const isFromMe = msg.key?.fromMe || false;
+
+          await prisma.message.create({
+            data: {
+              conversationId: conversation.id,
+              channelId,
+              externalId,
+              direction: isFromMe ? MessageDirection.OUTBOUND : MessageDirection.INBOUND,
+              type,
+              content,
+              status: isFromMe ? MessageStatus.SENT : MessageStatus.DELIVERED,
+              sentAt: isFromMe ? new Date(Number(msg.messageTimestamp) * 1000) : null,
+              deliveredAt: !isFromMe ? new Date(Number(msg.messageTimestamp) * 1000) : null,
+              metadata: { timestamp: Number(msg.messageTimestamp), isHistorical: true },
+            },
+          });
+          messagesProcessed++;
+          messageCount++;
+        } catch {
+          // Skip errors
         }
-
-        const isFromMe = msg.key?.fromMe || false;
-
-        await prisma.message.create({
-          data: {
-            conversationId: conversation.id,
-            channelId,
-            externalId,
-            direction: isFromMe ? MessageDirection.OUTBOUND : MessageDirection.INBOUND,
-            type,
-            content,
-            status: isFromMe ? MessageStatus.SENT : MessageStatus.DELIVERED,
-            sentAt: isFromMe ? new Date(Number(msg.messageTimestamp) * 1000) : null,
-            deliveredAt: !isFromMe ? new Date(Number(msg.messageTimestamp) * 1000) : null,
-            metadata: { timestamp: Number(msg.messageTimestamp), isHistorical: true },
-          },
-        });
-        messagesProcessed++;
-        messageCount++;
-      } catch {
-        // Skip errors
       }
+    } catch {
+      // Skip errors for this JID, continue with next
     }
   }
 
   logger.info(
-    { channelId, contactsProcessed, chatsProcessed, messagesProcessed },
+    { channelId, contactsProcessed, chatsProcessed, messagesProcessed, totalJids: messagesByJid.size },
     'Direct history sync completed'
   );
 }
