@@ -184,7 +184,7 @@ export class ConversationService {
         ...conv,
         lastMessage: conv.messages[0] || null,
         messages: undefined, // Remove messages array from response
-        tags: conv.tags.map((ct) => ct.tag), // Flatten tags
+        // Keep tags as { tag: {...} } structure for frontend compatibility
       })),
       total,
       limit,
