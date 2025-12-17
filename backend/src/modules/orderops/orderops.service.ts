@@ -77,9 +77,9 @@ class OrderOpsService {
 
   constructor() {
     this.config = {
-      baseUrl: process.env.ORDEROPS_API_URL || 'https://orderops-api-v1.onrender.com',
-      username: process.env.ORDEROPS_USERNAME || 'admin',
-      password: process.env.ORDEROPS_PASSWORD || '',
+      baseUrl: process.env.ORDEROPS_API_URL!,
+      username: process.env.ORDEROPS_USERNAME!,
+      password: process.env.ORDEROPS_PASSWORD!,
     };
 
     this.client = axios.create({
