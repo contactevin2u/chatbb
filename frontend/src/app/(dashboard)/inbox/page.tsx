@@ -1111,7 +1111,6 @@ export default function InboxPage() {
                         {getMessagePreview(conversation.lastMessage)}
                       </p>
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        <StatusBadge status={conversation.status} />
                         <span className="text-xs text-muted-foreground">
                           {conversation.channel.name}
                         </span>
@@ -2085,10 +2084,6 @@ export default function InboxPage() {
                   <div className="border-t pt-4">
                     <h5 className="text-xs font-medium text-muted-foreground uppercase mb-2">Conversation</h5>
                     <div className="space-y-1.5 text-xs">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Status</span>
-                        <StatusBadge status={selectedConversation.status} />
-                      </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Priority</span>
                         <span>{selectedConversation.priority}</span>
