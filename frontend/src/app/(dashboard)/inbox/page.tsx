@@ -276,6 +276,7 @@ export default function InboxPage() {
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [messageText, setMessageText] = useState('');
   const [showContactPanel, setShowContactPanel] = useState(true);
+  const [contactPanelTab, setContactPanelTab] = useState<string>('info');
   const [typingUsers, setTypingUsers] = useState<Map<string, string>>(new Map());
   const [editContactOpen, setEditContactOpen] = useState(false);
   const [editContactName, setEditContactName] = useState('');
@@ -2336,57 +2337,25 @@ export default function InboxPage() {
 
       {/* Contact Info Panel */}
       {showContactPanel && selectedConversation && (
-        <div className="w-80 border-l flex flex-col">
+        <div className={cn(
+          'border-l flex flex-col transition-all duration-200',
+          contactPanelTab === 'orderops' ? 'w-96' : 'w-80'
+        )}>
           <div className="h-16 border-b flex items-center justify-between px-4">
             <h3 className="font-semibold">
-              {isGroupContact(selectedConversation.contact) ? 'Group Info' : 'Contact Info'}
+              {contactPanelTab === 'orderops'
+                ? 'Orders'
+                : contactPanelTab === 'tags'
+                ? 'Tags'
+                : isGroupContact(selectedConversation.contact) ? 'Group Info' : 'Contact Info'}
             </h3>
             <Button variant="ghost" size="icon" onClick={() => setShowContactPanel(false)}>
               <X className="h-5 w-5" />
             </Button>
           </div>
 
-          {/* Contact Avatar & Name - Always visible */}
-          <div className="p-4 border-b">
-            <div className="text-center">
-              <div className="relative inline-block">
-                <Avatar className="h-16 w-16 mx-auto mb-2">
-                  <AvatarImage src={selectedConversation.contact.avatarUrl || undefined} className="object-cover" />
-                  <AvatarFallback className="text-xl">
-                    {isGroupContact(selectedConversation.contact) ? (
-                      <Users className="h-6 w-6" />
-                    ) : (
-                      getContactInitials(selectedConversation.contact)
-                    )}
-                  </AvatarFallback>
-                </Avatar>
-                {isGroupContact(selectedConversation.contact) && (
-                  <span className="absolute bottom-1 right-0 h-5 w-5 rounded-full bg-green-500 text-white flex items-center justify-center">
-                    <Users className="h-3 w-3" />
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center justify-center gap-1">
-                <h4 className="font-semibold text-sm">
-                  {getContactName(selectedConversation.contact)}
-                </h4>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-5 w-5"
-                  onClick={handleEditContact}
-                >
-                  <Edit className="h-2.5 w-2.5" />
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {isGroupContact(selectedConversation.contact) ? 'WhatsApp Group' : `+${selectedConversation.contact.identifier}`}
-              </p>
-            </div>
-          </div>
-
           {/* Tabs */}
-          <Tabs defaultValue="info" className="flex-1 flex flex-col">
+          <Tabs value={contactPanelTab} onValueChange={setContactPanelTab} className="flex-1 flex flex-col">
             <TabsList className="w-full justify-start rounded-none border-b bg-transparent h-auto p-0">
               <TabsTrigger
                 value="info"
@@ -2415,6 +2384,43 @@ export default function InboxPage() {
             <TabsContent value="info" className="flex-1 m-0">
               <ScrollArea className="h-[calc(100vh-280px)]">
                 <div className="p-4 space-y-4">
+                  {/* Contact Avatar & Name */}
+                  <div className="text-center pb-4 border-b">
+                    <div className="relative inline-block">
+                      <Avatar className="h-16 w-16 mx-auto mb-2">
+                        <AvatarImage src={selectedConversation.contact.avatarUrl || undefined} className="object-cover" />
+                        <AvatarFallback className="text-xl">
+                          {isGroupContact(selectedConversation.contact) ? (
+                            <Users className="h-6 w-6" />
+                          ) : (
+                            getContactInitials(selectedConversation.contact)
+                          )}
+                        </AvatarFallback>
+                      </Avatar>
+                      {isGroupContact(selectedConversation.contact) && (
+                        <span className="absolute bottom-1 right-0 h-5 w-5 rounded-full bg-green-500 text-white flex items-center justify-center">
+                          <Users className="h-3 w-3" />
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-center gap-1">
+                      <h4 className="font-semibold text-sm">
+                        {getContactName(selectedConversation.contact)}
+                      </h4>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5"
+                        onClick={handleEditContact}
+                      >
+                        <Edit className="h-2.5 w-2.5" />
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {isGroupContact(selectedConversation.contact) ? 'WhatsApp Group' : `+${selectedConversation.contact.identifier}`}
+                    </p>
+                  </div>
+
                   {/* Contact/Group Details */}
                   <div className="space-y-2">
                     <h5 className="text-xs font-medium text-muted-foreground uppercase">Details</h5>

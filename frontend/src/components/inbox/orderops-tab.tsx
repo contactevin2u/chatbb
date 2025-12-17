@@ -828,7 +828,7 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
 
   // Main render with orders
   return (
-    <ScrollArea className="h-[calc(100vh-280px)]">
+    <ScrollArea className="h-[calc(100vh-180px)]">
       <div className="p-4 space-y-3">
         {/* Header */}
         <div className="flex items-center justify-between">
