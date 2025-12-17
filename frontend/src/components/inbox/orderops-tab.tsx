@@ -595,7 +595,7 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
               {/* Parent Order */}
               {order.parent && (
                 <a
-                  href={`https://aaalyx.com/orders/${order.parent.order_id}`}
+                  href={`https://aalyx.com/orders/${order.parent.order_id}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center justify-between p-2.5 rounded-lg bg-blue-50/80 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50 hover:bg-blue-100/80 dark:hover:bg-blue-900/40 transition-colors"
@@ -616,7 +616,7 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
               {order.adjustments && order.adjustments.map((adj) => (
                 <a
                   key={adj.order_id}
-                  href={`https://aaalyx.com/orders/${adj.order_id}`}
+                  href={`https://aalyx.com/orders/${adj.order_id}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center justify-between p-2.5 rounded-lg bg-purple-50/80 dark:bg-purple-950/40 border border-purple-100 dark:border-purple-900/50 hover:bg-purple-100/80 dark:hover:bg-purple-900/40 transition-colors"
@@ -942,7 +942,7 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
                         <ChevronRight className="h-4 w-4 text-gray-400" />
                       )}
                       <a
-                        href={`https://aaalyx.com/orders/${order.order_id}`}
+                        href={`https://aalyx.com/orders/${order.order_id}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         onClick={(e) => e.stopPropagation()}
