@@ -774,7 +774,7 @@ async function fetchAndStoreProfilePicture(
     if (!ppUrl) return null;
 
     // Upload to Cloudinary
-    const identifier = normalizeIdentifier(jid);
+    const identifier = await normalizeIdentifier(jid);
     const cloudinaryUrl = await uploadFromUrlToCloudinary(ppUrl, {
       folder: `chatbaby/${organizationId}/avatars`,
       publicId: `contact_${identifier}`,
@@ -898,7 +898,7 @@ async function processContactsUpdate(channelId: string, contacts: any[]) {
  */
 async function processHistorySyncDirect(channelId: string, data: { chats: any[]; contacts: any[]; messages: any; syncType: any }) {
   const { ChannelType, MessageDirection, MessageStatus, MessageType } = await import('@prisma/client');
-  const { upsertContactFromSync, resolveIdentifier } = await import('../shared/utils/identifier.js');
+  const { upsertContactFromSync, normalizeIdentifier: normalizeId } = await import('../shared/utils/identifier.js');
 
   const channel = await prisma.channel.findUnique({ where: { id: channelId } });
   if (!channel) return;
@@ -939,7 +939,7 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
       const isGroup = remoteJid.endsWith('@g.us');
 
       // Resolve identifier using shared function (handles LID resolution)
-      const identifier = await resolveIdentifier(channelId, remoteJid);
+      const identifier = await normalizeId(remoteJid, channelId);
 
       // Get display name - for groups, try to get from cache or chat.name
       let displayName = chat.name || null;
@@ -999,8 +999,8 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
     if (messageCount >= messageLimit) break;
 
     try {
-      // Use resolveIdentifier for proper LID→phone mapping
-      const identifier = await resolveIdentifier(channelId, jid);
+      // Use normalizeIdentifier with channelId for proper LID→phone mapping
+      const identifier = await normalizeId(jid, channelId);
 
       const contact = await prisma.contact.findFirst({
         where: { organizationId: orgId, channelType: ChannelType.WHATSAPP, identifier },

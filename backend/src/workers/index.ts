@@ -17,7 +17,6 @@ import { redisConfig } from '../config/redis';
 import { isMediaMessage, getMediaMessageInfo, processWhatsAppMedia } from '../shared/services/media.service';
 import {
   normalizeIdentifier,
-  resolveIdentifier,
   getOrCreateContact,
   getOrCreateConversation,
   upsertContactFromSync,
@@ -58,7 +57,7 @@ async function processMessage(job: Job) {
 
     // Resolve identifier with LID lookup for consistent contact matching
     // Note: LID to phone resolution happens earlier in whatsapp.ts using remoteJidAlt
-    const contactIdentifier = await resolveIdentifier(channelId, remoteJid);
+    const contactIdentifier = await normalizeIdentifier(remoteJid, channelId);
 
     logger.debug({ remoteJid, contactIdentifier, isGroup, isFromMe }, 'Resolved contact identifier');
 
@@ -306,9 +305,10 @@ async function processMessage(job: Job) {
     if (isGroup && !isFromMe) {
       const participant = waMessage.key?.participant;
       if (participant) {
+        const participantIdentifier = await normalizeIdentifier(participant, channelId);
         messageMetadata.groupSender = {
           jid: participant,
-          identifier: normalizeIdentifier(participant),
+          identifier: participantIdentifier,
           pushName: waMessage.pushName || null,
         };
       }
@@ -503,7 +503,7 @@ async function processHistorySync(job: Job) {
       const isGroup = remoteJid.endsWith('@g.us');
 
       // Resolve identifier using shared function (handles LID resolution)
-      const identifier = await resolveIdentifier(channelId, remoteJid);
+      const identifier = await normalizeIdentifier(remoteJid, channelId);
 
       // Get display name - for groups, try to get from cache or chat.name
       let displayName = chat.name || null;
@@ -557,8 +557,8 @@ async function processHistorySync(job: Job) {
   let messagesProcessed = 0;
   for (const [jid, msgs] of messagesByJid) {
     try {
-      // Use resolveIdentifier for proper LID→phone mapping
-      const identifier = await resolveIdentifier(channelId, jid);
+      // Use normalizeIdentifier with channelId for proper LID→phone mapping
+      const identifier = await normalizeIdentifier(jid, channelId);
 
       const contact = await prisma.contact.findFirst({
         where: { organizationId: orgId, channelType: ChannelType.WHATSAPP, identifier },

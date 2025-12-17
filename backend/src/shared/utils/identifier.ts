@@ -24,19 +24,10 @@ export type ContactResult = {
 };
 
 /**
- * Normalize WhatsApp JID to consistent contact identifier
- *
- * Handles various formats:
- * - 1234567890@s.whatsapp.net -> 1234567890
- * - +1234567890@s.whatsapp.net -> 1234567890
- * - 1234567890:0@lid -> 1234567890
- * - 1234567890:0@s.whatsapp.net -> 1234567890
- * - Groups: 123456789-1234567890@g.us -> 123456789-1234567890
- *
- * @param jidOrId - The JID or identifier to normalize
- * @returns Normalized identifier (digits only for individuals, full ID for groups)
+ * Basic string normalization for WhatsApp JID (sync, no LID lookup)
+ * Used internally - prefer normalizeIdentifier() for external use
  */
-export function normalizeIdentifier(jidOrId: string): string {
+function normalizeIdentifierSync(jidOrId: string): string {
   if (!jidOrId) {
     return '';
   }
@@ -65,21 +56,25 @@ export function normalizeIdentifier(jidOrId: string): string {
 }
 
 /**
- * Resolve a WhatsApp JID to a normalized identifier, checking LID mappings
+ * Normalize WhatsApp JID to consistent contact identifier
  *
- * This function should be used when processing incoming messages to ensure
- * we find existing contacts even when the JID format varies.
+ * Handles various formats:
+ * - 1234567890@s.whatsapp.net -> 1234567890
+ * - +1234567890@s.whatsapp.net -> 1234567890
+ * - 1234567890:0@lid -> 1234567890 (with LID lookup if channelId provided)
+ * - 1234567890:0@s.whatsapp.net -> 1234567890
+ * - Groups: 123456789-1234567890@g.us -> 123456789-1234567890
  *
- * @param channelId - The WhatsApp channel ID
- * @param jidOrId - The JID or identifier to resolve
- * @returns Normalized identifier
+ * @param jidOrId - The JID or identifier to normalize
+ * @param channelId - Optional channel ID for LID→phone mapping lookup
+ * @returns Normalized identifier (digits only for individuals, full ID for groups)
  */
-export async function resolveIdentifier(channelId: string, jidOrId: string): Promise<string> {
+export async function normalizeIdentifier(jidOrId: string, channelId?: string): Promise<string> {
   // First, get the basic normalized identifier
-  const normalized = normalizeIdentifier(jidOrId);
+  const normalized = normalizeIdentifierSync(jidOrId);
 
-  // Skip LID lookup for groups
-  if (jidOrId.endsWith('@g.us')) {
+  // If no channelId provided or this is a group, skip LID lookup
+  if (!channelId || jidOrId.endsWith('@g.us')) {
     return normalized;
   }
 
@@ -91,25 +86,17 @@ export async function resolveIdentifier(channelId: string, jidOrId: string): Pro
       // Extract the LID part (before @)
       const lidPart = jidOrId.split('@')[0];
 
-      // Log LID lookup attempt
-      logger.info({
-        channelId,
-        originalJid: jidOrId,
-        lidPart,
-        redisKey: `lid:${channelId}`,
-      }, 'Attempting LID lookup');
-
       // Try to get the phone number from LID mapping
       const phoneNumber = await redisClient.hget(`lid:${channelId}`, lidPart);
       if (phoneNumber) {
-        const resolvedNormalized = normalizeIdentifier(phoneNumber);
-        logger.info({
+        const resolvedNormalized = normalizeIdentifierSync(phoneNumber);
+        logger.debug({
           channelId,
           originalJid: jidOrId,
           lid: lidPart,
           resolvedPhone: phoneNumber,
           normalized: resolvedNormalized,
-        }, 'SUCCESS: Resolved LID to phone number');
+        }, 'Resolved LID to phone number');
         return resolvedNormalized;
       }
 
@@ -118,77 +105,39 @@ export async function resolveIdentifier(channelId: string, jidOrId: string): Pro
       if (lidWithoutSuffix !== lidPart) {
         const phoneNumber2 = await redisClient.hget(`lid:${channelId}`, lidWithoutSuffix);
         if (phoneNumber2) {
-          const resolvedNormalized = normalizeIdentifier(phoneNumber2);
-          logger.info({
+          const resolvedNormalized = normalizeIdentifierSync(phoneNumber2);
+          logger.debug({
             channelId,
-            originalJid: jidOrId,
             lid: lidWithoutSuffix,
             resolvedPhone: phoneNumber2,
             normalized: resolvedNormalized,
-          }, 'SUCCESS: Resolved LID (without suffix) to phone number');
+          }, 'Resolved LID (without suffix) to phone number');
           return resolvedNormalized;
         }
       }
 
-      // Log all keys in this LID hash for debugging
-      const allLidMappings = await redisClient.hgetall(`lid:${channelId}`);
-      const mappingCount = Object.keys(allLidMappings || {}).length;
+      // DATABASE FALLBACK: Check for stored LID metadata
+      const lidMetadataKey = `lid-contact:${channelId}:${lidPart}`;
+      const storedPhoneNumber = await redisClient.get(lidMetadataKey);
+      if (storedPhoneNumber) {
+        const resolvedNormalized = normalizeIdentifierSync(storedPhoneNumber);
+        logger.debug({
+          channelId,
+          lid: lidPart,
+          storedPhone: storedPhoneNumber,
+          normalized: resolvedNormalized,
+        }, 'Resolved LID from stored metadata');
+        return resolvedNormalized;
+      }
 
-      logger.warn({
+      logger.debug({
         channelId,
         originalJid: jidOrId,
         lidPart,
-        lidWithoutSuffix,
-        mappingCount,
-        sampleMappings: Object.entries(allLidMappings || {}).slice(0, 5),
-      }, 'FAILED: LID not found in Redis - will try database fallback');
-
-      // DATABASE FALLBACK: Try to find an existing contact with this LID stored
-      // This helps when LID mappings weren't in Redis but we've seen this LID before
-      const channel = await prisma.channel.findUnique({
-        where: { id: channelId },
-        select: { organizationId: true },
-      });
-
-      if (channel) {
-        // First check if there's a contact with this exact LID identifier
-        const existingLidContact = await prisma.contact.findFirst({
-          where: {
-            organizationId: channel.organizationId,
-            channelType: ChannelType.WHATSAPP,
-            identifier: normalized,
-          },
-          select: { id: true, identifier: true },
-        });
-
-        if (existingLidContact) {
-          logger.info({
-            channelId,
-            lid: lidPart,
-            contactId: existingLidContact.id,
-          }, 'Found existing contact with LID identifier');
-          // Contact already exists with this LID, use it as-is
-          return normalized;
-        }
-
-        // Check if we have metadata stored that maps this LID to a phone
-        // This is stored when we successfully resolve an LID and save the contact
-        const lidMetadataKey = `lid-contact:${channelId}:${lidPart}`;
-        const storedPhoneNumber = await redisClient.get(lidMetadataKey);
-        if (storedPhoneNumber) {
-          const resolvedNormalized = normalizeIdentifier(storedPhoneNumber);
-          logger.info({
-            channelId,
-            lid: lidPart,
-            storedPhone: storedPhoneNumber,
-            normalized: resolvedNormalized,
-          }, 'SUCCESS: Resolved LID from stored metadata');
-          return resolvedNormalized;
-        }
-      }
+      }, 'LID not found in mappings, using normalized value');
 
     } catch (error) {
-      logger.error({ channelId, jidOrId, error }, 'ERROR: Failed to lookup LID mapping');
+      logger.error({ channelId, jidOrId, error }, 'Failed to lookup LID mapping');
     }
   }
 
@@ -203,8 +152,8 @@ export async function resolveIdentifier(channelId: string, jidOrId: string): Pro
  */
 export async function storeLidMapping(channelId: string, lid: string, phoneNumber: string): Promise<void> {
   try {
-    const normalizedPhone = normalizeIdentifier(phoneNumber);
-    const normalizedLid = normalizeIdentifier(lid);
+    const normalizedPhone = normalizeIdentifierSync(phoneNumber);
+    const normalizedLid = normalizeIdentifierSync(lid);
 
     // Skip if they're the same (no mapping needed)
     if (normalizedLid === normalizedPhone) {
@@ -604,14 +553,14 @@ export async function upsertContactFromSync(
 
     if (contactId?.includes('@lid') && phoneNumber) {
       // id is LID, use phoneNumber instead
-      identifier = normalizeIdentifier(phoneNumber);
+      identifier = normalizeIdentifierSync(phoneNumber);
 
       // Store the LID mapping (this also triggers duplicate merge)
-      const lidPart = normalizeIdentifier(contactId);
+      const lidPart = normalizeIdentifierSync(contactId);
       await storeLidMapping(channelId, lidPart, identifier);
     } else if (contactId) {
-      // Try to resolve LID to phone number
-      identifier = await resolveIdentifier(channelId, contactId);
+      // Try to resolve LID to phone number using normalizeIdentifier with channelId
+      identifier = await normalizeIdentifier(contactId, channelId);
     } else {
       return null;
     }

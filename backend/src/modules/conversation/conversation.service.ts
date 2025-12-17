@@ -896,6 +896,7 @@ export class ConversationService {
 
     // Try to get from Redis cache
     const groupJid = `${conversation.contact.identifier}@g.us`;
+    const channelId = conversation.channel.id;
     const { redisClient } = await import('../../core/cache/redis.client.js');
     const { normalizeIdentifier } = await import('../../shared/utils/identifier.js');
 
@@ -912,17 +913,18 @@ export class ConversationService {
 
         for (const p of rawParticipants) {
           // Get phone number: prefer phoneNumber field, then extract from id
+          // Use channelId for LID→phone resolution
           let phoneNumber: string | null = null;
 
           if (p.phoneNumber) {
             // phoneNumber is in format like "1234567890@s.whatsapp.net"
-            phoneNumber = normalizeIdentifier(p.phoneNumber);
+            phoneNumber = await normalizeIdentifier(p.phoneNumber, channelId);
           } else if (p.id && !p.id.includes('@lid')) {
             // id is in phone format (not LID)
-            phoneNumber = normalizeIdentifier(p.id);
+            phoneNumber = await normalizeIdentifier(p.id, channelId);
           } else if (p.id) {
-            // id is LID - normalize it (we'll try to match in DB)
-            phoneNumber = normalizeIdentifier(p.id);
+            // id is LID - resolve to phone number if mapping exists
+            phoneNumber = await normalizeIdentifier(p.id, channelId);
           }
 
           if (phoneNumber) {
@@ -950,9 +952,9 @@ export class ConversationService {
         );
 
         // Build enriched participants list
-        const enrichedParticipants = rawParticipants.map((p: any) => {
+        const enrichedParticipants = await Promise.all(rawParticipants.map(async (p: any) => {
           const originalId = p.id || '';
-          const phoneNumber = participantPhoneMap.get(originalId) || normalizeIdentifier(originalId);
+          const phoneNumber = participantPhoneMap.get(originalId) || await normalizeIdentifier(originalId, channelId);
           const existingContact = contactMap.get(phoneNumber);
 
           // Priority: DB contact name > Baileys name > Baileys notify > null
@@ -970,7 +972,7 @@ export class ConversationService {
             displayName,
             avatarUrl: existingContact?.avatarUrl || p.imgUrl || null,
           };
-        });
+        }));
 
         return {
           isGroup: true,

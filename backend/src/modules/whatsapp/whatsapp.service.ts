@@ -565,7 +565,7 @@ export class WhatsAppService {
     // Determine if this is a group from the original JID suffix (the definitive indicator)
     // Only @g.us suffix reliably indicates a group - don't use hyphen check as fallback
     const isGroup = input.to.endsWith('@g.us');
-    const contactIdentifier = normalizeIdentifier(input.to);
+    const contactIdentifier = await normalizeIdentifier(input.to, input.channelId);
 
     // Use upsert helpers for atomic operations (prevents race conditions)
     const contact = await getOrCreateContact({
