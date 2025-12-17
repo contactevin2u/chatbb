@@ -980,8 +980,8 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
   }
 
   // Process messages - Baileys provides WAMessage[] (flat array), NOT object keyed by JID
-  // Limit to avoid timeout in direct fallback (Redis OOM scenario)
-  const messageLimit = 500; // Increased limit since we're handling flat array now
+  // Higher limit for direct fallback - Redis OOM means we need to process more directly
+  const messageLimit = 5000; // Process up to 5000 messages per sync chunk
   let messageCount = 0;
 
   // Group messages by JID for efficient contact/conversation lookup
@@ -995,6 +995,10 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
     messagesByJid.get(jid)!.push(msg);
   }
 
+  // DIAGNOSTIC: Log what JIDs we're processing
+  const jidList = Array.from(messagesByJid.keys()).slice(0, 10);
+  logger.info({ channelId, totalJids: messagesByJid.size, sampleJids: jidList }, 'Processing message JIDs');
+
   for (const [jid, msgs] of messagesByJid) {
     if (messageCount >= messageLimit) break;
 
@@ -1005,7 +1009,12 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
       const contact = await prisma.contact.findFirst({
         where: { organizationId: orgId, channelType: ChannelType.WHATSAPP, identifier },
       });
-      if (!contact) continue;
+
+      if (!contact) {
+        // DIAGNOSTIC: Log when we can't find a contact
+        logger.debug({ channelId, jid, identifier }, 'No contact found for message JID');
+        continue;
+      }
 
       const conversation = await prisma.conversation.findFirst({
         where: { channelId, contactId: contact.id },
@@ -1046,7 +1055,7 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
 
           const isFromMe = msg.key?.fromMe || false;
 
-          await prisma.message.create({
+          const createdMsg = await prisma.message.create({
             data: {
               conversationId: conversation.id,
               channelId,
@@ -1062,6 +1071,18 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
           });
           messagesProcessed++;
           messageCount++;
+
+          // Log first few messages for debugging
+          if (messagesProcessed <= 3) {
+            logger.debug({
+              channelId,
+              messageId: createdMsg.id,
+              conversationId: conversation.id,
+              contactId: contact.id,
+              externalId,
+              type,
+            }, 'History sync message created');
+          }
         } catch {
           // Skip errors
         }
