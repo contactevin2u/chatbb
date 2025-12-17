@@ -980,8 +980,8 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
   }
 
   // Process messages - Baileys provides WAMessage[] (flat array), NOT object keyed by JID
-  // Higher limit for direct fallback - Redis OOM means we need to process more directly
-  const messageLimit = 5000; // Process up to 5000 messages per sync chunk
+  // No limit - process all messages in chunk (Redis should handle queuing now with 1GB)
+  // This fallback only triggers if Redis is unavailable
   let messageCount = 0;
 
   // Group messages by JID for efficient contact/conversation lookup
@@ -1000,8 +1000,6 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
   logger.info({ channelId, totalJids: messagesByJid.size, sampleJids: jidList }, 'Processing message JIDs');
 
   for (const [jid, msgs] of messagesByJid) {
-    if (messageCount >= messageLimit) break;
-
     try {
       // Use normalizeIdentifier with channelId for proper LID→phone mapping
       const identifier = await normalizeId(jid, channelId);
@@ -1022,8 +1020,6 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
       if (!conversation) continue;
 
       for (const msg of msgs) {
-        if (messageCount >= messageLimit) break;
-
         try {
           const externalId = msg.key?.id;
           if (!externalId) continue;
