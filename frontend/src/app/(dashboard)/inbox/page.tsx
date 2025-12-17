@@ -987,6 +987,20 @@ export default function InboxPage() {
         return;
       }
 
+      // Remove any temp/pending messages from the same sender to prevent brief duplicates
+      if (data.conversationId && data.message?.sentByUser?.id) {
+        queryClient.setQueryData(['messages', data.conversationId], (old: any) => {
+          if (!old?.messages) return old;
+          return {
+            ...old,
+            messages: old.messages.filter((m: any) =>
+              // Keep messages that are NOT temp messages from this sender
+              !(m.id?.startsWith('temp-') && m.sentByUser?.id === data.message?.sentByUser?.id)
+            ),
+          };
+        });
+      }
+
       // Invalidate queries to refetch - server handles deduplication
       if (data.conversationId) {
         queryClient.invalidateQueries({ queryKey: ['messages', data.conversationId] });
