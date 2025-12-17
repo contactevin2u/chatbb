@@ -1274,13 +1274,13 @@ export default function InboxPage() {
             )}
 
             {/* Messages */}
-            <div className="flex-1 relative">
+            <div className="flex-1 relative overflow-hidden">
               {/* Logo Watermark */}
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
                 <img
                   src="/logo.png"
                   alt=""
-                  className="w-48 h-auto opacity-[0.35]"
+                  className="w-32 h-auto opacity-[0.35]"
                 />
               </div>
               <ScrollArea className="h-full p-4 relative z-10">
