@@ -228,13 +228,37 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
                 className="resize-none"
               />
               {parseResult && (
-                <div className="border rounded-lg p-3 bg-muted/30">
-                  <div className="flex items-center justify-between mb-2">
+                <div className="border rounded-lg p-3 bg-muted/30 space-y-3">
+                  <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-muted-foreground">Parse Result:</span>
                     <Button variant="ghost" size="sm" onClick={handleCopyResult}>
                       {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
                     </Button>
                   </div>
+                  {/* Show order created info */}
+                  {parseResult.parsed?.data?.order_id && (
+                    <div className="flex items-center justify-between p-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800">
+                      <div>
+                        <p className="text-sm font-medium text-green-700 dark:text-green-400">
+                          Order #{parseResult.parsed.data.order_code} created
+                        </p>
+                        <p className="text-xs text-green-600 dark:text-green-500">
+                          ID: {parseResult.parsed.data.order_id}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          linkMutation.mutate(parseResult.parsed.data.order_id);
+                          setShowParseDialog(false);
+                        }}
+                        disabled={linkMutation.isPending}
+                      >
+                        <Link2 className="h-3 w-3 mr-1" />
+                        Link Order
+                      </Button>
+                    </div>
+                  )}
                   <pre className="text-xs overflow-auto max-h-40 whitespace-pre-wrap">
                     {JSON.stringify(parseResult.parsed, null, 2)}
                   </pre>
@@ -344,10 +368,12 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
               <User className="h-3.5 w-3.5 text-muted-foreground" />
               <span>{order.customer_name}</span>
             </div>
-            <div className="flex items-center gap-2">
-              <Phone className="h-3.5 w-3.5 text-muted-foreground" />
-              <span>{order.customer_phone}</span>
-            </div>
+            {order.customer_phone && (
+              <div className="flex items-center gap-2">
+                <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+                <span>{order.customer_phone}</span>
+              </div>
+            )}
             {order.customer_address && (
               <div className="flex items-start gap-2">
                 <MapPin className="h-3.5 w-3.5 text-muted-foreground mt-0.5" />
@@ -356,6 +382,17 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
             )}
           </div>
         </div>
+
+        {/* Notes */}
+        {order.notes && (
+          <>
+            <Separator />
+            <div className="space-y-2">
+              <h6 className="text-xs font-medium text-muted-foreground uppercase">Notes</h6>
+              <p className="text-sm text-muted-foreground">{order.notes}</p>
+            </div>
+          </>
+        )}
 
         {/* Delivery */}
         {(order.delivery_date || order.trip_status) && (

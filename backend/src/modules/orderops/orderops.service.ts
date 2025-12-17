@@ -30,6 +30,7 @@ interface OrderDetails {
   delivered_at?: string;
   pod_photo_urls?: string[];
   signature_url?: string;
+  notes?: string;
   items: Array<{
     item_id: number;
     product_name: string;
@@ -169,7 +170,43 @@ class OrderOpsService {
   async getOrder(orderId: number): Promise<OrderDetails | null> {
     try {
       const response = await this.client.get(`/orders/${orderId}`);
-      return response.data;
+      const raw = response.data?.data || response.data;
+
+      if (!raw) return null;
+
+      // Transform API response to match our interface
+      return {
+        order_id: raw.id,
+        order_code: raw.code,
+        status: raw.status,
+        type: raw.type,
+        delivery_date: raw.delivery_date,
+        customer_name: raw.customer?.name || '',
+        customer_phone: raw.customer?.phone || '',
+        customer_address: raw.customer?.address,
+        total: parseFloat(raw.total) || 0,
+        paid_amount: parseFloat(raw.paid_amount) || 0,
+        balance: parseFloat(raw.balance) || 0,
+        outstanding: parseFloat(raw.balance) || 0,
+        trip_status: raw.trip?.status,
+        delivered_at: raw.trip?.delivered_at || raw.trip_delivered_at,
+        pod_photo_urls: raw.trip?.pod_photo_urls || [],
+        signature_url: raw.trip?.signature_url,
+        notes: raw.notes,
+        items: (raw.items || []).map((item: any) => ({
+          item_id: item.id,
+          product_name: item.name,
+          quantity: parseInt(item.qty) || 0,
+          unit_price: parseFloat(item.unit_price) || 0,
+          subtotal: parseFloat(item.line_total) || 0,
+        })),
+        payments: (raw.payments || []).map((payment: any) => ({
+          payment_id: payment.id,
+          amount: parseFloat(payment.amount) || 0,
+          method: payment.method || payment.payment_method,
+          paid_at: payment.paid_at || payment.created_at,
+        })),
+      };
     } catch (error: any) {
       logger.error({ error: error.message, orderId }, 'OrderOps get order failed');
       return null;

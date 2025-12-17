@@ -32,6 +32,7 @@ export interface OrderDetails {
   delivered_at?: string;
   pod_photo_urls?: string[];
   signature_url?: string;
+  notes?: string;
   items: OrderItem[];
   payments: Payment[];
 }
