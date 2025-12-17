@@ -13,6 +13,15 @@ interface ParseResult {
   error?: string;
 }
 
+interface RelatedOrder {
+  order_id: number;
+  order_code: string;
+  type: string;
+  status: string;
+  total: number;
+  balance: number;
+}
+
 interface OrderDetails {
   order_id: number;
   order_code: string;
@@ -37,6 +46,10 @@ interface OrderDetails {
   pod_photo_urls?: string[];
   signature_url?: string;
   notes?: string;
+  // Related orders
+  parent_id?: number;
+  parent?: RelatedOrder;
+  adjustments?: RelatedOrder[];
   items: Array<{
     item_id: number;
     product_name: string;
@@ -213,6 +226,24 @@ class OrderOpsService {
         pod_photo_urls: raw.trip?.pod_photo_urls || raw.pod_photo_urls || [],
         signature_url: raw.trip?.signature_url || raw.signature_url,
         notes: raw.notes,
+        // Related orders
+        parent_id: raw.parent_id,
+        parent: raw.parent ? {
+          order_id: raw.parent.id,
+          order_code: raw.parent.code,
+          type: raw.parent.type,
+          status: raw.parent.status,
+          total: parseFloat(raw.parent.total) || 0,
+          balance: parseFloat(raw.parent.balance) || 0,
+        } : undefined,
+        adjustments: (raw.adjustments || []).map((adj: any) => ({
+          order_id: adj.id,
+          order_code: adj.code,
+          type: adj.type,
+          status: adj.status,
+          total: parseFloat(adj.total) || 0,
+          balance: parseFloat(adj.balance) || 0,
+        })),
         items: (raw.items || []).map((item: any) => ({
           item_id: item.id,
           product_name: item.name,

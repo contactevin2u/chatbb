@@ -27,6 +27,7 @@ import {
   CreditCard,
   Clock,
   ImageIcon,
+  GitBranch,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -578,6 +579,58 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
                   </div>
                   <span className="text-sm font-medium text-gray-600 dark:text-gray-400 flex-shrink-0">{formatCurrency(item.subtotal)}</span>
                 </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Related Orders */}
+        {(order.parent || (order.adjustments && order.adjustments.length > 0)) && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <GitBranch className="h-3.5 w-3.5" />
+              Related Orders
+            </div>
+            <div className="space-y-1.5">
+              {/* Parent Order */}
+              {order.parent && (
+                <a
+                  href={`https://aaalyx.com/orders/${order.parent.order_id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between p-2.5 rounded-lg bg-blue-50/80 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50 hover:bg-blue-100/80 dark:hover:bg-blue-900/40 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase tracking-wider text-blue-500 font-semibold">Parent</span>
+                    <span className="font-medium text-blue-700 dark:text-blue-300">#{order.parent.order_code}</span>
+                    <StatusBadge status={order.parent.status} />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-blue-600 dark:text-blue-400">{formatCurrency(order.parent.total)}</span>
+                    <ExternalLink className="h-3 w-3 text-blue-400" />
+                  </div>
+                </a>
+              )}
+              
+              {/* Child Orders (Adjustments) */}
+              {order.adjustments && order.adjustments.map((adj) => (
+                <a
+                  key={adj.order_id}
+                  href={`https://aaalyx.com/orders/${adj.order_id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between p-2.5 rounded-lg bg-purple-50/80 dark:bg-purple-950/40 border border-purple-100 dark:border-purple-900/50 hover:bg-purple-100/80 dark:hover:bg-purple-900/40 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase tracking-wider text-purple-500 font-semibold">Child</span>
+                    <span className="font-medium text-purple-700 dark:text-purple-300">#{adj.order_code}</span>
+                    <StatusBadge status={adj.status} />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-purple-600 dark:text-purple-400">{formatCurrency(adj.total)}</span>
+                    <ExternalLink className="h-3 w-3 text-purple-400" />
+                  </div>
+                </a>
               ))}
             </div>
           </div>

@@ -18,6 +18,15 @@ export interface Payment {
   category?: string;
 }
 
+export interface RelatedOrder {
+  order_id: number;
+  order_code: string;
+  type: string;
+  status: string;
+  total: number;
+  balance: number;
+}
+
 export interface OrderDetails {
   order_id: number;
   order_code: string;
@@ -42,6 +51,10 @@ export interface OrderDetails {
   pod_photo_urls?: string[];
   signature_url?: string;
   notes?: string;
+  // Related orders
+  parent_id?: number;
+  parent?: RelatedOrder;
+  adjustments?: RelatedOrder[];
   items: OrderItem[];
   payments: Payment[];
 }
