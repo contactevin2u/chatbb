@@ -718,8 +718,13 @@ export class MessageService {
 
     // Build message key for the reaction
     const recipient = message.conversation.contact.identifier;
+    const isGroup = message.conversation.contact.isGroup;
+    const remoteJid = isGroup
+      ? `${recipient}@g.us`
+      : `${recipient}@s.whatsapp.net`;
+
     const messageKey = {
-      remoteJid: `${recipient}@s.whatsapp.net`,
+      remoteJid,
       id: message.externalId,
       fromMe: message.direction === MessageDirection.OUTBOUND,
     };
