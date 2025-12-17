@@ -1651,6 +1651,47 @@ export default function InboxPage() {
                               >
                                 <Smile className="h-4 w-4" />
                               </Button>
+                              {/* More actions dropdown */}
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 bg-background shadow-sm"
+                                    title="More actions"
+                                  >
+                                    <MoreVertical className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align={message.direction === 'OUTBOUND' ? 'end' : 'start'}>
+                                  {/* Edit - only for outbound text messages */}
+                                  {message.direction === 'OUTBOUND' && message.type === 'TEXT' && message.externalId && (
+                                    <DropdownMenuItem
+                                      onClick={() => setEditingMessage({ id: message.id, text: message.content.text || '' })}
+                                    >
+                                      <Edit className="h-4 w-4 mr-2" />
+                                      Edit message
+                                    </DropdownMenuItem>
+                                  )}
+                                  {/* Delete for me */}
+                                  <DropdownMenuItem
+                                    onClick={() => setDeletingMessage({ id: message.id, forEveryone: false })}
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Delete for me
+                                  </DropdownMenuItem>
+                                  {/* Delete for everyone - only for outbound messages */}
+                                  {message.direction === 'OUTBOUND' && message.externalId && (
+                                    <DropdownMenuItem
+                                      onClick={() => setDeletingMessage({ id: message.id, forEveryone: true })}
+                                      className="text-destructive focus:text-destructive"
+                                    >
+                                      <Trash2 className="h-4 w-4 mr-2" />
+                                      Delete for everyone
+                                    </DropdownMenuItem>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </div>
 
                             {/* Quick reaction picker */}
