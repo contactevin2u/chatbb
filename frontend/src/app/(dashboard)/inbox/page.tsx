@@ -76,16 +76,8 @@ import { cn } from '@/lib/utils/cn';
 import { formatWhatsAppText } from '@/lib/utils/whatsapp-formatting';
 import { updateContact } from '@/lib/api/contacts';
 import { setIncognitoMode as setIncognitoModeApi, getIncognitoStatus } from '@/lib/api/channels';
-import {
-  getLinkedOrder,
-  searchOrdersByContact,
-  linkOrder,
-  unlinkOrder,
-  type OrderDetails,
-} from '@/lib/api/orderops';
 import { useWebSocket } from '@/providers/websocket-provider';
 import { useAuthStore } from '@/stores/auth-store';
-import { OrderPanel } from '@/components/inbox/order-panel';
 import { OrderOpsTab } from '@/components/inbox/orderops-tab';
 import { useUIStore } from '@/stores/ui-store';
 import { useKeyboardShortcuts, KeyboardShortcut } from '@/hooks/use-keyboard-shortcuts';
@@ -279,7 +271,6 @@ export default function InboxPage() {
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [messageText, setMessageText] = useState('');
   const [showContactPanel, setShowContactPanel] = useState(true);
-  const [showOrderPanel, setShowOrderPanel] = useState(false);
   const [typingUsers, setTypingUsers] = useState<Map<string, string>>(new Map());
   const [editContactOpen, setEditContactOpen] = useState(false);
   const [editContactName, setEditContactName] = useState('');
@@ -1533,15 +1524,6 @@ export default function InboxPage() {
                 >
                   <User className="h-5 w-5" />
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowOrderPanel(!showOrderPanel)}
-                  title="Order Details"
-                  className={showOrderPanel ? 'bg-pink-100 dark:bg-purple-900/50' : ''}
-                >
-                  <Package className="h-5 w-5" />
-                </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="icon">
@@ -2637,14 +2619,6 @@ export default function InboxPage() {
             </TabsContent>
           </Tabs>
         </div>
-      )}
-
-      {/* Standalone Order Panel (alternative view) */}
-      {showOrderPanel && selectedConversation && (
-        <OrderPanel
-          conversationId={selectedConversation.id}
-          onClose={() => setShowOrderPanel(false)}
-        />
       )}
 
       {/* Edit Contact Name Dialog */}
