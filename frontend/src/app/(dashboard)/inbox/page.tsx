@@ -46,6 +46,8 @@ import {
   PanelLeft,
   ShoppingBag,
   Package,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -279,6 +281,12 @@ export default function InboxPage() {
   const [slashCommandOpen, setSlashCommandOpen] = useState(false);
   const [slashSearchTerm, setSlashSearchTerm] = useState('');
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [incognitoMode, setIncognitoMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('incognitoMode') === 'true';
+    }
+    return false;
+  });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -586,9 +594,11 @@ export default function InboxPage() {
       // Ignore errors
     }
 
-    // Mark as read
-    markConversationAsRead(conversationId).catch(() => {});
-  }, [joinConversation, leaveConversation]);
+    // Mark as read (only if not in incognito mode)
+    if (!incognitoMode) {
+      markConversationAsRead(conversationId).catch(() => {});
+    }
+  }, [joinConversation, leaveConversation, incognitoMode]);
 
   // Keyboard shortcuts for inbox
   const inboxShortcuts = useMemo<KeyboardShortcut[]>(() => {
@@ -1188,6 +1198,21 @@ export default function InboxPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                {/* Incognito Mode Toggle */}
+                <Button
+                  variant={incognitoMode ? 'default' : 'ghost'}
+                  size="icon"
+                  onClick={() => {
+                    const newValue = !incognitoMode;
+                    setIncognitoMode(newValue);
+                    localStorage.setItem('incognitoMode', String(newValue));
+                    toast.success(newValue ? 'Incognito mode ON - Read receipts disabled' : 'Incognito mode OFF - Read receipts enabled');
+                  }}
+                  title={incognitoMode ? 'Incognito ON (click to disable)' : 'Incognito OFF (click to enable)'}
+                  className={incognitoMode ? 'bg-purple-600 hover:bg-purple-700 text-white' : ''}
+                >
+                  {incognitoMode ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -1249,7 +1274,16 @@ export default function InboxPage() {
             )}
 
             {/* Messages */}
-            <ScrollArea className="flex-1 p-4">
+            <div className="flex-1 relative">
+              {/* Logo Watermark */}
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
+                <img
+                  src="/logo.png"
+                  alt=""
+                  className="w-48 h-auto opacity-[0.35]"
+                />
+              </div>
+              <ScrollArea className="h-full p-4 relative z-10">
               {isLoadingMessages ? (
                 <div className="space-y-4">
                   {[1, 2, 3].map((i) => (
@@ -1603,6 +1637,7 @@ export default function InboxPage() {
                 </div>
               )}
             </ScrollArea>
+            </div>
 
             {/* Scheduled Messages Banner */}
             {scheduledMessages && scheduledMessages.filter(m => m.status === 'PENDING').length > 0 && (
