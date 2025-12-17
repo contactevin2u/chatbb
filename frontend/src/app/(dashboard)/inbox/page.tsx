@@ -295,7 +295,6 @@ export default function InboxPage() {
   const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
   const [deletingMessage, setDeletingMessage] = useState<{ id: string; forEveryone: boolean } | null>(null);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
-  const [parseOrderDialog, setParseOrderDialog] = useState<{ open: boolean; text: string; result: any } | null>(null);
   const [incognitoMode, setIncognitoMode] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('incognitoMode') === 'true';
@@ -544,28 +543,35 @@ export default function InboxPage() {
     },
   });
 
-  // Parse order mutation (auto-links if order created)
+  // Parse order mutation - runs in background with toast notifications
   const parseOrderMutation = useMutation({
     mutationFn: (text: string) => {
       if (!selectedConversationId) throw new Error('No conversation selected');
       return parseConversationMessage(selectedConversationId, { text });
     },
+    onMutate: () => {
+      // Show loading toast immediately
+      toast.loading('Parsing order...', { id: 'parse-order', duration: 120000 });
+    },
     onSuccess: (data: any) => {
-      setParseOrderDialog((prev) => prev ? { ...prev, result: data } : null);
+      toast.dismiss('parse-order');
       if (data.linked) {
-        toast.success(`Order #${data.parsed?.data?.order_code || ''} created and linked!`);
+        toast.success(`Order #${data.parsed?.data?.order_code || ''} created and linked!`, {
+          duration: 5000,
+        });
         // Refresh linked order data
         queryClient.invalidateQueries({ queryKey: ['linkedOrder', selectedConversationId] });
-        // Close dialog after short delay to show success
-        setTimeout(() => setParseOrderDialog(null), 1500);
       } else if (data.parsed?.data?.order_id) {
-        toast.success('Order created successfully');
+        toast.success(`Order #${data.parsed?.data?.order_code || ''} created`, {
+          duration: 5000,
+        });
       } else {
-        toast.success('Message parsed successfully');
+        toast.success('Message parsed - no order detected');
       }
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.error || 'Failed to parse message');
+      toast.dismiss('parse-order');
+      toast.error(error.response?.data?.error || 'Failed to parse order');
     },
   });
 
@@ -1709,10 +1715,10 @@ export default function InboxPage() {
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align={message.direction === 'OUTBOUND' ? 'end' : 'start'}>
-                                  {/* Parse Order - for text messages */}
+                                  {/* Parse Order - for text messages (runs in background) */}
                                   {message.type === 'TEXT' && message.content.text && (
                                     <DropdownMenuItem
-                                      onClick={() => setParseOrderDialog({ open: true, text: message.content.text || '', result: null })}
+                                      onClick={() => parseOrderMutation.mutate(message.content.text || '')}
                                     >
                                       <Wand2 className="h-4 w-4 mr-2" />
                                       Parse Order
@@ -2780,99 +2786,6 @@ export default function InboxPage() {
           conversationId={selectedConversationId}
         />
       )}
-
-      {/* Parse Order Dialog */}
-      <Dialog
-        open={!!parseOrderDialog?.open}
-        onOpenChange={(open) => !open && setParseOrderDialog(null)}
-      >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Wand2 className="h-5 w-5 text-primary" />
-              Parse Order Message
-            </DialogTitle>
-            <DialogDescription>
-              Extract order details using AI (4-stage LLM pipeline)
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Textarea
-              placeholder="Message text..."
-              value={parseOrderDialog?.text || ''}
-              onChange={(e) =>
-                setParseOrderDialog((prev) =>
-                  prev ? { ...prev, text: e.target.value } : null
-                )
-              }
-              rows={5}
-              className="resize-none"
-            />
-            {parseOrderDialog?.result && (
-              <div className="border rounded-lg p-3 bg-muted/30 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">Parse Result:</span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      navigator.clipboard.writeText(
-                        JSON.stringify(parseOrderDialog.result.parsed, null, 2)
-                      );
-                      toast.success('Copied to clipboard');
-                    }}
-                  >
-                    <Copy className="h-3 w-3" />
-                  </Button>
-                </div>
-                {/* Show order created + linked info */}
-                {parseOrderDialog.result.parsed?.data?.order_id && (
-                  <div className="flex items-center justify-between p-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800">
-                    <div>
-                      <p className="text-sm font-medium text-green-700 dark:text-green-400">
-                        Order #{parseOrderDialog.result.parsed.data.order_code} created
-                      </p>
-                      <p className="text-xs text-green-600 dark:text-green-500">
-                        ID: {parseOrderDialog.result.parsed.data.order_id}
-                      </p>
-                    </div>
-                    {parseOrderDialog.result.linked && (
-                      <span className="flex items-center gap-1 text-xs font-medium text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/50 px-2 py-1 rounded">
-                        <Check className="h-3 w-3" />
-                        Linked
-                      </span>
-                    )}
-                  </div>
-                )}
-                <pre className="text-xs overflow-auto max-h-40 whitespace-pre-wrap bg-muted rounded p-2">
-                  {JSON.stringify(parseOrderDialog.result.parsed, null, 2)}
-                </pre>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setParseOrderDialog(null)}>
-              Close
-            </Button>
-            <Button
-              onClick={() => parseOrderDialog?.text && parseOrderMutation.mutate(parseOrderDialog.text)}
-              disabled={!parseOrderDialog?.text?.trim() || parseOrderMutation.isPending}
-            >
-              {parseOrderMutation.isPending ? (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  Parsing...
-                </>
-              ) : (
-                <>
-                  <Wand2 className="h-4 w-4 mr-2" />
-                  Parse
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={!!deletingMessage} onOpenChange={(open) => !open && setDeletingMessage(null)}>
