@@ -24,11 +24,17 @@ export interface OrderDetails {
   customer_name: string;
   customer_phone: string;
   customer_address?: string;
+  customer_map_url?: string;
   total: number;
   paid_amount: number;
   balance: number;
   outstanding: number;
+  // Trip/Driver info
+  trip_id?: number;
   trip_status?: string;
+  driver_id?: number;
+  driver_name?: string;
+  planned_at?: string;
   delivered_at?: string;
   pod_photo_urls?: string[];
   signature_url?: string;
@@ -38,12 +44,17 @@ export interface OrderDetails {
 }
 
 export interface OrderDue {
-  order_id: number;
-  order_code: string;
-  total: number;
+  expected: number;
   paid: number;
-  due: number;
-  status: string;
+  balance: number;
+  to_collect: number;
+  to_refund: number;
+  accrued: number;
+  monthly_amount: number;
+  months_elapsed: number;
+  is_delivered: boolean;
+  start_date?: string;
+  cutoff_date?: string;
 }
 
 export interface ParseResult {

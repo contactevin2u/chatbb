@@ -22,11 +22,17 @@ interface OrderDetails {
   customer_name: string;
   customer_phone: string;
   customer_address?: string;
+  customer_map_url?: string;
   total: number;
   paid_amount: number;
   balance: number;
   outstanding: number;
+  // Trip/Driver info
+  trip_id?: number;
   trip_status?: string;
+  driver_id?: number;
+  driver_name?: string;
+  planned_at?: string;
   delivered_at?: string;
   pod_photo_urls?: string[];
   signature_url?: string;
@@ -37,22 +43,30 @@ interface OrderDetails {
     quantity: number;
     unit_price: number;
     subtotal: number;
+    item_type?: string;
+    returned?: boolean;
   }>;
   payments: Array<{
     payment_id: number;
     amount: number;
     method: string;
     paid_at: string;
+    category?: string;
   }>;
 }
 
 interface OrderDue {
-  order_id: number;
-  order_code: string;
-  total: number;
+  expected: number;
   paid: number;
-  due: number;
-  status: string;
+  balance: number;
+  to_collect: number;
+  to_refund: number;
+  accrued: number;
+  monthly_amount: number;
+  months_elapsed: number;
+  is_delivered: boolean;
+  start_date?: string;
+  cutoff_date?: string;
 }
 
 class OrderOpsService {
@@ -184,11 +198,17 @@ class OrderOpsService {
         customer_name: raw.customer?.name || '',
         customer_phone: raw.customer?.phone || '',
         customer_address: raw.customer?.address,
+        customer_map_url: raw.customer?.map_url,
         total: parseFloat(raw.total) || 0,
         paid_amount: parseFloat(raw.paid_amount) || 0,
         balance: parseFloat(raw.balance) || 0,
         outstanding: parseFloat(raw.balance) || 0,
+        // Trip/Driver info
+        trip_id: raw.trip?.id,
         trip_status: raw.trip?.status,
+        driver_id: raw.trip?.driver_id,
+        driver_name: raw.trip?.driver_name,
+        planned_at: raw.trip?.planned_at,
         delivered_at: raw.trip?.delivered_at || raw.trip_delivered_at,
         pod_photo_urls: raw.trip?.pod_photo_urls || [],
         signature_url: raw.trip?.signature_url,
@@ -199,12 +219,15 @@ class OrderOpsService {
           quantity: parseInt(item.qty) || 0,
           unit_price: parseFloat(item.unit_price) || 0,
           subtotal: parseFloat(item.line_total) || 0,
+          item_type: item.item_type,
+          returned: item.returned,
         })),
         payments: (raw.payments || []).map((payment: any) => ({
           payment_id: payment.id,
           amount: parseFloat(payment.amount) || 0,
           method: payment.method || payment.payment_method,
-          paid_at: payment.paid_at || payment.created_at,
+          paid_at: payment.paid_at || payment.date || payment.created_at,
+          category: payment.category,
         })),
       };
     } catch (error: any) {
@@ -219,7 +242,23 @@ class OrderOpsService {
   async getOrderDue(orderId: number): Promise<OrderDue | null> {
     try {
       const response = await this.client.get(`/orders/${orderId}/due`);
-      return response.data;
+      const raw = response.data?.data || response.data;
+
+      if (!raw) return null;
+
+      return {
+        expected: parseFloat(raw.expected) || 0,
+        paid: parseFloat(raw.paid) || 0,
+        balance: parseFloat(raw.balance) || 0,
+        to_collect: parseFloat(raw.to_collect) || 0,
+        to_refund: parseFloat(raw.to_refund) || 0,
+        accrued: parseFloat(raw.accrued) || 0,
+        monthly_amount: parseFloat(raw.monthly_amount) || 0,
+        months_elapsed: raw.months_elapsed || 0,
+        is_delivered: raw.is_delivered || false,
+        start_date: raw.start_date,
+        cutoff_date: raw.cutoff_date,
+      };
     } catch (error: any) {
       logger.error({ error: error.message, orderId }, 'OrderOps get order due failed');
       return null;

@@ -362,7 +362,14 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-semibold">#{order.order_code}</span>
+              <a
+                href={`https://aaalyx.com/orders/${order.order_id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold text-primary hover:underline"
+              >
+                #{order.order_code}
+              </a>
               <Badge className={statusColors[order.status.toLowerCase()] || 'bg-gray-100'}>
                 {order.status}
               </Badge>
@@ -393,7 +400,19 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
             {order.customer_address && (
               <div className="flex items-start gap-2">
                 <MapPin className="h-3.5 w-3.5 text-muted-foreground mt-0.5" />
-                <span className="text-xs">{order.customer_address}</span>
+                <div className="flex-1">
+                  <span className="text-xs">{order.customer_address}</span>
+                  {order.customer_map_url && (
+                    <a
+                      href={order.customer_map_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-2 text-xs text-primary hover:underline"
+                    >
+                      View Map
+                    </a>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -411,7 +430,7 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
         )}
 
         {/* Delivery */}
-        {(order.delivery_date || order.trip_status) && (
+        {(order.delivery_date || order.trip_status || order.driver_name) && (
           <>
             <Separator />
             <div className="space-y-2">
@@ -421,6 +440,12 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
                   <div className="flex items-center gap-2">
                     <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
                     <span>{formatDate(order.delivery_date)}</span>
+                  </div>
+                )}
+                {order.driver_name && (
+                  <div className="flex items-center gap-2">
+                    <User className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span>Driver: {order.driver_name}</span>
                   </div>
                 )}
                 {order.trip_status && (
@@ -449,27 +474,45 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
             Financial
           </h6>
           <div className="space-y-1 text-sm">
+            {due && due.monthly_amount > 0 && (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Monthly</span>
+                  <span>{formatCurrency(due.monthly_amount)}/mo</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Months Billed</span>
+                  <span>{due.months_elapsed}</span>
+                </div>
+              </>
+            )}
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Total</span>
-              <span className="font-medium">{formatCurrency(order.total)}</span>
+              <span className="text-muted-foreground">Expected</span>
+              <span className="font-medium">{formatCurrency(due?.expected || order.total)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Paid</span>
-              <span className="text-green-600">{formatCurrency(order.paid_amount)}</span>
+              <span className="text-green-600">{formatCurrency(due?.paid || order.paid_amount)}</span>
             </div>
             <Separator className="my-1" />
             <div className="flex justify-between">
-              <span className="font-medium">Outstanding</span>
+              <span className="font-medium">To Collect</span>
               <span
                 className={cn(
                   'font-bold',
-                  order.outstanding > 0 ? 'text-red-600' : 'text-green-600'
+                  (due?.to_collect || order.outstanding) > 0 ? 'text-red-600' : 'text-green-600'
                 )}
               >
-                {formatCurrency(order.outstanding)}
+                {formatCurrency(due?.to_collect || order.outstanding)}
               </span>
             </div>
-            {order.outstanding > 0 ? (
+            {due && due.to_refund > 0 && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">To Refund</span>
+                <span className="text-orange-600">{formatCurrency(due.to_refund)}</span>
+              </div>
+            )}
+            {(due?.to_collect || order.outstanding) > 0 ? (
               <div className="flex items-center gap-1 text-xs text-red-600">
                 <AlertCircle className="h-3 w-3" />
                 Balance due
