@@ -423,9 +423,9 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
             <div className="space-y-1">
               <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400">Driver</p>
               <p className="text-sm font-medium text-gray-900 dark:text-white">
-                {order.driver_name || <span className="text-gray-400 italic">Not assigned</span>}
+                {order.driver_name || (order.driver_id ? `Driver #${order.driver_id}` : <span className="text-gray-400 italic">Not assigned</span>)}
               </p>
-              {order.driver_id && (
+              {order.driver_id && order.driver_name && (
                 <p className="text-[10px] text-gray-400">ID: {order.driver_id}</p>
               )}
             </div>
