@@ -89,6 +89,7 @@ import { QuickReply } from '@/lib/api/quick-replies';
 import { listScheduledMessages, cancelScheduledMessage, ScheduledMessage } from '@/lib/api/scheduled-messages';
 import {
   listConversations,
+  getConversation,
   getMessages,
   sendMessage,
   markConversationAsRead,
@@ -329,10 +330,21 @@ export default function InboxPage() {
     enabled: !!selectedConversationId,
   });
 
-  // Find selected conversation
-  const selectedConversation = conversationsData?.conversations.find(
+  // Find selected conversation from list
+  const selectedConversationFromList = conversationsData?.conversations.find(
     (c) => c.id === selectedConversationId
   );
+
+  // Fetch specific conversation if not in list (e.g., navigating from notification)
+  const { data: fetchedConversation } = useQuery({
+    queryKey: ['conversation', selectedConversationId],
+    queryFn: () => selectedConversationId ? getConversation(selectedConversationId) : null,
+    enabled: !!selectedConversationId && !selectedConversationFromList && !isLoadingConversations,
+    staleTime: 30000, // Cache for 30 seconds
+  });
+
+  // Use conversation from list if available, otherwise use fetched one
+  const selectedConversation = selectedConversationFromList || fetchedConversation;
 
   // Handle URL param changes for conversation selection
   useEffect(() => {
