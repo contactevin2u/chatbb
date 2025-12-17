@@ -242,6 +242,7 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
     queryKey: ['searchOrdersByContact', conversationId],
     queryFn: () => searchOrdersByContact(conversationId),
     enabled: showLinkDialog,
+    select: (data) => ({ orders: Array.isArray(data?.orders) ? data.orders : [] }),
   });
 
   // Search orders
@@ -249,6 +250,7 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
     queryKey: ['searchOrders', debouncedSearch],
     queryFn: () => searchOrders(debouncedSearch),
     enabled: showLinkDialog && debouncedSearch.length >= 2,
+    select: (data) => ({ orders: Array.isArray(data?.orders) ? data.orders : [] }),
   });
 
   // Link order mutation
