@@ -88,10 +88,10 @@ const resourcePermissions: Record<string, Record<string, UserRole[]>> = {
     export: ['OWNER', 'ADMIN'],
   },
   automation: {
-    create: ['OWNER', 'ADMIN'],
+    create: ['OWNER', 'ADMIN', 'SUPERVISOR', 'AGENT'],
     read: ['OWNER', 'ADMIN', 'SUPERVISOR', 'AGENT'],
-    update: ['OWNER', 'ADMIN'],
-    delete: ['OWNER', 'ADMIN'],
+    update: ['OWNER', 'ADMIN', 'SUPERVISOR', 'AGENT'],
+    delete: ['OWNER', 'ADMIN', 'SUPERVISOR', 'AGENT'],
   },
   broadcasts: {
     create: ['OWNER', 'ADMIN', 'SUPERVISOR'],
