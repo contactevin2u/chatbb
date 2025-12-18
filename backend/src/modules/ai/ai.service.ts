@@ -64,8 +64,8 @@ export class AIService {
     }
 
     try {
-      // 3. Get relevant knowledge
-      const relevantItems = await knowledgeService.searchByKeywords(
+      // 3. Get relevant knowledge using semantic search (falls back to keywords if needed)
+      const relevantItems = await knowledgeService.searchSemantic(
         organizationId,
         userMessage,
         10
@@ -242,8 +242,8 @@ Use the knowledge base above to answer questions. If the answer is not in the kn
       throw new Error('OpenAI API key not configured');
     }
 
-    // Get relevant knowledge
-    const relevantItems = await knowledgeService.searchByKeywords(
+    // Get relevant knowledge using semantic search
+    const relevantItems = await knowledgeService.searchSemantic(
       organizationId,
       testMessage,
       10

@@ -223,13 +223,13 @@ export async function getStats(req: Request, res: Response) {
 }
 
 /**
- * Search knowledge (for AI testing)
+ * Search knowledge using semantic/vector search (for AI testing)
  * POST /api/v1/knowledge/search
  */
 export async function searchKnowledge(req: Request, res: Response) {
   try {
     const organizationId = req.user!.organizationId;
-    const { query, limit } = req.body;
+    const { query, limit, useKeywords } = req.body;
 
     if (!query) {
       return res.status(400).json({
@@ -238,21 +238,45 @@ export async function searchKnowledge(req: Request, res: Response) {
       });
     }
 
-    const items = await knowledgeService.searchByKeywords(
-      organizationId,
-      query,
-      limit || 10
-    );
+    // Use semantic search by default, fallback to keywords if requested
+    const items = useKeywords
+      ? await knowledgeService.searchByKeywords(organizationId, query, limit || 10)
+      : await knowledgeService.searchSemantic(organizationId, query, limit || 10);
 
     res.json({
       success: true,
       data: items,
+      searchType: useKeywords ? 'keywords' : 'semantic',
     });
   } catch (error: any) {
     console.error('Error searching knowledge:', error);
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to search knowledge',
+    });
+  }
+}
+
+/**
+ * Regenerate embeddings for all knowledge items
+ * POST /api/v1/knowledge/regenerate-embeddings
+ */
+export async function regenerateEmbeddings(req: Request, res: Response) {
+  try {
+    const organizationId = req.user!.organizationId;
+
+    const result = await knowledgeService.regenerateAllEmbeddings(organizationId);
+
+    res.json({
+      success: true,
+      data: result,
+      message: `Regenerated embeddings: ${result.processed} successful, ${result.errors} errors`,
+    });
+  } catch (error: any) {
+    console.error('Error regenerating embeddings:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to regenerate embeddings',
     });
   }
 }

@@ -16,6 +16,7 @@ import {
   getCategories,
   getStats,
   searchKnowledge,
+  regenerateEmbeddings,
 } from './knowledge.controller';
 
 const router = Router();
@@ -50,12 +51,20 @@ router.get('/stats', getStats);
 
 /**
  * @route   POST /api/v1/knowledge/search
- * @desc    Search knowledge by keywords (for AI testing)
+ * @desc    Search knowledge using semantic/vector search (for AI testing)
  * @access  Private
  * @body    query - Search query
  * @body    limit - Max results (default 10)
+ * @body    useKeywords - Force keyword search instead of semantic (optional)
  */
 router.post('/search', searchKnowledge);
+
+/**
+ * @route   POST /api/v1/knowledge/regenerate-embeddings
+ * @desc    Regenerate embeddings for all knowledge items (for migration)
+ * @access  Private (Admin only)
+ */
+router.post('/regenerate-embeddings', requirePermission('organization:update'), regenerateEmbeddings);
 
 /**
  * @route   GET /api/v1/knowledge/:id
