@@ -172,24 +172,36 @@ async function upsertAnalytics(
   userId: string | null,
   stats: Stats
 ) {
-  await prisma.analyticsDaily.upsert({
+  // Prisma compound unique doesn't handle null well in upsert
+  // Use findFirst + create/update pattern instead
+  const existing = await prisma.analyticsDaily.findFirst({
     where: {
-      organizationId_date_channelId_userId: {
+      organizationId,
+      date,
+      channelId: channelId ?? undefined,
+      userId: userId ?? undefined,
+      // Handle null explicitly
+      ...(channelId === null && { channelId: null }),
+      ...(userId === null && { userId: null }),
+    },
+  });
+
+  if (existing) {
+    await prisma.analyticsDaily.update({
+      where: { id: existing.id },
+      data: stats,
+    });
+  } else {
+    await prisma.analyticsDaily.create({
+      data: {
         organizationId,
         date,
         channelId,
         userId,
+        ...stats,
       },
-    },
-    create: {
-      organizationId,
-      date,
-      channelId,
-      userId,
-      ...stats,
-    },
-    update: stats,
-  });
+    });
+  }
 }
 
 async function main() {
