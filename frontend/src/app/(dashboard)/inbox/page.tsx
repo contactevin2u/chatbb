@@ -51,6 +51,8 @@ import {
   Wand2,
   Copy,
   RefreshCw,
+  ArrowLeft,
+  ChevronLeft,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -1307,28 +1309,30 @@ export default function InboxPage() {
       <div
         className={cn(
           'border-r flex flex-col transition-all duration-200 ease-in-out flex-shrink-0',
-          conversationListCollapsed ? 'w-0 overflow-hidden' : 'w-80'
+          conversationListCollapsed ? 'w-0 overflow-hidden' : 'w-full md:w-72 lg:w-80',
+          // On mobile: hide list when conversation is selected
+          selectedConversationId && 'hidden md:flex'
         )}
       >
         {/* Search and Filter */}
-        <div className="p-4 border-b space-y-3">
+        <div className="p-3 sm:p-4 border-b space-y-2 sm:space-y-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search conversations..."
-              className="pl-9"
+              placeholder="Search..."
+              className="pl-9 h-9 sm:h-10 text-sm"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
           {/* Tag filter chips */}
           <div className="flex gap-1 flex-wrap">
-            {allTags?.filter((tag) => tag?.id).map((tag) => (
+            {allTags?.filter((tag) => tag?.id).slice(0, 5).map((tag) => (
               <Button
                 key={tag.id}
                 variant={selectedTagIds.includes(tag.id) ? 'default' : 'outline'}
                 size="sm"
-                className="text-xs h-7 gap-1"
+                className="text-xs h-6 sm:h-7 gap-1 px-2"
                 onClick={() => {
                   setSelectedTagIds((prev) =>
                     prev.includes(tag.id)
@@ -1338,17 +1342,17 @@ export default function InboxPage() {
                 }}
               >
                 <span
-                  className="w-2 h-2 rounded-full"
+                  className="w-2 h-2 rounded-full flex-shrink-0"
                   style={{ backgroundColor: tag.color || '#6b7280' }}
                 />
-                {tag.name}
+                <span className="truncate max-w-[60px]">{tag.name}</span>
               </Button>
             ))}
             {selectedTagIds.length > 0 && (
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-xs h-7"
+                className="text-xs h-6 sm:h-7 px-2"
                 onClick={() => setSelectedTagIds([])}
               >
                 Clear
@@ -1382,71 +1386,73 @@ export default function InboxPage() {
                 <div
                   key={conversation.id}
                   className={cn(
-                    'p-4 cursor-pointer hover:bg-muted/50 transition-colors',
+                    'p-3 sm:p-4 cursor-pointer hover:bg-muted/50 transition-colors active:bg-muted',
                     selectedConversationId === conversation.id && 'bg-muted'
                   )}
                   onClick={() => handleSelectConversation(conversation.id)}
                 >
-                  <div className="flex items-start gap-3 group">
+                  <div className="flex items-start gap-2.5 sm:gap-3 group">
                     <div className="relative flex-shrink-0">
-                      <Avatar className="h-10 w-10">
+                      <Avatar className="h-10 w-10 sm:h-10 sm:w-10">
                         <AvatarImage
                           src={conversation.contact.avatarUrl || undefined}
                           className="object-cover"
                         />
-                        <AvatarFallback>
+                        <AvatarFallback className="text-sm">
                           {isGroupContact(conversation.contact) ? (
-                            <Users className="h-5 w-5" />
+                            <Users className="h-4 w-4 sm:h-5 sm:w-5" />
                           ) : (
                             getContactInitials(conversation.contact)
                           )}
                         </AvatarFallback>
                       </Avatar>
                       {conversation.unreadCount > 0 && (
-                        <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">
+                        <span className="absolute -top-1 -right-1 h-4 w-4 sm:h-5 sm:w-5 rounded-full bg-primary text-primary-foreground text-[10px] sm:text-xs flex items-center justify-center font-medium">
                           {conversation.unreadCount > 9 ? '9+' : conversation.unreadCount}
                         </span>
                       )}
                       {isGroupContact(conversation.contact) && (
-                        <span className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-green-500 text-white flex items-center justify-center">
-                          <Users className="h-2.5 w-2.5" />
+                        <span className="absolute -bottom-1 -right-1 h-3.5 w-3.5 sm:h-4 sm:w-4 rounded-full bg-green-500 text-white flex items-center justify-center">
+                          <Users className="h-2 w-2 sm:h-2.5 sm:w-2.5" />
                         </span>
                       )}
                     </div>
-                    {/* Tag dropdown beside avatar */}
-                    <TagDropdown
-                      conversationId={conversation.id}
-                      currentTags={conversation.tags || []}
-                    />
+                    {/* Tag dropdown beside avatar - hidden on mobile */}
+                    <div className="hidden sm:block">
+                      <TagDropdown
+                        conversationId={conversation.id}
+                        currentTags={conversation.tags || []}
+                      />
+                    </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1 sm:gap-1.5 min-w-0 flex-1">
                           {conversation.isPinned && (
                             <Pin className="h-3 w-3 text-primary flex-shrink-0" />
                           )}
-                          <p className="font-medium truncate">
+                          <p className="font-medium truncate text-sm sm:text-base">
                             {getContactName(conversation.contact)}
                           </p>
                         </div>
-                        <span className="text-xs text-muted-foreground flex-shrink-0 ml-2">
+                        <span className="text-[10px] sm:text-xs text-muted-foreground flex-shrink-0">
                           {conversation.lastMessageAt
-                            ? formatDistanceToNow(new Date(conversation.lastMessageAt), { addSuffix: true })
+                            ? formatDistanceToNow(new Date(conversation.lastMessageAt), { addSuffix: false })
                             : ''}
                         </span>
                       </div>
-                      <p className="text-sm text-muted-foreground truncate">
+                      <p className="text-xs sm:text-sm text-muted-foreground truncate mt-0.5">
                         {getMessagePreview(conversation.lastMessage)}
                       </p>
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        <span className="text-xs text-muted-foreground">
+                      <div className="flex items-center gap-1.5 sm:gap-2 mt-1 flex-wrap">
+                        <span className="text-[10px] sm:text-xs text-muted-foreground">
                           {conversation.channel.name}
                         </span>
                         {conversation.tags && conversation.tags.length > 0 && (
                           <>
-                            {conversation.tags.slice(0, 2).map((tagRelation) => tagRelation.tag && (
+                            {conversation.tags.slice(0, 1).map((tagRelation) => tagRelation.tag && (
                               <span
                                 key={tagRelation.tag.id}
-                                className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                                className="px-1 sm:px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-medium"
                                 style={{
                                   backgroundColor: `${tagRelation.tag.color || '#6b7280'}20`,
                                   color: tagRelation.tag.color || '#6b7280',
@@ -1455,9 +1461,9 @@ export default function InboxPage() {
                                 {tagRelation.tag.name}
                               </span>
                             ))}
-                            {conversation.tags.length > 2 && (
-                              <span className="text-[10px] text-muted-foreground">
-                                +{conversation.tags.length - 2}
+                            {conversation.tags.length > 1 && (
+                              <span className="text-[9px] sm:text-[10px] text-muted-foreground">
+                                +{conversation.tags.length - 1}
                               </span>
                             )}
                           </>
@@ -1473,18 +1479,32 @@ export default function InboxPage() {
       </div>
 
       {/* Chat Panel */}
-      <div className="flex-1 flex flex-col">
+      <div className={cn(
+        'flex-1 flex flex-col',
+        // On mobile: hide chat when no conversation selected
+        !selectedConversationId && 'hidden md:flex'
+      )}>
         {selectedConversation ? (
           <>
             {/* Chat Header */}
-            <div className="h-16 border-b flex items-center justify-between px-4">
-              <div className="flex items-center gap-3">
-                {/* Toggle conversation list */}
+            <div className="h-14 sm:h-16 border-b flex items-center justify-between px-2 sm:px-4">
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                {/* Back button for mobile */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setSelectedConversationId(null)}
+                  className="flex-shrink-0 md:hidden h-9 w-9"
+                  title="Back to conversations"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </Button>
+                {/* Toggle conversation list - hidden on mobile */}
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={toggleConversationList}
-                  className="flex-shrink-0"
+                  className="flex-shrink-0 hidden md:flex h-9 w-9"
                   title={conversationListCollapsed ? 'Show conversations' : 'Hide conversations'}
                 >
                   {conversationListCollapsed ? (
@@ -1493,38 +1513,39 @@ export default function InboxPage() {
                     <PanelLeftClose className="h-5 w-5" />
                   )}
                 </Button>
-                <div className="relative">
-                  <Avatar>
+                <div className="relative flex-shrink-0">
+                  <Avatar className="h-9 w-9 sm:h-10 sm:w-10">
                     <AvatarImage src={selectedConversation.contact.avatarUrl || undefined} className="object-cover" />
-                    <AvatarFallback>
+                    <AvatarFallback className="text-sm">
                       {isGroupContact(selectedConversation.contact) ? (
-                        <Users className="h-5 w-5" />
+                        <Users className="h-4 w-4 sm:h-5 sm:w-5" />
                       ) : (
                         getContactInitials(selectedConversation.contact)
                       )}
                     </AvatarFallback>
                   </Avatar>
                   {isGroupContact(selectedConversation.contact) && (
-                    <span className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-green-500 text-white flex items-center justify-center">
-                      <Users className="h-2.5 w-2.5" />
+                    <span className="absolute -bottom-1 -right-1 h-3.5 w-3.5 sm:h-4 sm:w-4 rounded-full bg-green-500 text-white flex items-center justify-center">
+                      <Users className="h-2 w-2 sm:h-2.5 sm:w-2.5" />
                     </span>
                   )}
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="font-medium">{getContactName(selectedConversation.contact)}</p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <p className="font-medium text-sm sm:text-base truncate">{getContactName(selectedConversation.contact)}</p>
                     {isGroupContact(selectedConversation.contact) && (
-                      <span className="text-xs bg-green-500/10 text-green-600 px-1.5 py-0.5 rounded">Group</span>
+                      <span className="text-[10px] sm:text-xs bg-green-500/10 text-green-600 px-1 sm:px-1.5 py-0.5 rounded flex-shrink-0">Group</span>
                     )}
                   </div>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-xs sm:text-sm text-muted-foreground truncate">
                     {isGroupContact(selectedConversation.contact)
-                      ? `Group ID: ${selectedConversation.contact.identifier}`
-                      : `+${selectedConversation.contact.identifier}`}
+                      ? <span className="hidden sm:inline">Group ID: </span>
+                      : '+'}
+                    {selectedConversation.contact.identifier}
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
                 {/* Incognito Mode Toggle */}
                 <Button
                   variant={incognitoMode ? 'default' : 'ghost'}
@@ -1552,22 +1573,26 @@ export default function InboxPage() {
                     }
                   }}
                   title={incognitoMode ? 'Stealth ON (click to disable)' : 'Stealth OFF (click to enable)'}
-                  className={incognitoMode ? 'bg-purple-600 hover:bg-purple-700 text-white' : ''}
+                  className={cn(
+                    'h-8 w-8 sm:h-9 sm:w-9',
+                    incognitoMode ? 'bg-purple-600 hover:bg-purple-700 text-white' : ''
+                  )}
                 >
-                  {incognitoMode ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  {incognitoMode ? <EyeOff className="h-4 w-4 sm:h-5 sm:w-5" /> : <Eye className="h-4 w-4 sm:h-5 sm:w-5" />}
                 </Button>
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={() => setShowContactPanel(!showContactPanel)}
                   title="Contact Info"
+                  className="h-8 w-8 sm:h-9 sm:w-9"
                 >
-                  <User className="h-5 w-5" />
+                  <User className="h-4 w-4 sm:h-5 sm:w-5" />
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon">
-                      <MoreVertical className="h-5 w-5" />
+                    <Button variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9">
+                      <MoreVertical className="h-4 w-4 sm:h-5 sm:w-5" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
@@ -1624,10 +1649,10 @@ export default function InboxPage() {
                 <img
                   src="/logo.png"
                   alt=""
-                  className="w-32 h-auto opacity-[0.35]"
+                  className="w-24 sm:w-32 h-auto opacity-[0.35]"
                 />
               </div>
-              <ScrollArea className="h-full p-4 relative z-10">
+              <ScrollArea className="h-full p-2 sm:p-4 relative z-10">
               {isLoadingMessages ? (
                 <div className="space-y-4">
                   {[1, 2, 3].map((i) => (
@@ -1662,26 +1687,26 @@ export default function InboxPage() {
                         )}
                         <div
                           className={cn(
-                            'flex gap-2 items-end',
+                            'flex gap-1.5 sm:gap-2 items-end',
                             message.direction === 'OUTBOUND' ? 'justify-end' : 'justify-start'
                           )}
                         >
                           {message.direction === 'INBOUND' && (
-                            <Avatar className="h-7 w-7 flex-shrink-0">
+                            <Avatar className="h-6 w-6 sm:h-7 sm:w-7 flex-shrink-0">
                               {/* For group messages, show sender's avatar if available */}
                               {isGroupContact(selectedConversation.contact) && message.metadata?.groupSender?.avatarUrl ? (
                                 <AvatarImage src={message.metadata.groupSender.avatarUrl} className="object-cover" />
                               ) : selectedConversation.contact.avatarUrl ? (
                                 <AvatarImage src={selectedConversation.contact.avatarUrl} className="object-cover" />
                               ) : null}
-                              <AvatarFallback className="text-xs">
+                              <AvatarFallback className="text-[10px] sm:text-xs">
                                 {isGroupContact(selectedConversation.contact) && message.metadata?.groupSender
                                   ? (message.metadata.groupSender.displayName || message.metadata.groupSender.pushName || message.metadata.groupSender.identifier || '').slice(0, 2).toUpperCase()
                                   : getContactInitials(selectedConversation.contact)}
                               </AvatarFallback>
                             </Avatar>
                           )}
-                          <div className="group relative max-w-[70%]">
+                          <div className="group relative max-w-[85%] sm:max-w-[75%] md:max-w-[70%]">
                             {/* Message actions (hover) */}
                             <div className={cn(
                               'absolute top-0 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 z-10',
@@ -2084,17 +2109,17 @@ export default function InboxPage() {
             )}
 
             {/* Message Input */}
-            <div className="p-4 border-t">
+            <div className="p-2 sm:p-4 border-t">
               {/* Reply Preview */}
               {replyToMessage && (
-                <div className="mb-3 p-2 bg-muted rounded-lg border-l-4 border-primary">
-                  <div className="flex items-start justify-between">
+                <div className="mb-2 sm:mb-3 p-2 bg-muted rounded-lg border-l-4 border-primary">
+                  <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-primary flex items-center gap-1">
                         <Reply className="h-3 w-3" />
-                        Replying to
+                        Replying
                       </p>
-                      <p className="text-sm text-muted-foreground truncate">
+                      <p className="text-xs sm:text-sm text-muted-foreground truncate">
                         {replyToMessage.content.text ||
                          replyToMessage.content.caption ||
                          `[${replyToMessage.type}]`}
@@ -2114,40 +2139,40 @@ export default function InboxPage() {
 
               {/* Media Preview */}
               {selectedMedia && (
-                <div className="mb-3 p-2 bg-muted rounded-lg">
+                <div className="mb-2 sm:mb-3 p-2 bg-muted rounded-lg">
                   <div className="flex items-start gap-2">
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       {selectedMedia.type === 'image' && (
                         <img
                           src={selectedMedia.preview}
                           alt="Preview"
-                          className="max-h-32 rounded object-contain"
+                          className="max-h-24 sm:max-h-32 rounded object-contain"
                         />
                       )}
                       {selectedMedia.type === 'video' && (
                         <video
                           src={selectedMedia.preview}
-                          className="max-h-32 rounded"
+                          className="max-h-24 sm:max-h-32 rounded"
                           controls
                         />
                       )}
                       {selectedMedia.type === 'audio' && (
-                        <div className="flex items-center gap-3 p-2 bg-background rounded">
-                          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                            <Mic className="h-5 w-5 text-primary" />
+                        <div className="flex items-center gap-2 sm:gap-3 p-2 bg-background rounded">
+                          <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                            <Mic className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                           </div>
-                          <div className="flex-1">
-                            <p className="text-sm font-medium">Voice note</p>
-                            <audio src={selectedMedia.preview} controls className="w-full h-8 mt-1" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs sm:text-sm font-medium">Voice note</p>
+                            <audio src={selectedMedia.preview} controls className="w-full h-7 sm:h-8 mt-1" />
                           </div>
                         </div>
                       )}
                       {selectedMedia.type === 'document' && (
-                        <div className="flex items-center gap-3 p-2 bg-background rounded">
-                          {getDocumentIcon(selectedMedia.file.name)}
+                        <div className="flex items-center gap-2 sm:gap-3 p-2 bg-background rounded">
+                          <div className="flex-shrink-0">{getDocumentIcon(selectedMedia.file.name)}</div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{selectedMedia.file.name}</p>
-                            <p className="text-xs text-muted-foreground">
+                            <p className="text-xs sm:text-sm font-medium truncate">{selectedMedia.file.name}</p>
+                            <p className="text-[10px] sm:text-xs text-muted-foreground">
                               {selectedMedia.file.name.split('.').pop()?.toUpperCase()} • {(selectedMedia.file.size / 1024).toFixed(1)} KB
                             </p>
                           </div>
@@ -2157,7 +2182,7 @@ export default function InboxPage() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6"
+                      className="h-6 w-6 flex-shrink-0"
                       onClick={clearSelectedMedia}
                     >
                       <X className="h-4 w-4" />
@@ -2204,16 +2229,17 @@ export default function InboxPage() {
                   </Button>
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1 sm:gap-2">
                   <Button
                     variant="ghost"
                     size="icon"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={selectedConversation.status === 'CLOSED'}
+                    className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0"
                   >
-                    <Paperclip className="h-5 w-5" />
+                    <Paperclip className="h-4 w-4 sm:h-5 sm:w-5" />
                   </Button>
-                  <div className="relative flex-1">
+                  <div className="relative flex-1 min-w-0">
                     {/* Slash Command Popup */}
                     <SlashCommand
                       isOpen={slashCommandOpen}
@@ -2227,7 +2253,7 @@ export default function InboxPage() {
                     />
                     <Input
                       ref={messageInputRef}
-                      placeholder={selectedMedia ? "Add a caption..." : "Type a message... (/ for quick replies, Ctrl+V to paste image)"}
+                      placeholder={selectedMedia ? "Add caption..." : "Type a message..."}
                       value={messageText}
                       onChange={handleMessageInputChange}
                       onPaste={handlePaste}
@@ -2242,12 +2268,14 @@ export default function InboxPage() {
                         }
                       }}
                       disabled={selectedConversation.status === 'CLOSED'}
+                      className="h-9 sm:h-10 text-sm"
                     />
                   </div>
-                  <Button variant="ghost" size="icon">
-                    <Smile className="h-5 w-5" />
+                  {/* Emoji button - hidden on small mobile */}
+                  <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-10 sm:w-10 hidden xs:flex flex-shrink-0">
+                    <Smile className="h-4 w-4 sm:h-5 sm:w-5" />
                   </Button>
-                  {/* Schedule button - only show when there's content */}
+                  {/* Schedule button - only show when there's content, hidden on mobile */}
                   {(messageText.trim() || selectedMedia) && (
                     <Button
                       variant="ghost"
@@ -2255,8 +2283,9 @@ export default function InboxPage() {
                       onClick={() => setScheduleDialogOpen(true)}
                       disabled={selectedConversation.status === 'CLOSED'}
                       title="Schedule message"
+                      className="h-9 w-9 sm:h-10 sm:w-10 hidden sm:flex flex-shrink-0"
                     >
-                      <Clock className="h-5 w-5" />
+                      <Clock className="h-4 w-4 sm:h-5 sm:w-5" />
                     </Button>
                   )}
                   {/* Show mic button when no text, send button when there's text or media */}
@@ -2267,18 +2296,20 @@ export default function InboxPage() {
                       onClick={startRecording}
                       disabled={selectedConversation.status === 'CLOSED'}
                       title="Record voice note"
+                      className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0"
                     >
-                      <Mic className="h-5 w-5" />
+                      <Mic className="h-4 w-4 sm:h-5 sm:w-5" />
                     </Button>
                   ) : (
                     <Button
                       onClick={handleSendMessage}
                       disabled={(!messageText.trim() && !selectedMedia) || sendMessageMutation.isPending || isUploading || selectedConversation.status === 'CLOSED'}
+                      className="h-9 w-9 sm:h-10 sm:w-auto sm:px-4 flex-shrink-0"
                     >
                       {isUploading ? (
-                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                        <div className="h-4 w-4 sm:h-5 sm:w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
                       ) : (
-                        <Send className="h-5 w-5" />
+                        <Send className="h-4 w-4 sm:h-5 sm:w-5" />
                       )}
                     </Button>
                   )}
@@ -2313,11 +2344,11 @@ export default function InboxPage() {
                 </Button>
               </div>
             )}
-            <div className="flex-1 flex items-center justify-center text-muted-foreground">
+            <div className="flex-1 flex items-center justify-center text-muted-foreground p-4">
               <div className="text-center">
-                <MessageSquare className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                <p className="text-lg font-medium">Select a conversation</p>
-                <p className="text-sm">Choose a conversation from the list to start messaging</p>
+                <MessageSquare className="h-12 w-12 sm:h-16 sm:w-16 mx-auto mb-3 sm:mb-4 opacity-50" />
+                <p className="text-base sm:text-lg font-medium">Select a conversation</p>
+                <p className="text-xs sm:text-sm">Choose a conversation from the list</p>
                 {conversationListCollapsed && (
                   <Button
                     variant="outline"
@@ -2339,18 +2370,20 @@ export default function InboxPage() {
       {showContactPanel && selectedConversation && (
         <div className={cn(
           'border-l flex flex-col transition-all duration-200',
-          contactPanelTab === 'orderops' ? 'w-96' : 'w-80'
+          // Mobile: full width overlay, tablet/desktop: sidebar
+          'fixed inset-0 z-50 bg-background md:static md:z-auto',
+          contactPanelTab === 'orderops' ? 'md:w-80 lg:w-96' : 'md:w-72 lg:w-80'
         )}>
-          <div className="h-16 border-b flex items-center justify-between px-4">
-            <h3 className="font-semibold">
+          <div className="h-14 sm:h-16 border-b flex items-center justify-between px-3 sm:px-4">
+            <h3 className="font-semibold text-sm sm:text-base">
               {contactPanelTab === 'orderops'
                 ? 'Orders'
                 : contactPanelTab === 'tags'
                 ? 'Tags'
-                : isGroupContact(selectedConversation.contact) ? 'Group Info' : 'Contact Info'}
+                : isGroupContact(selectedConversation.contact) ? 'Group Info' : 'Contact'}
             </h3>
-            <Button variant="ghost" size="icon" onClick={() => setShowContactPanel(false)}>
-              <X className="h-5 w-5" />
+            <Button variant="ghost" size="icon" onClick={() => setShowContactPanel(false)} className="h-8 w-8 sm:h-9 sm:w-9">
+              <X className="h-4 w-4 sm:h-5 sm:w-5" />
             </Button>
           </div>
 
@@ -2359,21 +2392,21 @@ export default function InboxPage() {
             <TabsList className="w-full justify-start rounded-none border-b bg-transparent h-auto p-0">
               <TabsTrigger
                 value="info"
-                className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-2 text-xs"
+                className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-2.5 sm:py-2 text-xs"
               >
                 <User className="h-3 w-3 mr-1" />
                 Info
               </TabsTrigger>
               <TabsTrigger
                 value="tags"
-                className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-2 text-xs"
+                className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-2.5 sm:py-2 text-xs"
               >
                 <TagIcon className="h-3 w-3 mr-1" />
                 Tags
               </TabsTrigger>
               <TabsTrigger
                 value="orderops"
-                className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-2 text-xs"
+                className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent py-2.5 sm:py-2 text-xs"
               >
                 <Package className="h-3 w-3 mr-1" />
                 Orders
@@ -2382,7 +2415,7 @@ export default function InboxPage() {
 
             {/* Info Tab */}
             <TabsContent value="info" className="flex-1 m-0">
-              <ScrollArea className="h-[calc(100vh-280px)]">
+              <ScrollArea className="h-[calc(100vh-180px)] md:h-[calc(100vh-280px)]">
                 <div className="p-4 space-y-4">
                   {/* Contact Avatar & Name */}
                   <div className="text-center pb-4 border-b">
@@ -2528,8 +2561,8 @@ export default function InboxPage() {
 
             {/* Tags & Notes Tab */}
             <TabsContent value="tags" className="flex-1 m-0">
-              <ScrollArea className="h-[calc(100vh-280px)]">
-                <div className="p-4 space-y-4">
+              <ScrollArea className="h-[calc(100vh-180px)] md:h-[calc(100vh-280px)]">
+                <div className="p-3 sm:p-4 space-y-4">
                   {/* Tags */}
                   <div>
                     <h5 className="text-xs font-medium text-muted-foreground uppercase mb-2 flex items-center gap-1">
