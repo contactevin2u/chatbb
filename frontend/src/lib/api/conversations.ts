@@ -297,6 +297,23 @@ export async function getMessages(
   return response.data.data;
 }
 
+export interface FetchHistoryResponse {
+  fetching: boolean;
+  reason?: 'no_messages' | 'no_anchor_key';
+}
+
+/**
+ * Fetch older message history from WhatsApp
+ * Triggers an on-demand sync for messages older than what's in the database
+ * Messages will arrive via WebSocket when ready
+ */
+export async function fetchHistory(conversationId: string): Promise<FetchHistoryResponse> {
+  const response = await apiClient.post<{ success: boolean; data: FetchHistoryResponse }>(
+    `/conversations/${conversationId}/fetch-history`
+  );
+  return response.data.data;
+}
+
 export async function sendMessage(data: {
   conversationId: string;
   text?: string;

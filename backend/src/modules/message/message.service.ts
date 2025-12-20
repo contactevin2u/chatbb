@@ -775,6 +775,17 @@ export class MessageService {
       reactions: filteredReactions,
     };
   }
+
+  /**
+   * Get the oldest message in a conversation
+   * Used as anchor for on-demand history fetch
+   */
+  async getOldestMessage(conversationId: string) {
+    return await prisma.message.findFirst({
+      where: { conversationId },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
 }
 
 export const messageService = new MessageService();

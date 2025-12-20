@@ -8,6 +8,7 @@ import { Request, Response, NextFunction } from 'express';
 import { ConversationStatus, Priority } from '@prisma/client';
 import { conversationService } from './conversation.service';
 import { messageService } from '../message/message.service';
+import { redisClient } from '../../core/cache/redis.client';
 
 export class ConversationController {
   /**
@@ -509,6 +510,66 @@ export class ConversationController {
       res.json({
         success: true,
         data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Fetch older message history from WhatsApp (on-demand)
+   * POST /api/v1/conversations/:id/fetch-history
+   *
+   * This triggers a request to WhatsApp to fetch older messages.
+   * Messages will arrive via WebSocket when ready.
+   */
+  async fetchHistory(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId } = req.user!;
+      const { id } = req.params;
+
+      // Get conversation details
+      const conversation = await conversationService.getConversation(id, organizationId);
+      if (!conversation) {
+        return res.status(404).json({
+          success: false,
+          error: 'Conversation not found',
+        });
+      }
+
+      // Get oldest message to use as anchor for history fetch
+      const oldestMessage = await messageService.getOldestMessage(id);
+
+      if (!oldestMessage) {
+        return res.json({
+          success: true,
+          data: { fetching: false, reason: 'no_messages' },
+        });
+      }
+
+      // Check if message has WhatsApp key metadata
+      const metadata = oldestMessage.metadata as any;
+      if (!metadata?.key) {
+        return res.json({
+          success: true,
+          data: { fetching: false, reason: 'no_anchor_key' },
+        });
+      }
+
+      // Publish command to WhatsApp worker
+      // Pattern: whatsapp:cmd:{command}:{channelId}
+      await redisClient.publish(
+        `whatsapp:cmd:fetch-history:${conversation.channelId}`,
+        JSON.stringify({
+          conversationId: conversation.id,
+          messageKey: metadata.key,
+          messageTimestamp: metadata.messageTimestamp || Math.floor(new Date(oldestMessage.createdAt).getTime() / 1000),
+        })
+      );
+
+      res.json({
+        success: true,
+        data: { fetching: true },
       });
     } catch (error) {
       next(error);

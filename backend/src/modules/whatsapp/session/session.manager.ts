@@ -57,6 +57,8 @@ interface SessionEvents {
   'lid-mapping:update': (channelId: string, mapping: { lid: string; pn: string }) => void;
   // Historical message sync event (macOS Desktop + syncFullHistory: true)
   'history:sync': (channelId: string, data: { chats: any[]; contacts: any[]; messages: any; syncType: any }) => void;
+  // On-demand history sync event (user-triggered via fetchMessageHistory)
+  'history:on-demand': (channelId: string, data: { messages: any; conversationId?: string }) => void;
   // Contact events
   'contacts:upsert': (channelId: string, contacts: any[]) => void;
   'contacts:update': (channelId: string, contacts: any[]) => void;
@@ -76,6 +78,18 @@ const RATE_LIMIT = {
   NEW_CONTACTS_PER_DAY: 50,
 };
 
+// Pending history request tracking
+interface PendingHistoryRequest {
+  requestId: string;
+  channelId: string;
+  conversationId: string;
+  messageKey: WAMessageKey;
+  messageTimestamp: number;
+  attempts: number;
+  requestedAt: number;
+  timeoutId: NodeJS.Timeout;
+}
+
 export class SessionManager extends EventEmitter {
   private sessions: Map<string, SessionInfo> = new Map();
   private logger = pino({ level: 'info' });
@@ -84,6 +98,10 @@ export class SessionManager extends EventEmitter {
   private reconnectTimers: Map<string, NodeJS.Timeout> = new Map();
   // Track reconnect attempts for exponential backoff (persists across session recreations)
   private reconnectAttempts: Map<string, number> = new Map();
+  // Track pending history fetch requests for retry logic and ON_DEMAND matching
+  private pendingHistoryRequests: Map<string, PendingHistoryRequest> = new Map();
+  // Rate limit history fetches per conversation (30s cooldown)
+  private lastHistoryFetch: Map<string, number> = new Map();
 
   constructor() {
     super();
@@ -296,10 +314,12 @@ export class SessionManager extends EventEmitter {
       enableAutoSessionRecreation: true,
       // Cache recent messages in memory for retry handling
       enableRecentMessageCache: true,
-      // History sync settings - only sync if this channel hasn't completed initial sync
-      // This prevents re-syncing entire history on every server restart
+      // History sync settings
+      // syncFullHistory: Only request full history if we haven't done initial sync
+      // shouldSyncHistoryMessage: MUST be true for fetchMessageHistory() on-demand to work
+      // We filter by syncType in the event handler instead
       syncFullHistory: needsHistorySync,
-      shouldSyncHistoryMessage: () => needsHistorySync,
+      shouldSyncHistoryMessage: () => true,
       // Set to false to receive phone notifications on the device
       markOnlineOnConnect: false,
       // Ignore status broadcasts and other non-essential JIDs to reduce event noise
@@ -562,6 +582,7 @@ export class SessionManager extends EventEmitter {
     // Historical message sync (requires macOS Desktop browser + syncFullHistory: true)
     // Note: messages is a WAMessage[] flat array, NOT object keyed by JID
     // Sync comes in chunks with progress (0-100%) - only mark complete when isLatest=true
+    // syncType values: INITIAL_BOOTSTRAP=0, INITIAL_STATUS_V3=1, FULL=2, RECENT=3, PUSH_NAME=4, ON_DEMAND=5
     socket.ev.on('messaging-history.set', async ({ chats, contacts, messages, syncType, isLatest, progress }) => {
       const currentProgress = typeof progress === 'number' ? progress : 0;
 
@@ -578,6 +599,36 @@ export class SessionManager extends EventEmitter {
         'Historical sync chunk received'
       );
 
+      // Skip FULL sync type (2) - problematic for very long history
+      // FULL sync can send millions of messages and never complete
+      if (syncType === proto.HistorySync.HistorySyncType.FULL) {
+        this.logger.info({ channelId, syncType, progress: currentProgress }, 'Skipping FULL history sync (too large)');
+        return;
+      }
+
+      // Handle ON_DEMAND sync separately - this is user-requested via fetchMessageHistory()
+      if (syncType === proto.HistorySync.HistorySyncType.ON_DEMAND) {
+        // Check if we have a pending request for this
+        const pendingRequest = this.findPendingHistoryRequest(channelId, messages);
+        const conversationId = pendingRequest?.conversationId;
+
+        this.logger.info(
+          { channelId, conversationId, messagesCount: Array.isArray(messages) ? messages.length : 0 },
+          'ON_DEMAND history sync received'
+        );
+
+        // Emit separate event for on-demand processing (immediate, not queued)
+        this.emit('history:on-demand', channelId, { messages, conversationId });
+
+        // Clear pending request
+        if (pendingRequest) {
+          clearTimeout(pendingRequest.timeoutId);
+          this.pendingHistoryRequests.delete(pendingRequest.requestId);
+        }
+        return;
+      }
+
+      // Process INITIAL_BOOTSTRAP, RECENT, PUSH_NAME sync types
       // Update sync progress in database (track each chunk)
       try {
         const updateData: any = {
@@ -1568,6 +1619,145 @@ export class SessionManager extends EventEmitter {
   async getIncognitoStatus(channelId: string): Promise<{ enabled: boolean }> {
     const enabled = await this.isIncognitoMode(channelId);
     return { enabled };
+  }
+
+  // ============================================
+  // On-Demand History Fetch Methods
+  // ============================================
+
+  /**
+   * Fetch message history on-demand for a specific conversation
+   * Used when user opens a conversation that needs more messages
+   * Rate limited to 1 request per 30 seconds per conversation
+   */
+  async fetchMessageHistory(
+    channelId: string,
+    conversationId: string,
+    messageKey: WAMessageKey,
+    messageTimestamp: number,
+    count: number = 50
+  ): Promise<string | null> {
+    const session = this.sessions.get(channelId);
+    if (!session?.socket || session.status !== 'CONNECTED') {
+      this.logger.warn({ channelId }, 'Cannot fetch history: session not connected');
+      return null;
+    }
+
+    // Rate limit: 30 second cooldown per conversation
+    const cacheKey = `${channelId}:${conversationId}`;
+    const lastFetch = this.lastHistoryFetch.get(cacheKey) || 0;
+    const now = Date.now();
+    if (now - lastFetch < 30000) {
+      this.logger.info({ channelId, conversationId, cooldownRemaining: 30000 - (now - lastFetch) }, 'History fetch rate limited');
+      return null;
+    }
+    this.lastHistoryFetch.set(cacheKey, now);
+
+    try {
+      // Baileys fetchMessageHistory: count, key, timestamp
+      const requestId = await session.socket.fetchMessageHistory(count, messageKey, messageTimestamp);
+
+      if (requestId) {
+        // Set timeout for retry (10s per attempt)
+        const timeoutId = setTimeout(() => {
+          this.handleHistoryFetchTimeout(requestId);
+        }, 10000);
+
+        this.pendingHistoryRequests.set(requestId, {
+          requestId,
+          channelId,
+          conversationId,
+          messageKey,
+          messageTimestamp,
+          attempts: 1,
+          requestedAt: now,
+          timeoutId,
+        });
+
+        this.logger.info({ channelId, conversationId, requestId, count }, 'On-demand history fetch requested');
+      }
+
+      return requestId;
+    } catch (error) {
+      this.logger.error({ channelId, conversationId, error }, 'Failed to fetch message history');
+      return null;
+    }
+  }
+
+  /**
+   * Handle timeout for history fetch request - implements retry logic
+   */
+  private async handleHistoryFetchTimeout(requestId: string): Promise<void> {
+    const pending = this.pendingHistoryRequests.get(requestId);
+    if (!pending) return;
+
+    if (pending.attempts < 3) {
+      // Retry
+      this.logger.warn(
+        { channelId: pending.channelId, requestId, attempt: pending.attempts },
+        'History fetch timeout, retrying...'
+      );
+
+      const session = this.sessions.get(pending.channelId);
+      if (session?.socket && session.status === 'CONNECTED') {
+        try {
+          // Re-request with same parameters
+          const newRequestId = await session.socket.fetchMessageHistory(
+            50,
+            pending.messageKey,
+            pending.messageTimestamp
+          );
+
+          if (newRequestId) {
+            // Update tracking with new request ID
+            this.pendingHistoryRequests.delete(requestId);
+
+            const timeoutId = setTimeout(() => {
+              this.handleHistoryFetchTimeout(newRequestId);
+            }, 10000);
+
+            this.pendingHistoryRequests.set(newRequestId, {
+              ...pending,
+              requestId: newRequestId,
+              attempts: pending.attempts + 1,
+              requestedAt: Date.now(),
+              timeoutId,
+            });
+          }
+        } catch (error) {
+          this.logger.error({ requestId, error }, 'Retry fetch failed');
+          this.pendingHistoryRequests.delete(requestId);
+        }
+      } else {
+        // Session disconnected, give up
+        this.pendingHistoryRequests.delete(requestId);
+      }
+    } else {
+      // Give up after 3 attempts
+      this.logger.error(
+        { channelId: pending.channelId, conversationId: pending.conversationId, requestId },
+        'History fetch failed after 3 attempts'
+      );
+      this.pendingHistoryRequests.delete(requestId);
+    }
+  }
+
+  /**
+   * Find pending history request that matches incoming ON_DEMAND messages
+   * Matches by channelId and checks if any message JID matches pending request
+   */
+  private findPendingHistoryRequest(
+    channelId: string,
+    messages: any[]
+  ): PendingHistoryRequest | null {
+    // Find any pending request for this channel
+    for (const [requestId, pending] of this.pendingHistoryRequests) {
+      if (pending.channelId === channelId) {
+        // Found a pending request for this channel
+        return { ...pending, requestId };
+      }
+    }
+    return null;
   }
 
 }

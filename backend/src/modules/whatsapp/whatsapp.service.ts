@@ -92,6 +92,9 @@ export class WhatsAppService {
         'user:*:message' // User-specific message routing for assigned conversations
       );
 
+      // Subscribe to generic WebSocket events from Worker
+      await this.redisSubscriber.subscribe('ws:event');
+
       this.redisSubscriber.on('pmessage', async (pattern, channel, message) => {
         try {
           const data = JSON.parse(message);
@@ -148,6 +151,23 @@ export class WhatsAppService {
           }
         } catch (error) {
           console.error('[WhatsAppService] Error processing Redis message:', error);
+        }
+      });
+
+      // Handle non-pattern subscriptions (ws:event)
+      this.redisSubscriber.on('message', async (channel, message) => {
+        try {
+          if (channel === 'ws:event') {
+            const { event, data } = JSON.parse(message);
+
+            // Route event to appropriate conversation room
+            if (event === 'history:loaded' && data.conversationId) {
+              socketServer.to(`conversation:${data.conversationId}`).emit('history:loaded', data);
+              console.log(`[WhatsAppService] Emitted history:loaded to conversation:${data.conversationId}`);
+            }
+          }
+        } catch (error) {
+          console.error('[WhatsAppService] Error processing ws:event message:', error);
         }
       });
 

@@ -276,6 +276,36 @@ function setupEventHandlers() {
     }
   });
 
+  // On-demand history sync - process immediately (user-requested, not queued)
+  // This is triggered when user opens a conversation and requests older messages
+  sessionManager.on('history:on-demand', async (channelId, data) => {
+    const { messages, conversationId } = data;
+    logger.info(
+      { channelId, conversationId, messagesCount: Array.isArray(messages) ? messages.length : 0 },
+      'Processing on-demand history sync'
+    );
+
+    let processedCount = 0;
+    for (const msg of (messages as any[]) || []) {
+      try {
+        await processHistoricalMessage(channelId, msg, conversationId);
+        processedCount++;
+      } catch (error) {
+        logger.error({ channelId, msgId: msg.key?.id, error: (error as Error).message }, 'Failed to process on-demand message');
+      }
+    }
+
+    // Notify frontend via WebSocket that history has been loaded
+    if (conversationId) {
+      await redisClient.publish('ws:event', JSON.stringify({
+        event: 'history:loaded',
+        data: { channelId, conversationId, messageCount: processedCount },
+      }));
+    }
+
+    logger.info({ channelId, conversationId, processedCount }, 'On-demand history sync complete');
+  });
+
   // Contact events - process directly (no queue needed, fast operation)
   sessionManager.on('contacts:upsert', async (channelId, contacts) => {
     try {
@@ -387,6 +417,11 @@ async function setupCommandSubscriber() {
         case 'read':
           // Mark messages as read (send read receipts)
           await handleReadCommand(channelId, data);
+          break;
+
+        case 'fetch-history':
+          // Fetch older message history on-demand
+          await handleFetchHistoryCommand(channelId, data);
           break;
 
         default:
@@ -738,6 +773,36 @@ async function handleReadCommand(channelId: string, data: {
       success: false,
       error: (error as Error).message,
     }));
+  }
+}
+
+/**
+ * Handle on-demand history fetch request
+ * Triggered when user opens a conversation that needs more messages
+ */
+async function handleFetchHistoryCommand(channelId: string, data: {
+  conversationId: string;
+  messageKey: { remoteJid: string; id: string; fromMe: boolean };
+  messageTimestamp: number;
+}) {
+  try {
+    const requestId = await sessionManager.fetchMessageHistory(
+      channelId,
+      data.conversationId,
+      data.messageKey,
+      data.messageTimestamp,
+      50 // Fetch 50 messages at a time
+    );
+
+    logger.info(
+      { channelId, conversationId: data.conversationId, requestId },
+      'On-demand history fetch initiated'
+    );
+  } catch (error) {
+    logger.error(
+      { channelId, conversationId: data.conversationId, error: (error as Error).message },
+      'Failed to initiate history fetch'
+    );
   }
 }
 
@@ -1331,6 +1396,94 @@ async function processHistorySyncDirect(channelId: string, data: { chats: any[];
   );
 }
 
+/**
+ * Process a single historical message from on-demand sync
+ * Simpler than bulk sync - we already know the conversation
+ */
+async function processHistoricalMessage(channelId: string, msg: any, conversationId?: string) {
+  const { ChannelType, MessageDirection, MessageStatus, MessageType } = await import('@prisma/client');
+  const { normalizeIdentifier: normalizeId } = await import('../shared/utils/identifier.js');
+
+  const externalId = msg.key?.id;
+  if (!externalId) return;
+
+  // Check if already exists
+  const exists = await prisma.message.findFirst({ where: { externalId, channelId } });
+  if (exists) return;
+
+  const channel = await prisma.channel.findUnique({ where: { id: channelId } });
+  if (!channel) return;
+
+  const orgId = channel.organizationId;
+  const jid = msg.key?.remoteJid;
+  if (!jid) return;
+
+  // Resolve identifier and find conversation
+  const identifier = await normalizeId(jid, channelId);
+
+  let actualConversationId = conversationId;
+  if (!actualConversationId) {
+    // Find conversation by contact
+    const contact = await prisma.contact.findFirst({
+      where: { organizationId: orgId, channelType: ChannelType.WHATSAPP, identifier },
+    });
+    if (!contact) return;
+
+    const conversation = await prisma.conversation.findFirst({
+      where: { channelId, contactId: contact.id },
+    });
+    if (!conversation) return;
+    actualConversationId = conversation.id;
+  }
+
+  // Parse content
+  const msgContent = msg.message || {};
+  let type: typeof MessageType[keyof typeof MessageType] = MessageType.TEXT;
+  let content: any = {};
+
+  if (msgContent.conversation) {
+    content = { text: msgContent.conversation };
+  } else if (msgContent.extendedTextMessage) {
+    content = { text: msgContent.extendedTextMessage.text };
+  } else if (msgContent.imageMessage) {
+    type = MessageType.IMAGE;
+    content = { caption: msgContent.imageMessage.caption };
+  } else if (msgContent.videoMessage) {
+    type = MessageType.VIDEO;
+  } else if (msgContent.audioMessage) {
+    type = MessageType.AUDIO;
+  } else if (msgContent.documentMessage) {
+    type = MessageType.DOCUMENT;
+    content = { filename: msgContent.documentMessage.fileName };
+  }
+
+  const isFromMe = msg.key?.fromMe || false;
+
+  // Use original message timestamp for createdAt (not sync time)
+  const originalTimestamp = new Date(Number(msg.messageTimestamp) * 1000);
+
+  await prisma.message.create({
+    data: {
+      conversationId: actualConversationId,
+      channelId,
+      externalId,
+      direction: isFromMe ? MessageDirection.OUTBOUND : MessageDirection.INBOUND,
+      type,
+      content: { ...content, message: msg.message },
+      status: isFromMe ? MessageStatus.SENT : MessageStatus.DELIVERED,
+      sentAt: isFromMe ? originalTimestamp : null,
+      deliveredAt: !isFromMe ? originalTimestamp : null,
+      createdAt: originalTimestamp,
+      // Store key in metadata for future fetchMessageHistory calls
+      metadata: {
+        timestamp: Number(msg.messageTimestamp),
+        isHistorical: true,
+        key: msg.key,
+        messageTimestamp: Number(msg.messageTimestamp),
+      },
+    },
+  });
+}
 
 /**
  * Process a single sequence execution immediately (all steps)

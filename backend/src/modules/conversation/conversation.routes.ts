@@ -173,6 +173,17 @@ router.get(
 );
 
 /**
+ * @route   POST /api/v1/conversations/:id/fetch-history
+ * @desc    Fetch older message history from WhatsApp (on-demand)
+ * @access  Private (conversations:view)
+ */
+router.post(
+  '/:id/fetch-history',
+  requirePermission('conversations:view'),
+  conversationController.fetchHistory.bind(conversationController)
+);
+
+/**
  * @route   GET /api/v1/conversations/:conversationId/scheduled-messages
  * @desc    List scheduled messages for a conversation
  * @access  Private (conversations:view)

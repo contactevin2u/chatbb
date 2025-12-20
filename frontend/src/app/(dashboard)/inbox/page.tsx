@@ -121,6 +121,7 @@ import {
   editMessage,
   deleteMessage,
   deleteMessageForEveryone,
+  fetchHistory,
   type Conversation,
   type Message,
   type ConversationStatus,
@@ -334,11 +335,44 @@ export default function InboxPage() {
   });
 
   // Fetch messages for selected conversation
-  const { data: messagesData, isLoading: isLoadingMessages } = useQuery({
+  const { data: messagesData, isLoading: isLoadingMessages, refetch: refetchMessages } = useQuery({
     queryKey: ['messages', selectedConversationId],
     queryFn: () => selectedConversationId ? getMessages(selectedConversationId) : null,
     enabled: !!selectedConversationId,
   });
+
+  // Track if we've attempted to fetch history for current conversation
+  const [historyFetchAttempted, setHistoryFetchAttempted] = useState<string | null>(null);
+
+  // Auto-fetch history when conversation is opened with few messages
+  useEffect(() => {
+    const messages = messagesData?.messages || [];
+    if (
+      selectedConversationId &&
+      messages.length > 0 &&
+      messages.length < 20 &&
+      historyFetchAttempted !== selectedConversationId
+    ) {
+      // Mark as attempted to prevent repeated fetches
+      setHistoryFetchAttempted(selectedConversationId);
+
+      // Trigger on-demand history fetch
+      fetchHistory(selectedConversationId).then((response) => {
+        if (response.fetching) {
+          console.log('Fetching older history for conversation:', selectedConversationId);
+        }
+      }).catch((error) => {
+        console.error('Failed to fetch history:', error);
+      });
+    }
+  }, [selectedConversationId, messagesData?.messages?.length, historyFetchAttempted]);
+
+  // Reset history fetch tracking when conversation changes
+  useEffect(() => {
+    if (!selectedConversationId) {
+      setHistoryFetchAttempted(null);
+    }
+  }, [selectedConversationId]);
 
   // Find selected conversation from list
   const selectedConversationFromList = conversationsData?.conversations.find(
@@ -1273,6 +1307,14 @@ export default function InboxPage() {
       }
     };
 
+    // Handle history loaded event - refresh messages when on-demand sync completes
+    const handleHistoryLoaded = (data: { conversationId: string; messageCount: number }) => {
+      if (data.conversationId === selectedConversationId && data.messageCount > 0) {
+        console.log(`History loaded: ${data.messageCount} messages for conversation ${data.conversationId}`);
+        queryClient.invalidateQueries({ queryKey: ['messages', data.conversationId] });
+      }
+    };
+
     socket.on('message:new', handleNewMessage);
     socket.on('typing:start', handleTypingStart);
     socket.on('typing:stop', handleTypingStop);
@@ -1281,6 +1323,7 @@ export default function InboxPage() {
     socket.on('agent:left', handleAgentLeft);
     socket.on('message:reaction', handleReaction);
     socket.on('message:pending', handlePendingMessage);
+    socket.on('history:loaded', handleHistoryLoaded);
 
     return () => {
       socket.off('message:new', handleNewMessage);
@@ -1291,6 +1334,7 @@ export default function InboxPage() {
       socket.off('agent:left', handleAgentLeft);
       socket.off('message:reaction', handleReaction);
       socket.off('message:pending', handlePendingMessage);
+      socket.off('history:loaded', handleHistoryLoaded);
     };
   }, [socket, selectedConversationId, queryClient, user?.id, otherActiveAgent?.id]);
 

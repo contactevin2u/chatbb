@@ -580,7 +580,7 @@ export class ConversationService {
           },
         },
       },
-      orderBy: { lastMessageAt: 'asc' }, // Oldest first (longest waiting)
+      orderBy: { lastMessageAt: 'desc' }, // Latest first (newest messages)
     });
 
     // Map to include lastMessage and filter to only those where last message is INBOUND
