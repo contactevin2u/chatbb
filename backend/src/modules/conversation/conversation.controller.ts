@@ -549,7 +549,15 @@ export class ConversationController {
 
       // Check if message has WhatsApp key metadata
       const metadata = oldestMessage.metadata as any;
+      console.log('[fetchHistory] Oldest message metadata:', {
+        messageId: oldestMessage.id,
+        hasKey: !!metadata?.key,
+        key: metadata?.key,
+        messageTimestamp: metadata?.messageTimestamp
+      });
+
       if (!metadata?.key) {
+        console.log('[fetchHistory] No anchor key found, returning no_anchor_key');
         return res.json({
           success: true,
           data: { fetching: false, reason: 'no_anchor_key' },
@@ -558,13 +566,19 @@ export class ConversationController {
 
       // Publish command to WhatsApp worker
       // Pattern: whatsapp:cmd:{command}:{channelId}
+      const commandPayload = {
+        conversationId: conversation.id,
+        messageKey: metadata.key,
+        messageTimestamp: metadata.messageTimestamp || Math.floor(new Date(oldestMessage.createdAt).getTime() / 1000),
+      };
+      console.log('[fetchHistory] Publishing command:', {
+        channel: `whatsapp:cmd:fetch-history:${conversation.channelId}`,
+        payload: commandPayload
+      });
+
       await redisClient.publish(
         `whatsapp:cmd:fetch-history:${conversation.channelId}`,
-        JSON.stringify({
-          conversationId: conversation.id,
-          messageKey: metadata.key,
-          messageTimestamp: metadata.messageTimestamp || Math.floor(new Date(oldestMessage.createdAt).getTime() / 1000),
-        })
+        JSON.stringify(commandPayload)
       );
 
       res.json({

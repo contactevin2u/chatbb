@@ -818,6 +818,11 @@ async function handleFetchHistoryCommand(channelId: string, data: {
   messageKey: { remoteJid: string; id: string; fromMe: boolean };
   messageTimestamp: number;
 }) {
+  logger.info(
+    { channelId, conversationId: data.conversationId, messageKey: data.messageKey, messageTimestamp: data.messageTimestamp },
+    'fetch-history command received'
+  );
+
   try {
     const requestId = await sessionManager.fetchMessageHistory(
       channelId,
@@ -827,10 +832,17 @@ async function handleFetchHistoryCommand(channelId: string, data: {
       50 // Fetch 50 messages at a time
     );
 
-    logger.info(
-      { channelId, conversationId: data.conversationId, requestId },
-      'On-demand history fetch initiated'
-    );
+    if (requestId) {
+      logger.info(
+        { channelId, conversationId: data.conversationId, requestId },
+        'On-demand history fetch initiated'
+      );
+    } else {
+      logger.warn(
+        { channelId, conversationId: data.conversationId },
+        'fetchMessageHistory returned null - session not connected or rate limited'
+      );
+    }
   } catch (error) {
     logger.error(
       { channelId, conversationId: data.conversationId, error: (error as Error).message },

@@ -1,0 +1,48 @@
+CHATBABY-API MEMORY ISSUES (2GB+ Usage)
+========================================
+
+MAIN CAUSES:
+------------
+
+1. QUERY LOGGING (100-300MB)
+   - File: backend/src/core/database/prisma.ts
+   - If LOG_QUERIES=true, every DB query is logged
+   - Event listeners never removed
+   - FIX: Set LOG_QUERIES=false in production
+
+2. SOCKET.IO PRESENCE TRACKING (100-200MB)
+   - File: backend/src/core/websocket/server.ts
+   - Loads ALL viewers into memory with no limit
+   - Every conversation view triggers redis.hgetall()
+   - FIX: Limit viewers returned to 20-50
+
+3. OPENAI CLIENT RECREATION (Moderate)
+   - File: backend/src/modules/knowledge/knowledge.service.ts
+   - Creates new OpenAI client on every request
+   - FIX: Make it a singleton
+
+4. LARGE REQUEST BODY LIMIT (100-200MB)
+   - File: backend/src/app.ts
+   - Set to 10mb, allows large payloads
+   - FIX: Reduce to 2-5mb
+
+5. MESSAGE ARRAYS NOT STREAMED
+   - File: backend/src/modules/message/message.service.ts
+   - Full message lists loaded into memory
+   - Uses reverse() which copies arrays
+   - FIX: Use database cursor pagination
+
+
+QUICK FIXES:
+------------
+1. Set LOG_QUERIES=false in environment
+2. Reduce express body limit from 10mb to 2mb
+3. Make OpenAI client a singleton
+4. Add maxKeys limit to any NodeCache instances
+5. Limit presence viewer count in websocket server
+
+
+ENVIRONMENT VARIABLES TO CHECK:
+-------------------------------
+- LOG_QUERIES (should be false in production)
+- NODE_OPTIONS (can add --max-old-space-size=1024 to limit heap)
