@@ -1520,7 +1520,7 @@ export default function InboxPage() {
 
       {/* Chat Panel */}
       <div className={cn(
-        'flex-1 flex flex-col',
+        'flex-1 flex flex-col min-w-0',
         // On mobile: hide chat when no conversation selected
         !selectedConversationId && 'hidden md:flex'
       )}>
@@ -2409,7 +2409,7 @@ export default function InboxPage() {
       {/* Contact Info Panel */}
       {showContactPanel && selectedConversation && (
         <div className={cn(
-          'border-l flex flex-col transition-all duration-200',
+          'border-l flex flex-col transition-all duration-200 flex-shrink-0',
           // Mobile: full width overlay, tablet/desktop: sidebar
           'fixed inset-0 z-50 bg-background md:static md:z-auto',
           contactPanelTab === 'orderops' ? 'md:w-80 lg:w-96' : 'md:w-72 lg:w-80'
@@ -2454,9 +2454,9 @@ export default function InboxPage() {
             </TabsList>
 
             {/* Info Tab */}
-            <TabsContent value="info" className="flex-1 m-0">
+            <TabsContent value="info" className="flex-1 m-0 overflow-hidden">
               <ScrollArea className="h-[calc(100vh-180px)] md:h-[calc(100vh-280px)]">
-                <div className="p-4 space-y-4">
+                <div className="p-4 space-y-4 overflow-hidden">
                   {/* Contact Avatar & Name */}
                   <div className="text-center pb-4 border-b">
                     <div className="relative inline-block">
@@ -2476,8 +2476,8 @@ export default function InboxPage() {
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center justify-center gap-1">
-                      <h4 className="font-semibold text-sm">
+                    <div className="flex items-center justify-center gap-1 max-w-full">
+                      <h4 className="font-semibold text-sm truncate max-w-[200px]">
                         {getContactName(selectedConversation.contact)}
                       </h4>
                       <Button
@@ -2498,9 +2498,9 @@ export default function InboxPage() {
                   <div className="space-y-2">
                     <h5 className="text-xs font-medium text-muted-foreground uppercase">Details</h5>
                     {isGroupContact(selectedConversation.contact) ? (
-                      <div className="flex items-center gap-2 text-sm">
-                        <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-muted-foreground text-xs">ID: {selectedConversation.contact.identifier}</span>
+                      <div className="flex items-center gap-2 text-sm min-w-0">
+                        <Users className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                        <span className="text-muted-foreground text-xs truncate">ID: {selectedConversation.contact.identifier}</span>
                       </div>
                     ) : (
                       <>
@@ -2568,7 +2568,7 @@ export default function InboxPage() {
                       </h5>
                       <div className="space-y-1.5 max-h-40 overflow-y-auto">
                         {groupParticipants.participants.slice(0, 20).map((participant) => (
-                          <div key={participant.id} className="flex items-center gap-2 text-xs">
+                          <div key={participant.id} className="flex items-center gap-2 text-xs min-w-0">
                             <Avatar className="h-5 w-5">
                               {participant.avatarUrl && (
                                 <AvatarImage src={participant.avatarUrl} className="object-cover" />
