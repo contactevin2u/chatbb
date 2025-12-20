@@ -779,8 +779,29 @@ export class MessageService {
   /**
    * Get the oldest message in a conversation with data needed to reconstruct WhatsApp key
    * Used as anchor for on-demand history fetch
+   * Prefers INBOUND messages as WhatsApp may reject OUTBOUND anchors (error 479)
    */
   async getOldestMessage(conversationId: string) {
+    // First try to get oldest INBOUND message (preferred for fetch history)
+    const inboundMessage = await prisma.message.findFirst({
+      where: { conversationId, direction: 'INBOUND' },
+      orderBy: { createdAt: 'asc' },
+      include: {
+        conversation: {
+          include: {
+            contact: {
+              select: { identifier: true, isGroup: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (inboundMessage) {
+      return inboundMessage;
+    }
+
+    // Fall back to any oldest message if no inbound messages exist
     return await prisma.message.findFirst({
       where: { conversationId },
       orderBy: { createdAt: 'asc' },
