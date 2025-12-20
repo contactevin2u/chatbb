@@ -547,29 +547,57 @@ export class ConversationController {
         });
       }
 
-      // Check if message has WhatsApp key metadata
-      const metadata = oldestMessage.metadata as any;
-      console.log('[fetchHistory] Oldest message metadata:', {
-        messageId: oldestMessage.id,
-        hasKey: !!metadata?.key,
-        key: metadata?.key,
-        messageTimestamp: metadata?.messageTimestamp
-      });
-
-      if (!metadata?.key) {
-        console.log('[fetchHistory] No anchor key found, returning no_anchor_key');
+      // Check if we have externalId (WhatsApp message ID) - required for fetch
+      if (!oldestMessage.externalId) {
+        console.log('[fetchHistory] No externalId found, returning no_external_id');
         return res.json({
           success: true,
-          data: { fetching: false, reason: 'no_anchor_key' },
+          data: { fetching: false, reason: 'no_external_id' },
         });
+      }
+
+      // Try to get key from metadata first, otherwise reconstruct from existing data
+      const metadata = oldestMessage.metadata as any;
+      let messageKey: { remoteJid: string; id: string; fromMe: boolean };
+      let messageTimestamp: number;
+
+      if (metadata?.key) {
+        // Use stored key from metadata (newer messages)
+        messageKey = metadata.key;
+        messageTimestamp = metadata.messageTimestamp || Math.floor(new Date(oldestMessage.createdAt).getTime() / 1000);
+        console.log('[fetchHistory] Using key from metadata:', { messageKey, messageTimestamp });
+      } else {
+        // Reconstruct key from existing data (older messages without stored key)
+        const contactIdentifier = oldestMessage.conversation?.contact?.identifier;
+        if (!contactIdentifier) {
+          console.log('[fetchHistory] No contact identifier found, returning no_contact');
+          return res.json({
+            success: true,
+            data: { fetching: false, reason: 'no_contact' },
+          });
+        }
+
+        // Determine remoteJid - check if it's a group or individual chat
+        const isGroup = oldestMessage.conversation?.contact?.isGroup || false;
+        const remoteJid = isGroup
+          ? `${contactIdentifier}@g.us`  // Group JID format
+          : `${contactIdentifier}@s.whatsapp.net`;  // Individual JID format
+
+        messageKey = {
+          remoteJid,
+          id: oldestMessage.externalId,
+          fromMe: oldestMessage.direction === 'OUTBOUND',
+        };
+        messageTimestamp = metadata?.timestamp || Math.floor(new Date(oldestMessage.createdAt).getTime() / 1000);
+        console.log('[fetchHistory] Reconstructed key from data:', { messageKey, messageTimestamp, contactIdentifier });
       }
 
       // Publish command to WhatsApp worker
       // Pattern: whatsapp:cmd:{command}:{channelId}
       const commandPayload = {
         conversationId: conversation.id,
-        messageKey: metadata.key,
-        messageTimestamp: metadata.messageTimestamp || Math.floor(new Date(oldestMessage.createdAt).getTime() / 1000),
+        messageKey,
+        messageTimestamp,
       };
       console.log('[fetchHistory] Publishing command:', {
         channel: `whatsapp:cmd:fetch-history:${conversation.channelId}`,

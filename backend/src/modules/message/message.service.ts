@@ -777,13 +777,22 @@ export class MessageService {
   }
 
   /**
-   * Get the oldest message in a conversation
+   * Get the oldest message in a conversation with data needed to reconstruct WhatsApp key
    * Used as anchor for on-demand history fetch
    */
   async getOldestMessage(conversationId: string) {
     return await prisma.message.findFirst({
       where: { conversationId },
       orderBy: { createdAt: 'asc' },
+      include: {
+        conversation: {
+          include: {
+            contact: {
+              select: { identifier: true, isGroup: true },
+            },
+          },
+        },
+      },
     });
   }
 }
