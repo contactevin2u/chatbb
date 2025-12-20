@@ -279,31 +279,64 @@ function setupEventHandlers() {
   // On-demand history sync - process immediately (user-requested, not queued)
   // This is triggered when user opens a conversation and requests older messages
   sessionManager.on('history:on-demand', async (channelId, data) => {
-    const { messages, conversationId } = data;
+    const { messages, conversationId, isLatest } = data;
+    const messageArray = (messages as any[]) || [];
+
     logger.info(
-      { channelId, conversationId, messagesCount: Array.isArray(messages) ? messages.length : 0 },
+      { channelId, conversationId, messagesCount: messageArray.length, isLatest },
       'Processing on-demand history sync'
     );
 
     let processedCount = 0;
-    for (const msg of (messages as any[]) || []) {
+    let oldestMessage: any = null;
+
+    for (const msg of messageArray) {
       try {
         await processHistoricalMessage(channelId, msg, conversationId);
         processedCount++;
+
+        // Track oldest message for pagination
+        if (!oldestMessage || (msg.messageTimestamp && msg.messageTimestamp < oldestMessage.messageTimestamp)) {
+          oldestMessage = msg;
+        }
       } catch (error) {
         logger.error({ channelId, msgId: msg.key?.id, error: (error as Error).message }, 'Failed to process on-demand message');
       }
     }
 
-    // Notify frontend via WebSocket that history has been loaded
+    // Notify frontend via WebSocket that history batch has been loaded
     if (conversationId) {
       await redisClient.publish('ws:event', JSON.stringify({
         event: 'history:loaded',
-        data: { channelId, conversationId, messageCount: processedCount },
+        data: { channelId, conversationId, messageCount: processedCount, isLatest },
       }));
     }
 
-    logger.info({ channelId, conversationId, processedCount }, 'On-demand history sync complete');
+    // If not complete and we have messages, continue fetching older history
+    if (!isLatest && oldestMessage?.key && messageArray.length > 0) {
+      logger.info(
+        { channelId, conversationId, oldestMsgId: oldestMessage.key.id },
+        'More history available, fetching next batch...'
+      );
+
+      // Small delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Fetch next batch using oldest message as anchor
+      try {
+        await sessionManager.fetchMessageHistory(
+          channelId,
+          conversationId || '',
+          oldestMessage.key,
+          Number(oldestMessage.messageTimestamp) || Math.floor(Date.now() / 1000),
+          50
+        );
+      } catch (error) {
+        logger.error({ channelId, conversationId, error: (error as Error).message }, 'Failed to fetch next history batch');
+      }
+    } else {
+      logger.info({ channelId, conversationId, processedCount, isLatest }, 'On-demand history sync complete');
+    }
   });
 
   // Contact events - process directly (no queue needed, fast operation)

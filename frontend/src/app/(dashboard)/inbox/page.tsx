@@ -344,28 +344,24 @@ export default function InboxPage() {
   // Track if we've attempted to fetch history for current conversation
   const [historyFetchAttempted, setHistoryFetchAttempted] = useState<string | null>(null);
 
-  // Auto-fetch history when conversation is opened with few messages
+  // Auto-fetch history when conversation is opened
   useEffect(() => {
-    const messages = messagesData?.messages || [];
     if (
       selectedConversationId &&
-      messages.length > 0 &&
-      messages.length < 20 &&
       historyFetchAttempted !== selectedConversationId
     ) {
       // Mark as attempted to prevent repeated fetches
       setHistoryFetchAttempted(selectedConversationId);
 
+      console.log('[HistoryFetch] Triggering fetch for:', selectedConversationId);
       // Trigger on-demand history fetch
       fetchHistory(selectedConversationId).then((response) => {
-        if (response.fetching) {
-          console.log('Fetching older history for conversation:', selectedConversationId);
-        }
+        console.log('[HistoryFetch] Response:', response);
       }).catch((error) => {
         console.error('Failed to fetch history:', error);
       });
     }
-  }, [selectedConversationId, messagesData?.messages?.length, historyFetchAttempted]);
+  }, [selectedConversationId, historyFetchAttempted]);
 
   // Reset history fetch tracking when conversation changes
   useEffect(() => {
@@ -1308,9 +1304,9 @@ export default function InboxPage() {
     };
 
     // Handle history loaded event - refresh messages when on-demand sync completes
-    const handleHistoryLoaded = (data: { conversationId: string; messageCount: number }) => {
+    const handleHistoryLoaded = (data: { conversationId: string; messageCount: number; isLatest?: boolean }) => {
       if (data.conversationId === selectedConversationId && data.messageCount > 0) {
-        console.log(`History loaded: ${data.messageCount} messages for conversation ${data.conversationId}`);
+        console.log(`[HistoryFetch] Loaded ${data.messageCount} messages (complete: ${data.isLatest ?? 'unknown'})`);
         queryClient.invalidateQueries({ queryKey: ['messages', data.conversationId] });
       }
     };

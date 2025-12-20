@@ -58,7 +58,7 @@ interface SessionEvents {
   // Historical message sync event (macOS Desktop + syncFullHistory: true)
   'history:sync': (channelId: string, data: { chats: any[]; contacts: any[]; messages: any; syncType: any }) => void;
   // On-demand history sync event (user-triggered via fetchMessageHistory)
-  'history:on-demand': (channelId: string, data: { messages: any; conversationId?: string }) => void;
+  'history:on-demand': (channelId: string, data: { messages: any; conversationId?: string; isLatest?: boolean }) => void;
   // Contact events
   'contacts:upsert': (channelId: string, contacts: any[]) => void;
   'contacts:update': (channelId: string, contacts: any[]) => void;
@@ -613,12 +613,13 @@ export class SessionManager extends EventEmitter {
         const conversationId = pendingRequest?.conversationId;
 
         this.logger.info(
-          { channelId, conversationId, messagesCount: Array.isArray(messages) ? messages.length : 0 },
+          { channelId, conversationId, messagesCount: Array.isArray(messages) ? messages.length : 0, isLatest },
           'ON_DEMAND history sync received'
         );
 
         // Emit separate event for on-demand processing (immediate, not queued)
-        this.emit('history:on-demand', channelId, { messages, conversationId });
+        // Include isLatest so worker can continue fetching if more history available
+        this.emit('history:on-demand', channelId, { messages, conversationId, isLatest });
 
         // Clear pending request
         if (pendingRequest) {
