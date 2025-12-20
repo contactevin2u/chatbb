@@ -296,10 +296,13 @@ async function processMessage(job: Job) {
     }
 
     // Build message metadata
+    // Store key and messageTimestamp for on-demand history fetch (fetchMessageHistory)
     const messageMetadata: Record<string, any> = {
       timestamp: Number(waMessage.messageTimestamp) || Date.now(),
       pushName: waMessage.pushName || null,
       fromMe: isFromMe,
+      key: waMessage.key, // Required for fetchMessageHistory anchor
+      messageTimestamp: Number(waMessage.messageTimestamp) || Math.floor(Date.now() / 1000),
     };
 
     // For group messages, store sender info (participant)
