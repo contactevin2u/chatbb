@@ -44,6 +44,8 @@ import {
   Trash2,
   PanelLeftClose,
   PanelLeft,
+  PanelRightClose,
+  PanelRight,
   ShoppingBag,
   Package,
   Eye,
@@ -270,7 +272,7 @@ export default function InboxPage() {
   const searchParams = useSearchParams();
   const { socket, joinConversation, leaveConversation, startTyping, stopTyping, broadcastPendingMessage } = useWebSocket();
   const { user } = useAuthStore();
-  const { conversationListCollapsed, toggleConversationList } = useUIStore();
+  const { conversationListCollapsed, toggleConversationList, contactPanelOpen, setContactPanelOpen } = useUIStore();
 
   // Get conversation ID from URL params
   const urlConversationId = searchParams.get('conversation');
@@ -278,7 +280,7 @@ export default function InboxPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [messageText, setMessageText] = useState('');
-  const [showContactPanel, setShowContactPanel] = useState(true);
+  // Contact panel state from store (persisted)
   const [contactPanelTab, setContactPanelTab] = useState<string>('info');
   const [typingUsers, setTypingUsers] = useState<Map<string, string>>(new Map());
   const [editContactOpen, setEditContactOpen] = useState(false);
@@ -971,8 +973,8 @@ export default function InboxPage() {
         description: 'Clear selection / Close panel',
         category: 'actions',
         action: () => {
-          if (showContactPanel) {
-            setShowContactPanel(false);
+          if (contactPanelOpen) {
+            setContactPanelOpen(false);
           } else if (selectedConversationId) {
             setSelectedConversationId(null);
           }
@@ -986,7 +988,7 @@ export default function InboxPage() {
     closeConversationMutation,
     pinConversationMutation,
     unpinConversationMutation,
-    showContactPanel,
+    contactPanelOpen,
     handleSelectConversation,
   ]);
 
@@ -1541,7 +1543,7 @@ export default function InboxPage() {
                 </Button>
                 {/* Toggle conversation list - hidden on mobile */}
                 <Button
-                  variant="ghost"
+                  variant={conversationListCollapsed ? "ghost" : "secondary"}
                   size="icon"
                   onClick={toggleConversationList}
                   className="flex-shrink-0 hidden md:flex h-9 w-9"
@@ -1621,13 +1623,17 @@ export default function InboxPage() {
                   {incognitoMode ? <EyeOff className="h-4 w-4 sm:h-5 sm:w-5" /> : <Eye className="h-4 w-4 sm:h-5 sm:w-5" />}
                 </Button>
                 <Button
-                  variant="ghost"
+                  variant={contactPanelOpen ? "secondary" : "ghost"}
                   size="icon"
-                  onClick={() => setShowContactPanel(!showContactPanel)}
-                  title="Contact Info"
+                  onClick={() => setContactPanelOpen(!contactPanelOpen)}
+                  title={contactPanelOpen ? "Hide contact info" : "Show contact info"}
                   className="h-8 w-8 sm:h-9 sm:w-9"
                 >
-                  <User className="h-4 w-4 sm:h-5 sm:w-5" />
+                  {contactPanelOpen ? (
+                    <PanelRightClose className="h-4 w-4 sm:h-5 sm:w-5" />
+                  ) : (
+                    <PanelRight className="h-4 w-4 sm:h-5 sm:w-5" />
+                  )}
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -2407,7 +2413,7 @@ export default function InboxPage() {
       </div>
 
       {/* Contact Info Panel */}
-      {showContactPanel && selectedConversation && (
+      {contactPanelOpen && selectedConversation && (
         <div className={cn(
           'border-l flex flex-col transition-all duration-200 flex-shrink-0',
           // Mobile: full width overlay, tablet/desktop: sidebar
@@ -2422,7 +2428,7 @@ export default function InboxPage() {
                 ? 'Tags'
                 : isGroupContact(selectedConversation.contact) ? 'Group Info' : 'Contact'}
             </h3>
-            <Button variant="ghost" size="icon" onClick={() => setShowContactPanel(false)} className="h-8 w-8 sm:h-9 sm:w-9">
+            <Button variant="ghost" size="icon" onClick={() => setContactPanelOpen(false)} className="h-8 w-8 sm:h-9 sm:w-9">
               <X className="h-4 w-4 sm:h-5 sm:w-5" />
             </Button>
           </div>
