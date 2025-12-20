@@ -295,6 +295,27 @@
   color: inherit;
 }
 
+/* Better selection visibility for message bubbles */
+.message-bubble-outbound ::selection,
+.message-bubble-outbound::selection,
+.bubble-outbound ::selection {
+  background: rgba(255, 255, 255, 0.5) !important;
+  color: #1a1a2e !important;
+}
+
+.message-bubble-inbound ::selection,
+.message-bubble-inbound::selection,
+.bubble-inbound ::selection {
+  background: rgba(168, 85, 247, 0.4) !important;
+  color: inherit;
+}
+
+/* Ensure text is selectable in message bubbles */
+.select-text {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 /* Focus ring with pink color */
 .focus-ring-pink:focus {
   @apply outline-none ring-2 ring-pink-400 ring-offset-2 ring-offset-background;

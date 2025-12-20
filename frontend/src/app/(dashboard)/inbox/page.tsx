@@ -55,6 +55,8 @@ import {
   RefreshCw,
   ArrowLeft,
   ChevronLeft,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -291,6 +293,7 @@ export default function InboxPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null); // messageId to show picker for
+  const [activeMessageMenu, setActiveMessageMenu] = useState<string | null>(null); // messageId for mobile tap-to-show actions
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
@@ -298,6 +301,7 @@ export default function InboxPage() {
   const [newNoteContent, setNewNoteContent] = useState('');
   const [slashCommandOpen, setSlashCommandOpen] = useState(false);
   const [slashSearchTerm, setSlashSearchTerm] = useState('');
+  const [messageSearchIndex, setMessageSearchIndex] = useState(0);
   const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
   const [deletingMessage, setDeletingMessage] = useState<{ id: string; forEveryone: boolean } | null>(null);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
@@ -315,7 +319,8 @@ export default function InboxPage() {
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const previousConversationRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const messageInputRef = useRef<HTMLInputElement>(null);
+  const messageInputRef = useRef<HTMLTextAreaElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch all tags for the organization
   const { data: allTags = [] } = useQuery({
@@ -908,6 +913,7 @@ export default function InboxPage() {
     const currentIndex = conversations.findIndex((c) => c.id === selectedConversationId);
 
     return [
+      // Navigation
       {
         key: 'j',
         description: 'Next conversation',
@@ -935,6 +941,33 @@ export default function InboxPage() {
         },
       },
       {
+        key: 'n',
+        description: 'Next unread conversation',
+        category: 'navigation',
+        action: () => {
+          const unreadConversations = conversations.filter((c) => c.unreadCount > 0);
+          if (unreadConversations.length === 0) return;
+          // Find first unread after current, or wrap to first unread
+          const currentUnreadIndex = unreadConversations.findIndex((c) => c.id === selectedConversationId);
+          const nextUnread = unreadConversations[currentUnreadIndex + 1] || unreadConversations[0];
+          if (nextUnread) {
+            handleSelectConversation(nextUnread.id);
+          }
+        },
+      },
+      {
+        key: '/',
+        description: 'Focus search',
+        category: 'navigation',
+        action: () => {
+          if (searchInputRef.current) {
+            searchInputRef.current.focus();
+            searchInputRef.current.select();
+          }
+        },
+      },
+      // Actions
+      {
         key: 'r',
         description: 'Reply (focus message input)',
         category: 'actions',
@@ -955,6 +988,16 @@ export default function InboxPage() {
         },
       },
       {
+        key: 'o',
+        description: 'Reopen conversation',
+        category: 'actions',
+        action: () => {
+          if (selectedConversation && selectedConversation.status === 'CLOSED') {
+            reopenConversationMutation.mutate(selectedConversation.id);
+          }
+        },
+      },
+      {
         key: 'p',
         description: 'Pin/Unpin conversation',
         category: 'actions',
@@ -969,13 +1012,67 @@ export default function InboxPage() {
         },
       },
       {
+        key: 'i',
+        description: 'Toggle contact info panel',
+        category: 'navigation',
+        action: () => {
+          if (selectedConversationId) {
+            setContactPanelOpen(!contactPanelOpen);
+          }
+        },
+      },
+      {
+        key: '[',
+        description: 'Toggle conversation list',
+        category: 'navigation',
+        action: () => {
+          toggleConversationList();
+        },
+      },
+      {
+        key: 'f',
+        ctrl: true,
+        description: 'Search messages',
+        category: 'navigation',
+        action: () => {
+          if (searchInputRef.current) {
+            searchInputRef.current.focus();
+            searchInputRef.current.select();
+          }
+        },
+      },
+      {
         key: 'Escape',
         description: 'Clear selection / Close panel',
         category: 'actions',
         action: () => {
+          // Clear search first if active
+          if (searchQuery) {
+            setSearchQuery('');
+            return;
+          }
+          // Close emoji picker first
+          if (showEmojiPicker) {
+            setShowEmojiPicker(null);
+            return;
+          }
+          // Close active message menu
+          if (activeMessageMenu) {
+            setActiveMessageMenu(null);
+            return;
+          }
+          // Close reply-to
+          if (replyToMessage) {
+            setReplyToMessage(null);
+            return;
+          }
+          // Close contact panel
           if (contactPanelOpen) {
             setContactPanelOpen(false);
-          } else if (selectedConversationId) {
+            return;
+          }
+          // Deselect conversation
+          if (selectedConversationId) {
             setSelectedConversationId(null);
           }
         },
@@ -986,10 +1083,15 @@ export default function InboxPage() {
     selectedConversationId,
     selectedConversation,
     closeConversationMutation,
+    reopenConversationMutation,
     pinConversationMutation,
     unpinConversationMutation,
     contactPanelOpen,
+    showEmojiPicker,
+    activeMessageMenu,
+    replyToMessage,
     handleSelectConversation,
+    toggleConversationList,
   ]);
 
   useKeyboardShortcuts({ shortcuts: inboxShortcuts });
@@ -1182,7 +1284,7 @@ export default function InboxPage() {
   }, [messageText, selectedConversationId]);
 
   // Handle message input change with slash command detection
-  const handleMessageInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMessageInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const value = e.target.value;
     setMessageText(value);
     handleTyping();
@@ -1214,6 +1316,60 @@ export default function InboxPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messagesData?.messages]);
+
+  // In-conversation message search - uses existing searchQuery when conversation is selected
+  const messageSearchResults = useMemo(() => {
+    if (!selectedConversationId || !searchQuery.trim() || !messagesData?.messages) return [];
+    const query = searchQuery.toLowerCase();
+    return messagesData.messages
+      .filter((msg) => {
+        const text = msg.content.text?.toLowerCase() || '';
+        const caption = msg.content.caption?.toLowerCase() || '';
+        return text.includes(query) || caption.includes(query);
+      })
+      .map((msg) => msg.id);
+  }, [selectedConversationId, searchQuery, messagesData?.messages]);
+
+  // Navigate to search result
+  const scrollToSearchResult = useCallback((index: number) => {
+    if (messageSearchResults.length === 0) return;
+    const messageId = messageSearchResults[index];
+    const element = document.getElementById(`message-${messageId}`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      element.classList.add('ring-2', 'ring-primary', 'ring-offset-2');
+      setTimeout(() => {
+        element.classList.remove('ring-2', 'ring-primary', 'ring-offset-2');
+      }, 2000);
+    }
+  }, [messageSearchResults]);
+
+  // Navigate to next/previous search result
+  const nextSearchResult = useCallback(() => {
+    if (messageSearchResults.length === 0) return;
+    const newIndex = (messageSearchIndex + 1) % messageSearchResults.length;
+    setMessageSearchIndex(newIndex);
+    scrollToSearchResult(newIndex);
+  }, [messageSearchResults.length, messageSearchIndex, scrollToSearchResult]);
+
+  const prevSearchResult = useCallback(() => {
+    if (messageSearchResults.length === 0) return;
+    const newIndex = messageSearchIndex === 0 ? messageSearchResults.length - 1 : messageSearchIndex - 1;
+    setMessageSearchIndex(newIndex);
+    scrollToSearchResult(newIndex);
+  }, [messageSearchResults.length, messageSearchIndex, scrollToSearchResult]);
+
+  // Reset search index when query or conversation changes
+  useEffect(() => {
+    setMessageSearchIndex(0);
+  }, [searchQuery, selectedConversationId]);
+
+  // Auto-scroll to first result when search produces results
+  useEffect(() => {
+    if (messageSearchResults.length > 0 && searchQuery.trim()) {
+      scrollToSearchResult(0);
+    }
+  }, [messageSearchResults.length, searchQuery]); // Only when results change, not on every navigation
 
   // Socket event handlers
   useEffect(() => {
@@ -1361,11 +1517,56 @@ export default function InboxPage() {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search..."
-              className="pl-9 h-9 sm:h-10 text-sm"
+              ref={searchInputRef}
+              placeholder={selectedConversationId ? "Search messages... (Ctrl+F)" : "Search conversations..."}
+              className={cn(
+                "pl-9 h-9 sm:h-10 text-sm",
+                messageSearchResults.length > 0 ? "pr-24" : "pr-8"
+              )}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                // Navigate search results with arrow keys
+                if (messageSearchResults.length > 0) {
+                  if (e.key === 'ArrowDown' || e.key === 'Enter') {
+                    e.preventDefault();
+                    nextSearchResult();
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    prevSearchResult();
+                  }
+                }
+              }}
             />
+            {/* Message search navigation - show when there are results */}
+            {messageSearchResults.length > 0 && selectedConversationId ? (
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                  {messageSearchIndex + 1}/{messageSearchResults.length}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={prevSearchResult}
+                  title="Previous result (↑)"
+                >
+                  <ChevronUp className="h-3 w-3" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={nextSearchResult}
+                  title="Next result (↓)"
+                >
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </div>
+            ) : (
+              /* Keyboard shortcut hint */
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground/60 hidden md:block font-mono">/</span>
+            )}
           </div>
           {/* Tag filter chips */}
           <div className="flex gap-1 flex-wrap">
@@ -1428,11 +1629,44 @@ export default function InboxPage() {
                 <div
                   key={conversation.id}
                   className={cn(
-                    'p-3 sm:p-4 cursor-pointer hover:bg-muted/50 transition-colors active:bg-muted',
+                    'group/conv relative p-3 sm:p-4 cursor-pointer hover:bg-muted/50 transition-colors active:bg-muted',
                     selectedConversationId === conversation.id && 'bg-muted'
                   )}
                   onClick={() => handleSelectConversation(conversation.id)}
                 >
+                  {/* Quick actions - hover only on desktop */}
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 hidden md:flex gap-1 opacity-0 group-hover/conv:opacity-100 transition-opacity z-10">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 bg-background/80 hover:bg-background shadow-sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (conversation.isPinned) {
+                          unpinConversationMutation.mutate(conversation.id);
+                        } else {
+                          pinConversationMutation.mutate(conversation.id);
+                        }
+                      }}
+                      title={conversation.isPinned ? 'Unpin' : 'Pin'}
+                    >
+                      {conversation.isPinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+                    </Button>
+                    {conversation.status !== 'CLOSED' && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 bg-background/80 hover:bg-background shadow-sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          closeConversationMutation.mutate(conversation.id);
+                        }}
+                        title="Close conversation"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
                   <div className="flex items-start gap-2.5 sm:gap-3 group">
                     <div className="relative flex-shrink-0">
                       <Avatar className="h-10 w-10 sm:h-10 sm:w-10">
@@ -1449,7 +1683,7 @@ export default function InboxPage() {
                         </AvatarFallback>
                       </Avatar>
                       {conversation.unreadCount > 0 && (
-                        <span className="absolute -top-1 -right-1 h-4 w-4 sm:h-5 sm:w-5 rounded-full bg-primary text-primary-foreground text-[10px] sm:text-xs flex items-center justify-center font-medium">
+                        <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-primary text-primary-foreground text-[10px] sm:text-xs flex items-center justify-center font-medium">
                           {conversation.unreadCount > 9 ? '9+' : conversation.unreadCount}
                         </span>
                       )}
@@ -1518,6 +1752,12 @@ export default function InboxPage() {
             </div>
           )}
         </ScrollArea>
+        {/* Keyboard shortcuts hint - desktop only */}
+        <div className="hidden md:flex items-center justify-center gap-4 px-3 py-2 border-t bg-muted/30 text-[10px] text-muted-foreground">
+          <span><kbd className="px-1 py-0.5 bg-muted rounded font-mono">J</kbd>/<kbd className="px-1 py-0.5 bg-muted rounded font-mono">K</kbd> navigate</span>
+          <span><kbd className="px-1 py-0.5 bg-muted rounded font-mono">N</kbd> next unread</span>
+          <span><kbd className="px-1 py-0.5 bg-muted rounded font-mono">R</kbd> reply</span>
+        </div>
       </div>
 
       {/* Chat Panel */}
@@ -1547,7 +1787,7 @@ export default function InboxPage() {
                   size="icon"
                   onClick={toggleConversationList}
                   className="flex-shrink-0 hidden md:flex h-9 w-9"
-                  title={conversationListCollapsed ? 'Show conversations' : 'Hide conversations'}
+                  title={conversationListCollapsed ? 'Show conversations ([)' : 'Hide conversations ([)'}
                 >
                   {conversationListCollapsed ? (
                     <PanelLeft className="h-5 w-5" />
@@ -1626,7 +1866,7 @@ export default function InboxPage() {
                   variant={contactPanelOpen ? "secondary" : "ghost"}
                   size="icon"
                   onClick={() => setContactPanelOpen(!contactPanelOpen)}
-                  title={contactPanelOpen ? "Hide contact info" : "Show contact info"}
+                  title={contactPanelOpen ? "Hide contact info (I)" : "Show contact info (I)"}
                   className="h-8 w-8 sm:h-9 sm:w-9"
                 >
                   {contactPanelOpen ? (
@@ -1647,14 +1887,16 @@ export default function InboxPage() {
                         onClick={() => unpinConversationMutation.mutate(selectedConversation.id)}
                       >
                         <PinOff className="h-4 w-4 mr-2" />
-                        Unpin conversation
+                        <span className="flex-1">Unpin conversation</span>
+                        <span className="ml-4 text-xs text-muted-foreground font-mono">P</span>
                       </DropdownMenuItem>
                     ) : (
                       <DropdownMenuItem
                         onClick={() => pinConversationMutation.mutate(selectedConversation.id)}
                       >
                         <Pin className="h-4 w-4 mr-2" />
-                        Pin conversation
+                        <span className="flex-1">Pin conversation</span>
+                        <span className="ml-4 text-xs text-muted-foreground font-mono">P</span>
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuSeparator />
@@ -1662,13 +1904,17 @@ export default function InboxPage() {
                       <DropdownMenuItem
                         onClick={() => reopenConversationMutation.mutate(selectedConversation.id)}
                       >
-                        Reopen conversation
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        <span className="flex-1">Reopen conversation</span>
+                        <span className="ml-4 text-xs text-muted-foreground font-mono">O</span>
                       </DropdownMenuItem>
                     ) : (
                       <DropdownMenuItem
                         onClick={() => closeConversationMutation.mutate(selectedConversation.id)}
                       >
-                        Close conversation
+                        <Check className="h-4 w-4 mr-2" />
+                        <span className="flex-1">Close conversation</span>
+                        <span className="ml-4 text-xs text-muted-foreground font-mono">E</span>
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuSeparator />
@@ -1732,8 +1978,9 @@ export default function InboxPage() {
                           </div>
                         )}
                         <div
+                          id={`message-${message.id}`}
                           className={cn(
-                            'flex gap-1.5 sm:gap-2 items-end',
+                            'flex gap-1.5 sm:gap-2 items-end transition-all duration-300',
                             message.direction === 'OUTBOUND' ? 'justify-end' : 'justify-start'
                           )}
                         >
@@ -1752,17 +1999,30 @@ export default function InboxPage() {
                               </AvatarFallback>
                             </Avatar>
                           )}
-                          <div className="group relative max-w-[85%] sm:max-w-[75%] md:max-w-[70%]">
-                            {/* Message actions (hover) */}
+                          <div
+                            className="group relative max-w-[85%] sm:max-w-[75%] md:max-w-[70%]"
+                            onClick={() => {
+                              // Toggle message menu on tap for mobile
+                              if (window.matchMedia('(max-width: 768px)').matches) {
+                                setActiveMessageMenu(activeMessageMenu === message.id ? null : message.id);
+                              }
+                            }}
+                          >
+                            {/* Message actions (hover on desktop, tap on mobile) */}
                             <div className={cn(
-                              'absolute top-0 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 z-10',
-                              message.direction === 'OUTBOUND' ? 'left-0 -translate-x-full pr-2' : 'right-0 translate-x-full pl-2'
+                              'absolute top-0 transition-opacity flex gap-1 z-10',
+                              message.direction === 'OUTBOUND' ? 'left-0 -translate-x-full pr-2' : 'right-0 translate-x-full pl-2',
+                              // Show on hover (desktop) OR when tapped (mobile)
+                              activeMessageMenu === message.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                             )}>
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-7 w-7 bg-background shadow-sm"
-                                onClick={() => setReplyToMessage(message)}
+                                className="h-8 w-8 bg-background shadow-sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setReplyToMessage(message);
+                                }}
                                 title="Reply"
                               >
                                 <Reply className="h-4 w-4" />
@@ -1770,8 +2030,11 @@ export default function InboxPage() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-7 w-7 bg-background shadow-sm"
-                                onClick={() => setShowEmojiPicker(showEmojiPicker === message.id ? null : message.id)}
+                                className="h-8 w-8 bg-background shadow-sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setShowEmojiPicker(showEmojiPicker === message.id ? null : message.id);
+                                }}
                                 title="React"
                               >
                                 <Smile className="h-4 w-4" />
@@ -1782,8 +2045,9 @@ export default function InboxPage() {
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-7 w-7 bg-background shadow-sm"
+                                    className="h-8 w-8 bg-background shadow-sm"
                                     title="More actions"
+                                    onClick={(e) => e.stopPropagation()}
                                   >
                                     <MoreVertical className="h-4 w-4" />
                                   </Button>
@@ -1848,10 +2112,10 @@ export default function InboxPage() {
 
                             <div
                               className={cn(
-                                'rounded-lg px-3 py-2',
+                                'rounded-lg px-3 py-2 select-text',
                                 message.direction === 'OUTBOUND'
-                                  ? 'bg-primary text-primary-foreground'
-                                  : 'bg-muted'
+                                  ? 'bg-primary text-primary-foreground message-bubble-outbound'
+                                  : 'bg-muted message-bubble-inbound'
                               )}
                             >
                               {/* Sender name */}
@@ -1861,7 +2125,7 @@ export default function InboxPage() {
                                 </p>
                               )}
                               {message.direction === 'INBOUND' && (
-                                <p className="text-[11px] font-medium text-foreground/70 mb-1">
+                                <p className="text-[11px] font-medium text-foreground/70 mb-1 truncate max-w-[200px]">
                                   {/* For group messages, show the actual sender from metadata */}
                                   {isGroupContact(selectedConversation.contact) && message.metadata?.groupSender
                                     ? message.metadata.groupSender.displayName || message.metadata.groupSender.pushName || `+${message.metadata.groupSender.identifier}`
@@ -1877,7 +2141,7 @@ export default function InboxPage() {
                                     ? 'border-primary-foreground/50 text-primary-foreground/70'
                                     : 'border-muted-foreground/50 text-muted-foreground'
                                 )}>
-                                  <p className="font-medium truncate">
+                                  <p className="font-medium truncate max-w-[150px]">
                                     {message.content.quotedMessage.participant?.split('@')[0] || 'Unknown'}
                                   </p>
                                   <p className="truncate">{message.content.quotedMessage.text || 'Message'}</p>
@@ -2275,7 +2539,7 @@ export default function InboxPage() {
                   </Button>
                 </div>
               ) : (
-                <div className="flex items-center gap-1 sm:gap-2">
+                <div className="flex items-end gap-1 sm:gap-2">
                   <Button
                     variant="ghost"
                     size="icon"
@@ -2297,28 +2561,39 @@ export default function InboxPage() {
                         setSlashSearchTerm('');
                       }}
                     />
-                    <Input
+                    <Textarea
                       ref={messageInputRef}
-                      placeholder={selectedMedia ? "Add caption..." : "Type a message..."}
+                      placeholder={selectedMedia ? "Add caption..." : "Type a message... (Shift+Enter for new line)"}
                       value={messageText}
-                      onChange={handleMessageInputChange}
+                      onChange={(e) => {
+                        handleMessageInputChange(e);
+                        // Auto-resize textarea
+                        const textarea = e.target;
+                        textarea.style.height = 'auto';
+                        textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
+                      }}
                       onPaste={handlePaste}
                       onKeyDown={(e) => {
                         // Let slash command popup handle Enter/Tab
                         if (slashCommandOpen && (e.key === 'Enter' || e.key === 'Tab' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
                           return;
                         }
+                        // Send on Enter, new line on Shift+Enter
                         if (e.key === 'Enter' && !e.shiftKey) {
                           e.preventDefault();
                           handleSendMessage();
+                          // Reset height after sending
+                          const textarea = e.target as HTMLTextAreaElement;
+                          textarea.style.height = 'auto';
                         }
                       }}
                       disabled={selectedConversation.status === 'CLOSED'}
-                      className="h-9 sm:h-10 text-sm"
+                      className="min-h-[36px] sm:min-h-[40px] max-h-[120px] py-2 text-sm resize-none overflow-y-auto"
+                      rows={1}
                     />
                   </div>
                   {/* Emoji button - hidden on small mobile */}
-                  <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-10 sm:w-10 hidden xs:flex flex-shrink-0">
+                  <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-10 sm:w-10 hidden sm:flex flex-shrink-0">
                     <Smile className="h-4 w-4 sm:h-5 sm:w-5" />
                   </Button>
                   {/* Schedule button - only show when there's content, hidden on mobile */}
@@ -2416,9 +2691,9 @@ export default function InboxPage() {
       {contactPanelOpen && selectedConversation && (
         <div className={cn(
           'border-l flex flex-col transition-all duration-200 flex-shrink-0',
-          // Mobile: full width overlay, tablet/desktop: sidebar
+          // Mobile: full width overlay, tablet/desktop: sidebar (consistent width)
           'fixed inset-0 z-50 bg-background md:static md:z-auto',
-          contactPanelTab === 'orderops' ? 'md:w-80 lg:w-96' : 'md:w-72 lg:w-80'
+          'md:w-80 lg:w-96'
         )}>
           <div className="h-14 sm:h-16 border-b flex items-center justify-between px-3 sm:px-4">
             <h3 className="font-semibold text-sm sm:text-base">
@@ -2462,7 +2737,7 @@ export default function InboxPage() {
             {/* Info Tab */}
             <TabsContent value="info" className="flex-1 m-0 overflow-hidden">
               <ScrollArea className="h-[calc(100vh-180px)] md:h-[calc(100vh-280px)]">
-                <div className="p-4 space-y-4 overflow-hidden">
+                <div className="p-4 space-y-4">
                   {/* Contact Avatar & Name */}
                   <div className="text-center pb-4 border-b">
                     <div className="relative inline-block">
@@ -2572,7 +2847,7 @@ export default function InboxPage() {
                         <Users className="h-3 w-3" />
                         Participants ({groupParticipants.participantCount})
                       </h5>
-                      <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                      <div className="space-y-1.5 max-h-32 sm:max-h-40 overflow-y-auto">
                         {groupParticipants.participants.slice(0, 20).map((participant) => (
                           <div key={participant.id} className="flex items-center gap-2 text-xs min-w-0">
                             <Avatar className="h-5 w-5">
