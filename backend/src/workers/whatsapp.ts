@@ -1080,11 +1080,12 @@ async function main() {
       }
     };
 
-    process.on('SIGTERM', () => shutdown('SIGTERM'));
-    process.on('SIGINT', () => shutdown('SIGINT'));
+    // Use 'once' to prevent handler accumulation on hot reload
+    process.once('SIGTERM', () => shutdown('SIGTERM'));
+    process.once('SIGINT', () => shutdown('SIGINT'));
 
-    // Handle uncaught errors
-    process.on('uncaughtException', (error) => {
+    // Handle uncaught errors - use 'once' for exceptions
+    process.once('uncaughtException', (error) => {
       logger.error({ error }, 'Uncaught exception');
       shutdown('uncaughtException');
     });

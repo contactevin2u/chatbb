@@ -223,8 +223,16 @@ export class WhatsAppService {
    * Send a command to WhatsApp Worker via Redis and wait for response
    * Uses a shared subscriber connection instead of creating new ones
    */
+  private static readonly MAX_PENDING_REQUESTS = 1000;
+
   private async sendCommand<T>(command: string, channelId: string, data: any, timeoutMs = 30000): Promise<T> {
     const requestId = uuidv4();
+
+    // Prevent unbounded growth - reject if too many pending requests
+    if (this.pendingRequests.size >= WhatsAppService.MAX_PENDING_REQUESTS) {
+      console.warn(`[WhatsAppService] Too many pending requests (${this.pendingRequests.size}), rejecting new request`);
+      throw new Error('Service overloaded - too many pending requests');
+    }
 
     return new Promise(async (resolve, reject) => {
       // Set timeout
@@ -791,6 +799,45 @@ export class WhatsAppService {
       channelId,
       { enabled }
     );
+  }
+
+  /**
+   * Cleanup resources to prevent memory leaks
+   * Call this on graceful shutdown
+   */
+  async cleanup(): Promise<void> {
+    console.log('[WhatsAppService] Cleaning up resources...');
+
+    // Clear all pending requests and their timeouts
+    for (const [requestId, pending] of this.pendingRequests) {
+      clearTimeout(pending.timeout);
+      pending.reject(new Error('Service shutting down'));
+    }
+    this.pendingRequests.clear();
+
+    // Close Redis subscribers
+    if (this.redisSubscriber) {
+      try {
+        await this.redisSubscriber.punsubscribe();
+        await this.redisSubscriber.unsubscribe();
+        await this.redisSubscriber.quit();
+        this.redisSubscriber = null;
+      } catch (error) {
+        console.error('[WhatsAppService] Error closing redisSubscriber:', error);
+      }
+    }
+
+    if (this.responseSubscriber) {
+      try {
+        await this.responseSubscriber.punsubscribe();
+        await this.responseSubscriber.quit();
+        this.responseSubscriber = null;
+      } catch (error) {
+        console.error('[WhatsAppService] Error closing responseSubscriber:', error);
+      }
+    }
+
+    console.log('[WhatsAppService] Cleanup complete');
   }
 }
 

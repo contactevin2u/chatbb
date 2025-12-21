@@ -740,8 +740,9 @@ async function main() {
       }
     };
 
-    process.on('SIGTERM', () => shutdown('SIGTERM'));
-    process.on('SIGINT', () => shutdown('SIGINT'));
+    // Use 'once' to prevent handler accumulation on hot reload
+    process.once('SIGTERM', () => shutdown('SIGTERM'));
+    process.once('SIGINT', () => shutdown('SIGINT'));
 
   } catch (error) {
     logger.error({ error }, 'Failed to start Background Worker');

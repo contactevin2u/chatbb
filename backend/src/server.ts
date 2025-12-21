@@ -5,6 +5,7 @@ import { logger } from './shared/utils/logger.js';
 import { connectDatabase, disconnectDatabase } from './core/database/prisma.js';
 import { redis, disconnectRedis } from './core/cache/redis.client.js';
 import { createSocketServer } from './core/websocket/server.js';
+import { whatsappService } from './modules/whatsapp/whatsapp.service.js';
 
 async function main(): Promise<void> {
   try {
@@ -37,6 +38,9 @@ async function main(): Promise<void> {
       server.close(async () => {
         logger.info('HTTP server closed');
 
+        // Clean up WhatsApp service (Redis subscribers, pending requests)
+        await whatsappService.cleanup();
+
         await disconnectDatabase();
         await disconnectRedis();
 
@@ -51,8 +55,9 @@ async function main(): Promise<void> {
       }, 10000);
     };
 
-    process.on('SIGTERM', () => shutdown('SIGTERM'));
-    process.on('SIGINT', () => shutdown('SIGINT'));
+    // Use 'once' to prevent handler accumulation on hot reload
+    process.once('SIGTERM', () => shutdown('SIGTERM'));
+    process.once('SIGINT', () => shutdown('SIGINT'));
   } catch (error) {
     logger.error({ error }, 'Failed to start server');
     process.exit(1);

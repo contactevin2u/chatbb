@@ -91,6 +91,9 @@ interface PendingHistoryRequest {
 }
 
 export class SessionManager extends EventEmitter {
+  private static readonly MAX_PENDING_HISTORY_REQUESTS = 500;
+  private static readonly MAX_HISTORY_FETCH_CACHE = 1000;
+
   private sessions: Map<string, SessionInfo> = new Map();
   private logger = pino({ level: 'info' });
   private msgRetryCache = new NodeCache({ stdTTL: 60, checkperiod: 30 });
@@ -1390,7 +1393,22 @@ export class SessionManager extends EventEmitter {
       this.reconnectTimers.delete(channelId);
     }
 
+    // Clean up pending history requests for this channel
+    this.cleanupPendingHistoryRequests(channelId);
+
     try {
+      // CRITICAL: Remove all event listeners to prevent memory leaks
+      // Each listener holds closures with channelId, session context
+      // Baileys ev requires event names, so we remove all known event types
+      const eventsToRemove = [
+        'connection.update', 'creds.update', 'messages.upsert', 'messages.update',
+        'lid-mapping.update', 'messaging-history.set', 'groups.update',
+        'group-participants.update', 'groups.upsert', 'contacts.upsert', 'contacts.update'
+      ] as const;
+      for (const event of eventsToRemove) {
+        session.socket.ev.removeAllListeners(event);
+      }
+
       // Use end() to close connection WITHOUT invalidating the session
       // This preserves auth state so user can reconnect without QR
       session.socket.end(undefined);
@@ -1424,7 +1442,20 @@ export class SessionManager extends EventEmitter {
       this.reconnectTimers.delete(channelId);
     }
 
+    // Clean up pending history requests for this channel
+    this.cleanupPendingHistoryRequests(channelId);
+
     try {
+      // CRITICAL: Remove all event listeners to prevent memory leaks
+      const eventsToRemove = [
+        'connection.update', 'creds.update', 'messages.upsert', 'messages.update',
+        'lid-mapping.update', 'messaging-history.set', 'groups.update',
+        'group-participants.update', 'groups.upsert', 'contacts.upsert', 'contacts.update'
+      ] as const;
+      for (const event of eventsToRemove) {
+        session.socket.ev.removeAllListeners(event);
+      }
+
       // logout() invalidates the session with WhatsApp servers
       await session.socket.logout();
     } catch (error) {
@@ -1454,9 +1485,31 @@ export class SessionManager extends EventEmitter {
     }
     this.reconnectTimers.clear();
 
+    // Clean up all pending history requests (clear timeouts)
+    for (const [requestId, request] of this.pendingHistoryRequests) {
+      if (request.timeoutId) {
+        clearTimeout(request.timeoutId);
+      }
+    }
+    this.pendingHistoryRequests.clear();
+
+    // Clear message retry cache
+    this.msgRetryCache.flushAll();
+    this.msgRetryCache.close();
+
     // Close all sessions and release locks
+    const eventsToRemove = [
+      'connection.update', 'creds.update', 'messages.upsert', 'messages.update',
+      'lid-mapping.update', 'messaging-history.set', 'groups.update',
+      'group-participants.update', 'groups.upsert', 'contacts.upsert', 'contacts.update'
+    ] as const;
+
     for (const [channelId, session] of this.sessions) {
       try {
+        // CRITICAL: Remove all event listeners to prevent memory leaks
+        for (const event of eventsToRemove) {
+          session.socket.ev.removeAllListeners(event);
+        }
         session.socket.end(undefined);
       } catch (e) {
         // Ignore
@@ -1466,6 +1519,30 @@ export class SessionManager extends EventEmitter {
 
     // Release all distributed locks held by this instance
     await releaseAllLocks();
+
+    this.logger.info('Session manager shutdown complete - all resources released');
+  }
+
+  /**
+   * Clean up pending history requests for a specific channel
+   * Clears timeouts and removes entries to prevent memory leaks
+   */
+  private cleanupPendingHistoryRequests(channelId: string): void {
+    const toDelete: string[] = [];
+    for (const [requestId, request] of this.pendingHistoryRequests) {
+      if (request.channelId === channelId) {
+        if (request.timeoutId) {
+          clearTimeout(request.timeoutId);
+        }
+        toDelete.push(requestId);
+      }
+    }
+    for (const requestId of toDelete) {
+      this.pendingHistoryRequests.delete(requestId);
+    }
+    if (toDelete.length > 0) {
+      this.logger.debug({ channelId, count: toDelete.length }, 'Cleaned up pending history requests');
+    }
   }
 
   /**
@@ -1655,6 +1732,22 @@ export class SessionManager extends EventEmitter {
     this.lastHistoryFetch.set(cacheKey, now);
 
     try {
+      // Prevent unbounded growth of pending requests
+      if (this.pendingHistoryRequests.size >= SessionManager.MAX_PENDING_HISTORY_REQUESTS) {
+        this.logger.warn({ channelId, conversationId, size: this.pendingHistoryRequests.size }, 'Too many pending history requests, rejecting new request');
+        return null;
+      }
+
+      // Clean up old entries in lastHistoryFetch to prevent memory leak
+      if (this.lastHistoryFetch.size > SessionManager.MAX_HISTORY_FETCH_CACHE) {
+        const entries = [...this.lastHistoryFetch.entries()];
+        entries.sort((a, b) => a[1] - b[1]); // Sort by timestamp, oldest first
+        const toDelete = entries.slice(0, entries.length - SessionManager.MAX_HISTORY_FETCH_CACHE / 2);
+        for (const [key] of toDelete) {
+          this.lastHistoryFetch.delete(key);
+        }
+      }
+
       // Baileys fetchMessageHistory: count, key, timestamp
       const requestId = await session.socket.fetchMessageHistory(count, messageKey, messageTimestamp);
 
