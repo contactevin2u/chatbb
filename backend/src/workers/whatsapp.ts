@@ -885,10 +885,44 @@ async function main() {
       password: new URL(redisConfig.url).password || undefined,
     };
 
-    messageQueue = new Queue('message-queue', { connection });
-    historySyncQueue = new Queue('history-sync-queue', { connection });
-    broadcastQueue = new Queue('broadcast-queue', { connection });
-    logger.info('BullMQ queues initialized');
+    // Default job options to prevent Redis OOM - automatically clean up completed/failed jobs
+    const defaultJobOptions = {
+      removeOnComplete: { count: 100, age: 3600 }, // Keep last 100 or 1 hour
+      removeOnFail: { count: 50, age: 86400 }, // Keep last 50 failed or 24 hours
+    };
+
+    messageQueue = new Queue('message-queue', {
+      connection,
+      defaultJobOptions,
+    });
+    historySyncQueue = new Queue('history-sync-queue', {
+      connection,
+      defaultJobOptions,
+    });
+    broadcastQueue = new Queue('broadcast-queue', {
+      connection,
+      defaultJobOptions,
+    });
+    logger.info('BullMQ queues initialized with job retention settings');
+
+    // Clean up old completed/failed jobs on startup to reclaim Redis memory
+    try {
+      const cleanupPromises = [
+        messageQueue.clean(3600000, 1000, 'completed'), // Remove completed jobs older than 1 hour
+        messageQueue.clean(86400000, 500, 'failed'),    // Remove failed jobs older than 24 hours
+        historySyncQueue.clean(3600000, 1000, 'completed'),
+        historySyncQueue.clean(86400000, 500, 'failed'),
+        broadcastQueue.clean(3600000, 1000, 'completed'),
+        broadcastQueue.clean(86400000, 500, 'failed'),
+      ];
+      const results = await Promise.all(cleanupPromises);
+      const totalCleaned = results.flat().length;
+      if (totalCleaned > 0) {
+        logger.info({ totalCleaned }, 'Cleaned up old queue jobs on startup');
+      }
+    } catch (cleanError) {
+      logger.warn({ error: cleanError }, 'Failed to clean up old queue jobs (non-fatal)');
+    }
 
     // Broadcast worker - runs HERE because it needs sessionManager
     const broadcastWorker = new Worker('broadcast-queue', async (job: Job) => {
@@ -1014,6 +1048,27 @@ async function main() {
         logger.error({ error }, 'Failed to check/reconnect stale channels');
       }
     }, 30000)); // 30 seconds - faster detection of connection issues
+
+    // Queue cleanup - remove old jobs to prevent Redis OOM (every 5 minutes)
+    intervalIds.push(setInterval(async () => {
+      try {
+        const cleanupPromises = [
+          messageQueue.clean(3600000, 500, 'completed'),
+          messageQueue.clean(86400000, 200, 'failed'),
+          historySyncQueue.clean(3600000, 500, 'completed'),
+          historySyncQueue.clean(86400000, 200, 'failed'),
+          broadcastQueue.clean(3600000, 500, 'completed'),
+          broadcastQueue.clean(86400000, 200, 'failed'),
+        ];
+        const results = await Promise.all(cleanupPromises);
+        const totalCleaned = results.flat().length;
+        if (totalCleaned > 0) {
+          logger.info({ totalCleaned }, 'Periodic queue cleanup completed');
+        }
+      } catch (error) {
+        logger.warn({ error }, 'Periodic queue cleanup failed');
+      }
+    }, 300000)); // Every 5 minutes
 
     // Sync timeout check - mark sync complete if stale (every 2 minutes)
     intervalIds.push(setInterval(async () => {
