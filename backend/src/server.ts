@@ -4,7 +4,7 @@ import { env } from './config/env.js';
 import { logger } from './shared/utils/logger.js';
 import { connectDatabase, disconnectDatabase } from './core/database/prisma.js';
 import { redis, disconnectRedis } from './core/cache/redis.client.js';
-import { createSocketServer } from './core/websocket/server.js';
+import { createSocketServer, cleanupSocketServer } from './core/websocket/server.js';
 import { whatsappService } from './modules/whatsapp/whatsapp.service.js';
 
 async function main(): Promise<void> {
@@ -37,6 +37,9 @@ async function main(): Promise<void> {
 
       server.close(async () => {
         logger.info('HTTP server closed');
+
+        // Clean up Socket.IO and Redis adapter connections
+        await cleanupSocketServer();
 
         // Clean up WhatsApp service (Redis subscribers, pending requests)
         await whatsappService.cleanup();

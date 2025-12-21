@@ -1,7 +1,7 @@
 'use client';
 
 import { toast } from 'sonner';
-import { Chirpy } from './chirpy';
+import { Powerpuff } from './powerpuff';
 
 interface RewardToastProps {
   message: string;
@@ -10,7 +10,7 @@ interface RewardToastProps {
 }
 
 /**
- * Show a fun reward toast with Chirpy
+ * Show a fun reward toast with Powerpuff Girls!
  */
 export function showRewardToast({ message, points, isLuckyStar }: RewardToastProps) {
   toast.custom(
@@ -18,16 +18,16 @@ export function showRewardToast({ message, points, isLuckyStar }: RewardToastPro
       <div
         className={`
           flex items-center gap-3 px-4 py-3 rounded-2xl shadow-lg
-          bg-gradient-to-r from-amber-100 to-yellow-100
-          dark:from-amber-900/80 dark:to-yellow-900/80
-          border-2 border-amber-300 dark:border-amber-600
+          bg-gradient-to-r from-pink-100 to-purple-100
+          dark:from-pink-900/80 dark:to-purple-900/80
+          border-2 border-pink-300 dark:border-pink-600
           transform transition-all duration-300
           ${isLuckyStar ? 'animate-bounce-in scale-110' : 'animate-slide-in'}
         `}
       >
-        {/* Chirpy mascot */}
+        {/* Powerpuff mascot - random girl each time! */}
         <div className="flex-shrink-0">
-          <Chirpy mood={isLuckyStar ? 'champion' : 'happy'} size={40} />
+          <Powerpuff girl="random" mood={isLuckyStar ? 'champion' : 'happy'} size={48} />
         </div>
 
         {/* Message */}
@@ -96,7 +96,7 @@ export function showStreakToast(streakCount: number, bonusPoints: number) {
           animate-bounce-in
         "
       >
-        <Chirpy mood="fire" size={44} />
+        <Powerpuff girl="buttercup" mood="fire" size={52} />
         <div className="flex-1">
           <p className="font-bold text-orange-900 dark:text-orange-100">
             🔥 {streakCount}x STREAK!
@@ -132,7 +132,7 @@ export function showWelcomeToast(streak: number) {
           animate-slide-in
         "
       >
-        <Chirpy mood="happy" size={44} />
+        <Powerpuff girl="bubbles" mood="happy" size={52} />
         <div className="flex-1">
           <p className="font-bold text-pink-900 dark:text-pink-100">
             Welcome back, champ! 👋

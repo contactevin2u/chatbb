@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Chirpy } from './chirpy';
+import { Powerpuff } from './powerpuff';
 import { useGamificationStore } from '@/stores/gamification-store';
 
 /**
@@ -54,11 +54,12 @@ export function CelebrationPopup() {
 
         {/* Content */}
         <div className="relative z-10 flex flex-col items-center text-center py-6">
-          {/* Mascot */}
+          {/* Mascot - Blossom for champion moments! */}
           <div className="mb-4 animate-bounce-happy">
-            <Chirpy
+            <Powerpuff
+              girl="blossom"
               mood={celebration.isLuckyStar ? 'champion' : 'happy'}
-              size={100}
+              size={120}
             />
           </div>
 

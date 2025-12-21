@@ -27,14 +27,14 @@ const LUCKY_STAR_MESSAGES = [
   'Jackpot! Lucky Star activated!',
 ];
 
-// Reward configuration
+// Reward configuration - MORE FREQUENT & MORE RANDOM!
 const REWARD_CONFIG = {
-  message: { chance: 0.15, minPoints: 5, maxPoints: 25 },
-  view: { chance: 0.10, minPoints: 3, maxPoints: 15 },
-  close: { chance: 0.30, minPoints: 10, maxPoints: 50 },
-  luckyStar: { chance: 0.02, points: 100 },
+  message: { chance: 0.35, minPoints: 5, maxPoints: 30 },   // 35% chance (was 15%)
+  view: { chance: 0.25, minPoints: 3, maxPoints: 20 },      // 25% chance (was 10%)
+  close: { chance: 0.50, minPoints: 15, maxPoints: 75 },    // 50% chance (was 30%)
+  luckyStar: { chance: 0.05, points: 100 },                 // 5% jackpot (was 2%)
   streakBonus: { points: 50 },
-  welcomeBonus: { points: 20 },
+  welcomeBonus: { points: 25 },
 };
 
 export type RewardActionType = 'message' | 'view' | 'close';

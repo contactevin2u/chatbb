@@ -39,6 +39,12 @@ let broadcastQueue: Queue;
 // Redis subscriber for commands from API server
 let redisSubscriber: Redis;
 
+// Buffer for chunks when Redis is temporarily unavailable
+// Limited to prevent unbounded memory growth
+const MAX_PENDING_CHUNKS_PER_CHANNEL = 50;
+const MAX_PENDING_CHANNELS = 100;
+const pendingChunks: Map<string, any[]> = new Map();
+
 /**
  * Set up event handlers that queue jobs for background processing
  * This ensures live chat is NOT blocked by historical sync
@@ -194,9 +200,6 @@ function setupEventHandlers() {
     );
   });
 
-  // Buffer for chunks when Redis is temporarily unavailable
-  const pendingChunks: Map<string, any[]> = new Map();
-
   // Process buffered chunks when possible
   const processBufferedChunks = async (channelId: string) => {
     const chunks = pendingChunks.get(channelId);
@@ -261,11 +264,23 @@ function setupEventHandlers() {
         'Failed to queue history sync, buffering and processing directly'
       );
 
-      // Buffer the chunk for later retry
+      // Buffer the chunk for later retry (with limits to prevent memory leak)
       if (!pendingChunks.has(channelId)) {
+        // Limit total channels to prevent unbounded growth
+        if (pendingChunks.size >= MAX_PENDING_CHANNELS) {
+          logger.warn({ channelId, size: pendingChunks.size }, 'Too many pending channels, dropping oldest');
+          const oldestKey = pendingChunks.keys().next().value;
+          if (oldestKey) pendingChunks.delete(oldestKey);
+        }
         pendingChunks.set(channelId, []);
       }
-      pendingChunks.get(channelId)!.push(data);
+      const channelChunks = pendingChunks.get(channelId)!;
+      // Limit chunks per channel
+      if (channelChunks.length >= MAX_PENDING_CHUNKS_PER_CHANNEL) {
+        logger.warn({ channelId, chunks: channelChunks.length }, 'Too many pending chunks for channel, dropping oldest');
+        channelChunks.shift(); // Remove oldest chunk
+      }
+      channelChunks.push(data);
 
       // Process this chunk directly as fallback
       try {
@@ -949,8 +964,11 @@ async function main() {
     logger.info('  - Publishes events via Redis pub/sub to API');
     logger.info('  - Queues background jobs to BullMQ');
 
+    // Store interval IDs for cleanup on shutdown
+    const intervalIds: NodeJS.Timeout[] = [];
+
     // Health check - log session stats every 30 seconds (increased frequency for faster issue detection)
-    setInterval(async () => {
+    intervalIds.push(setInterval(async () => {
       const sessions = sessionManager.getAllSessions();
       const stats = {
         total: sessions.size,
@@ -995,10 +1013,10 @@ async function main() {
       } catch (error) {
         logger.error({ error }, 'Failed to check/reconnect stale channels');
       }
-    }, 30000); // 30 seconds - faster detection of connection issues
+    }, 30000)); // 30 seconds - faster detection of connection issues
 
     // Sync timeout check - mark sync complete if stale (every 2 minutes)
-    setInterval(async () => {
+    intervalIds.push(setInterval(async () => {
       try {
         const SYNC_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes of inactivity
         const now = new Date();
@@ -1042,15 +1060,15 @@ async function main() {
       } catch (error) {
         logger.error({ error }, 'Sync timeout check failed');
       }
-    }, 120000); // Check every 2 minutes
+    }, 120000)); // Check every 2 minutes
 
     // Scheduled message processor - check every 10 seconds
-    setInterval(processScheduledMessages, 10000);
+    intervalIds.push(setInterval(processScheduledMessages, 10000));
     logger.info('Scheduled message processor started (10s interval)');
 
     // Scheduled sequence processor - check every 10 seconds
     // Sequences can be scheduled to START at a future time (not just DELAY steps)
-    setInterval(processScheduledSequences, 10000);
+    intervalIds.push(setInterval(processScheduledSequences, 10000));
     logger.info('Scheduled sequence processor started (10s interval)');
 
     // Graceful shutdown handlers
@@ -1058,6 +1076,16 @@ async function main() {
       logger.info({ signal }, 'Received shutdown signal');
 
       try {
+        // Clear all intervals to prevent memory leaks
+        for (const intervalId of intervalIds) {
+          clearInterval(intervalId);
+        }
+        logger.info({ count: intervalIds.length }, 'Cleared all intervals');
+
+        // Clear pending chunks buffer
+        pendingChunks.clear();
+        logger.info('Cleared pending chunks buffer');
+
         // Shutdown session manager
         await sessionManager.shutdown();
         logger.info('Session manager shutdown complete');

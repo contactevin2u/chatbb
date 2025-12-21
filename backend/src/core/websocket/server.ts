@@ -17,6 +17,8 @@ import { prisma } from '../database/prisma';
 import { redis } from '../cache/redis.client';
 
 let io: Server | null = null;
+let adapterPubClient: Redis | null = null;
+let adapterSubClient: Redis | null = null;
 
 // Presence tracking constants
 const PRESENCE_PREFIX = 'conv:viewers:';
@@ -61,10 +63,10 @@ export function createSocketServer(httpServer: HttpServer): Server {
   });
 
   // Set up Redis adapter for horizontal scaling
-  const pubClient = new Redis(redisConfig.url);
-  const subClient = pubClient.duplicate();
+  adapterPubClient = new Redis(redisConfig.url);
+  adapterSubClient = adapterPubClient.duplicate();
 
-  io.adapter(createAdapter(pubClient, subClient));
+  io.adapter(createAdapter(adapterPubClient, adapterSubClient));
   logger.info('Socket.IO Redis adapter initialized');
 
   // Authentication middleware
@@ -412,4 +414,27 @@ export function emitToOrgExceptUser(
   if (io) {
     io.to(`org:${organizationId}`).except(`user:${excludeUserId}`).emit(event, data);
   }
+}
+
+// Cleanup Socket.IO Redis adapter connections
+export async function cleanupSocketServer(): Promise<void> {
+  logger.info('Cleaning up Socket.IO server...');
+
+  // Close Socket.IO server
+  if (io) {
+    io.close();
+    io = null;
+  }
+
+  // Close Redis adapter connections
+  if (adapterPubClient) {
+    await adapterPubClient.quit();
+    adapterPubClient = null;
+  }
+  if (adapterSubClient) {
+    await adapterSubClient.quit();
+    adapterSubClient = null;
+  }
+
+  logger.info('Socket.IO cleanup complete');
 }

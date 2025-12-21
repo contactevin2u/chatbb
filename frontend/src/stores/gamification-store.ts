@@ -44,7 +44,7 @@ interface GamificationState {
   resetRewardStreak: () => void;
 }
 
-const THROTTLE_MS = 5000; // Min 5 seconds between reward toasts
+const THROTTLE_MS = 2000; // Min 2 seconds between reward toasts (more frequent!)
 
 export const useGamificationStore = create<GamificationState>()(
   persist(
