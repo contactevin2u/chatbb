@@ -882,6 +882,14 @@ model AnalyticsDaily {
   avgResolutionTimeMs Int? @map("avg_resolution_time_ms")
   newContacts         Int  @default(0) @map("new_contacts")
 
+  // Agent Engagement Metrics
+  replySessions       Int    @default(0) @map("reply_sessions")       // Total reply sessions (multiple outbound = 1)
+  continuedSessions   Int    @default(0) @map("continued_sessions")   // Sessions where customer responded
+  diedSessions        Int    @default(0) @map("died_sessions")        // Sessions with no response (72h+)
+  followUpSessions    Int    @default(0) @map("followup_sessions")    // Proactive agent follow-ups
+  continuationRate    Float? @map("continuation_rate")                // continued/total percentage
+  avgHoursToResponse  Float? @map("avg_hours_to_response")            // Avg hours until customer replied
+
   createdAt DateTime @default(now()) @map("created_at")
 
   @@unique([organizationId, date, channelId, userId])

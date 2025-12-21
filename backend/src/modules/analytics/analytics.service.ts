@@ -408,6 +408,180 @@ export class AnalyticsService {
       closedInPeriod: closed,
     };
   }
+
+  /**
+   * Get agent engagement analytics
+   *
+   * Tracks how well agents keep conversations alive:
+   * - Reply sessions (multiple outbound = 1)
+   * - Continuation rate (did customer respond?)
+   * - Follow-up effectiveness
+   */
+  async getAgentEngagement(organizationId: string, period = 'week') {
+    const { startDate, endDate } = this.getDateRange(period);
+
+    // Get users with their engagement stats
+    const users = await prisma.user.findMany({
+      where: { organizationId },
+      select: { id: true, firstName: true, lastName: true, avatarUrl: true },
+    });
+
+    // Get aggregated engagement stats from analytics_daily
+    const userStats = await prisma.analyticsDaily.findMany({
+      where: {
+        organizationId,
+        date: { gte: startDate, lte: endDate },
+        userId: { not: null },
+        channelId: null,
+      },
+      select: {
+        userId: true,
+        date: true,
+        replySessions: true,
+        continuedSessions: true,
+        diedSessions: true,
+        followUpSessions: true,
+        continuationRate: true,
+        avgHoursToResponse: true,
+      },
+    });
+
+    // Aggregate by user
+    const userAggregates = new Map<
+      string,
+      {
+        replySessions: number;
+        continuedSessions: number;
+        diedSessions: number;
+        followUpSessions: number;
+        totalHoursToResponse: number;
+        responseCount: number;
+        dailyRates: number[];
+      }
+    >();
+
+    for (const stat of userStats) {
+      if (!stat.userId) continue;
+
+      const existing = userAggregates.get(stat.userId) || {
+        replySessions: 0,
+        continuedSessions: 0,
+        diedSessions: 0,
+        followUpSessions: 0,
+        totalHoursToResponse: 0,
+        responseCount: 0,
+        dailyRates: [],
+      };
+
+      existing.replySessions += stat.replySessions;
+      existing.continuedSessions += stat.continuedSessions;
+      existing.diedSessions += stat.diedSessions;
+      existing.followUpSessions += stat.followUpSessions;
+
+      if (stat.avgHoursToResponse !== null) {
+        existing.totalHoursToResponse += stat.avgHoursToResponse;
+        existing.responseCount++;
+      }
+
+      if (stat.continuationRate !== null) {
+        existing.dailyRates.push(stat.continuationRate);
+      }
+
+      userAggregates.set(stat.userId, existing);
+    }
+
+    // Build leaderboard
+    const leaderboard = users
+      .map((user) => {
+        const stats = userAggregates.get(user.id);
+
+        if (!stats || stats.replySessions === 0) {
+          return null; // Skip users with no activity
+        }
+
+        const continuationRate =
+          stats.replySessions > 0
+            ? Math.round((stats.continuedSessions / stats.replySessions) * 1000) / 10
+            : null;
+
+        const avgHoursToResponse =
+          stats.responseCount > 0
+            ? Math.round((stats.totalHoursToResponse / stats.responseCount) * 10) / 10
+            : null;
+
+        // Calculate engagement score
+        // Formula: +2 for continued, +1 for follow-up, -1 for died
+        const score =
+          stats.continuedSessions * 2 + stats.followUpSessions * 1 - stats.diedSessions * 1;
+
+        return {
+          userId: user.id,
+          name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Unknown',
+          avatarUrl: user.avatarUrl,
+          replySessions: stats.replySessions,
+          continuedSessions: stats.continuedSessions,
+          diedSessions: stats.diedSessions,
+          followUpSessions: stats.followUpSessions,
+          continuationRate,
+          avgHoursToResponse,
+          score,
+        };
+      })
+      .filter((u): u is NonNullable<typeof u> => u !== null)
+      .sort((a, b) => b.score - a.score);
+
+    // Calculate summary stats
+    const totalReplySessions = leaderboard.reduce((sum, u) => sum + u.replySessions, 0);
+    const totalContinued = leaderboard.reduce((sum, u) => sum + u.continuedSessions, 0);
+    const totalDied = leaderboard.reduce((sum, u) => sum + u.diedSessions, 0);
+    const totalFollowUps = leaderboard.reduce((sum, u) => sum + u.followUpSessions, 0);
+
+    const avgContinuationRate =
+      totalReplySessions > 0
+        ? Math.round((totalContinued / totalReplySessions) * 1000) / 10
+        : null;
+
+    // Get daily trend for charts
+    const dailyTrend = await prisma.analyticsDaily.groupBy({
+      by: ['date'],
+      where: {
+        organizationId,
+        date: { gte: startDate, lte: endDate },
+        userId: { not: null },
+        channelId: null,
+      },
+      _sum: {
+        replySessions: true,
+        continuedSessions: true,
+        diedSessions: true,
+        followUpSessions: true,
+      },
+      orderBy: { date: 'asc' },
+    });
+
+    const daily = dailyTrend.map((d) => ({
+      date: d.date.toISOString().split('T')[0],
+      replySessions: d._sum.replySessions || 0,
+      continuedSessions: d._sum.continuedSessions || 0,
+      diedSessions: d._sum.diedSessions || 0,
+      continuationRate:
+        (d._sum.replySessions || 0) > 0
+          ? Math.round(((d._sum.continuedSessions || 0) / (d._sum.replySessions || 1)) * 1000) / 10
+          : null,
+    }));
+
+    return {
+      summary: {
+        totalSessions: totalReplySessions,
+        continuedSessions: totalContinued,
+        diedSessions: totalDied,
+        followUpSessions: totalFollowUps,
+        continuationRate: avgContinuationRate,
+      },
+      leaderboard,
+      daily,
+    };
+  }
 }
 
 export const analyticsService = new AnalyticsService();

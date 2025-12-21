@@ -145,3 +145,25 @@ analyticsRoutes.get('/channels', requirePermission('analytics:read'), async (req
     next(error);
   }
 });
+
+/**
+ * @route   GET /api/v1/analytics/engagement
+ * @desc    Get agent engagement analytics (reply sessions, continuation rate, follow-ups)
+ * @access  Private (analytics:read)
+ * @query   period - today, yesterday, week, month, quarter (default: week)
+ */
+analyticsRoutes.get('/engagement', requirePermission('analytics:read'), async (req, res, next) => {
+  try {
+    const organizationId = req.user!.organizationId;
+    const period = (req.query.period as string) || 'week';
+
+    const stats = await analyticsService.getAgentEngagement(organizationId, period);
+
+    res.json({
+      success: true,
+      data: stats,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
