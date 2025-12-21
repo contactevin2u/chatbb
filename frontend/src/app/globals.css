@@ -640,3 +640,63 @@
 .bg-gradient-radial {
   background: radial-gradient(circle at center, var(--tw-gradient-from) 0%, var(--tw-gradient-to) 70%);
 }
+
+/* ============================================ */
+/* Happy Working Environment Animations        */
+/* ============================================ */
+
+/* Shimmer effect for toast backgrounds */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+/* Sparkle animation for decorations */
+@keyframes sparkle {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.2) rotate(10deg);
+  }
+}
+
+.animate-sparkle {
+  animation: sparkle 1.5s ease-in-out infinite;
+}
+
+.animate-sparkle-delay {
+  animation: sparkle 1.5s ease-in-out infinite 0.3s;
+}
+
+.animate-sparkle-delay-2 {
+  animation: sparkle 1.5s ease-in-out infinite 0.6s;
+}
+
+/* Wave animation for hand emoji */
+@keyframes wave {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(20deg);
+  }
+  75% {
+    transform: rotate(-20deg);
+  }
+}
+
+.animate-wave {
+  animation: wave 0.8s ease-in-out infinite;
+  transform-origin: 70% 70%;
+}
