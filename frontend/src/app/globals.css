@@ -522,3 +522,121 @@
   @apply border-t-pink-500 dark:border-t-pink-400;
   @apply rounded-full animate-spin;
 }
+
+/* ==================== GAMIFICATION ANIMATIONS ==================== */
+
+/* Subtle bounce for idle Chirpy */
+@keyframes bounce-subtle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+.animate-bounce-subtle {
+  animation: bounce-subtle 2s ease-in-out infinite;
+}
+
+/* Happy bounce for celebrations */
+@keyframes bounce-happy {
+  0%, 100% { transform: translateY(0) rotate(-3deg); }
+  25% { transform: translateY(-8px) rotate(3deg); }
+  50% { transform: translateY(-4px) rotate(-3deg); }
+  75% { transform: translateY(-6px) rotate(3deg); }
+}
+
+.animate-bounce-happy {
+  animation: bounce-happy 0.6s ease-in-out infinite;
+}
+
+/* Fire flicker effect */
+@keyframes flicker {
+  0%, 100% { opacity: 0.8; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.1); }
+}
+
+.animate-flicker {
+  animation: flicker 0.3s ease-in-out infinite;
+}
+
+/* Wing wave animation */
+@keyframes wave-left {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-20deg); }
+}
+
+@keyframes wave-right {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(20deg); }
+}
+
+.animate-wave-left {
+  animation: wave-left 0.3s ease-in-out infinite;
+  transform-origin: right center;
+}
+
+.animate-wave-right {
+  animation: wave-right 0.3s ease-in-out infinite;
+  transform-origin: left center;
+}
+
+/* Champion glow pulse */
+@keyframes pulse-glow {
+  0%, 100% { filter: drop-shadow(0 0 8px #fbbf24); }
+  50% { filter: drop-shadow(0 0 16px #fbbf24); }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+/* Confetti fall animation */
+@keyframes confetti-fall {
+  0% {
+    transform: translateY(-20px) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100px) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+.animate-confetti-fall {
+  animation: confetti-fall 2s ease-out forwards;
+}
+
+/* Confetti burst (for toast) */
+@keyframes confetti {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-30px) scale(0.5);
+    opacity: 0;
+  }
+}
+
+.animate-confetti {
+  animation: confetti 1s ease-out forwards;
+}
+
+/* Slide in from top */
+@keyframes slide-in {
+  0% {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.3s ease-out;
+}
+
+/* Radial gradient for popup glow */
+.bg-gradient-radial {
+  background: radial-gradient(circle at center, var(--tw-gradient-from) 0%, var(--tw-gradient-to) 70%);
+}

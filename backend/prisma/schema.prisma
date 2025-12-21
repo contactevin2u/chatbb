@@ -38,6 +38,8 @@ model Organization {
   knowledgeItems    KnowledgeItem[]
   aiConfig          AIConfig?
   paymentReminders  PaymentReminder[]
+  agentGameStats    AgentGameStats[]
+  rewardEvents      RewardEvent[]
 
   @@map("organizations")
 }
@@ -78,6 +80,8 @@ model User {
   conversationNotes       ConversationNote[]  @relation("ConversationNotes")
   scheduledMessages       ScheduledMessage[]
   linkedOrders            ConversationOrder[]
+  gameStats               AgentGameStats?
+  rewardEvents            RewardEvent[]
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -985,4 +989,67 @@ model AIConfig {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@map("ai_configs")
+}
+
+// ==================== GAMIFICATION ====================
+
+model AgentGameStats {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String   @unique @map("user_id") @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+
+  // Points tracking
+  totalPoints  Int      @default(0) @map("total_points")
+  todayPoints  Int      @default(0) @map("today_points")
+  todayDate    DateTime @default(now()) @map("today_date") @db.Date
+  weekPoints   Int      @default(0) @map("week_points")
+  weekStart    DateTime @default(now()) @map("week_start") @db.Date
+  monthPoints  Int      @default(0) @map("month_points")
+  monthStart   DateTime @default(now()) @map("month_start") @db.Date
+
+  // Streak tracking
+  currentStreak  Int       @default(0) @map("current_streak")
+  longestStreak  Int       @default(0) @map("longest_streak")
+  lastActiveDate DateTime? @map("last_active_date") @db.Date
+
+  // Action counters
+  messagesSent         Int @default(0) @map("messages_sent")
+  conversationsClosed  Int @default(0) @map("conversations_closed")
+  conversationsViewed  Int @default(0) @map("conversations_viewed")
+
+  // Lucky bonus
+  luckyStarsWon   Int       @default(0) @map("lucky_stars_won")
+  lastLuckyStarAt DateTime? @map("last_lucky_star_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, todayPoints(sort: Desc)])
+  @@index([organizationId, weekPoints(sort: Desc)])
+  @@index([organizationId, monthPoints(sort: Desc)])
+  @@index([organizationId, totalPoints(sort: Desc)])
+  @@map("agent_game_stats")
+}
+
+model RewardEvent {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String  @map("user_id") @db.Uuid
+  organizationId String  @map("organization_id") @db.Uuid
+  actionType     String  @map("action_type") // message, view, close, lucky_star, streak_bonus
+  points         Int
+  message        String?
+  isLuckyStar    Boolean @default(false) @map("is_lucky_star")
+  isStreakBonus  Boolean @default(false) @map("is_streak_bonus")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@map("reward_events")
 }

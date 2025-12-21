@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { Toaster } from 'sonner';
 import { WebSocketProvider } from './websocket-provider';
 import { AuthProvider } from './auth-provider';
+import { CelebrationPopup } from '@/components/gamification';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -37,6 +38,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           </WebSocketProvider>
         </AuthProvider>
         <Toaster position="top-right" richColors />
+        <CelebrationPopup />
       </ThemeProvider>
       <ReactQueryDevtools initialIsOpen={false} />
     </QueryClientProvider>

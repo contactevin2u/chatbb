@@ -27,6 +27,7 @@ import {
   AgentStats,
   AnalyticsPeriod,
 } from '@/lib/api/analytics';
+import { LeaderboardCard } from '@/components/gamification';
 
 interface StatCardProps {
   title: string;
@@ -214,8 +215,11 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Team Activity & Channel Stats */}
-      <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
+      {/* Team Activity, Channel Stats & Leaderboard */}
+      <div className="grid gap-3 sm:gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {/* Leaderboard - Fun gamification */}
+        <LeaderboardCard className="order-first lg:order-last" />
+
         <Card>
           <CardHeader className="px-4 sm:px-6 pt-4 sm:pt-6 pb-2 sm:pb-4">
             <CardTitle className="text-base sm:text-lg">Team Activity</CardTitle>

@@ -98,6 +98,7 @@ import { ScheduleMessageDialog } from '@/components/schedule-message-dialog';
 import { EditMessageDialog } from '@/components/edit-message-dialog';
 import { TagDropdown } from '@/components/tag-dropdown';
 import { QuickReply } from '@/lib/api/quick-replies';
+import { useRewards } from '@/hooks/use-rewards';
 import { listScheduledMessages, cancelScheduledMessage, ScheduledMessage } from '@/lib/api/scheduled-messages';
 import {
   listConversations,
@@ -275,6 +276,7 @@ export default function InboxPage() {
   const { socket, joinConversation, leaveConversation, startTyping, stopTyping, broadcastPendingMessage } = useWebSocket();
   const { user } = useAuthStore();
   const { conversationListCollapsed, toggleConversationList, contactPanelOpen, setContactPanelOpen } = useUIStore();
+  const { maybeReward } = useRewards();
 
   // Get conversation ID from URL params
   const urlConversationId = searchParams.get('conversation');
@@ -467,6 +469,8 @@ export default function InboxPage() {
       // Refetch to get the real message with server ID
       queryClient.invalidateQueries({ queryKey: ['messages', variables.conversationId] });
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      // Gamification: Try for a random reward!
+      maybeReward('message');
     },
     onError: (error: Error, variables, context) => {
       // Rollback on error
@@ -483,6 +487,8 @@ export default function InboxPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
       toast.success('Conversation closed');
+      // Gamification: Higher chance reward for closing!
+      maybeReward('close');
     },
   });
 
@@ -905,7 +911,10 @@ export default function InboxPage() {
     if (!incognitoMode) {
       markConversationAsRead(conversationId).catch(() => {});
     }
-  }, [joinConversation, leaveConversation, incognitoMode]);
+
+    // Gamification: Small chance reward for viewing
+    maybeReward('view');
+  }, [joinConversation, leaveConversation, incognitoMode, maybeReward]);
 
   // Keyboard shortcuts for inbox
   const inboxShortcuts = useMemo<KeyboardShortcut[]>(() => {
