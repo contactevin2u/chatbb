@@ -1710,8 +1710,8 @@ export default function InboxPage() {
                       />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1 sm:gap-1.5 min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 flex items-center gap-1 sm:gap-1.5 min-w-0 overflow-hidden">
                           {conversation.isPinned && (
                             <Pin className="h-3 w-3 text-primary flex-shrink-0" />
                           )}
@@ -1719,7 +1719,7 @@ export default function InboxPage() {
                             {getContactName(conversation.contact)}
                           </p>
                         </div>
-                        <span className="text-[10px] sm:text-xs text-muted-foreground flex-shrink-0">
+                        <span className="text-[10px] sm:text-xs text-muted-foreground whitespace-nowrap">
                           {conversation.lastMessageAt
                             ? formatDistanceToNow(new Date(conversation.lastMessageAt), { addSuffix: false })
                             : ''}
