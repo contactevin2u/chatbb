@@ -1616,7 +1616,7 @@ export default function InboxPage() {
         </div>
 
         {/* Conversation List */}
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1 w-full">
           {isLoadingConversations ? (
             <div className="p-4 space-y-4">
               {[1, 2, 3, 4, 5].map((i) => (
@@ -1712,7 +1712,7 @@ export default function InboxPage() {
                       />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 w-full">
                         <div className="flex items-center gap-1 sm:gap-1.5 min-w-0 flex-1 overflow-hidden">
                           {conversation.isPinned && (
                             <Pin className="h-3 w-3 text-primary flex-shrink-0" />
@@ -1721,7 +1721,7 @@ export default function InboxPage() {
                             {getContactName(conversation.contact)}
                           </p>
                         </div>
-                        <span className="text-[10px] sm:text-xs text-muted-foreground flex-shrink-0 whitespace-nowrap">
+                        <span className="text-[10px] sm:text-xs text-muted-foreground flex-shrink-0 whitespace-nowrap ml-auto">
                           {conversation.lastMessageAt
                             ? formatDistanceToNow(new Date(conversation.lastMessageAt), { addSuffix: false })
                             : ''}
