@@ -1616,7 +1616,7 @@ export default function InboxPage() {
         </div>
 
         {/* Conversation List */}
-        <ScrollArea className="flex-1 w-full">
+        <ScrollArea className="flex-1 w-full overflow-hidden">
           {isLoadingConversations ? (
             <div className="p-4 space-y-4">
               {[1, 2, 3, 4, 5].map((i) => (
@@ -1635,12 +1635,12 @@ export default function InboxPage() {
               <p>No conversations found</p>
             </div>
           ) : (
-            <div className="divide-y w-full">
+            <div className="divide-y w-full overflow-hidden">
               {conversationsData?.conversations.map((conversation) => (
                 <div
                   key={conversation.id}
                   className={cn(
-                    'group/conv relative p-3 sm:p-4 cursor-pointer hover:bg-muted/50 transition-colors active:bg-muted overflow-hidden',
+                    'group/conv relative p-3 sm:p-4 cursor-pointer hover:bg-muted/50 transition-colors active:bg-muted overflow-hidden w-full box-border',
                     selectedConversationId === conversation.id && 'bg-muted'
                   )}
                   onClick={() => handleSelectConversation(conversation.id)}
@@ -1678,7 +1678,7 @@ export default function InboxPage() {
                       </Button>
                     )}
                   </div>
-                  <div className="flex items-start gap-2.5 sm:gap-3 group min-w-0">
+                  <div className="flex items-start gap-2.5 sm:gap-3 group min-w-0 w-full">
                     <div className="relative flex-shrink-0">
                       <Avatar className="h-10 w-10 sm:h-10 sm:w-10">
                         <AvatarImage
@@ -1711,9 +1711,9 @@ export default function InboxPage() {
                         currentTags={conversation.tags || []}
                       />
                     </div>
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 overflow-hidden">
                       <div className="flex items-center gap-2 w-full">
-                        <div className="flex items-center gap-1 sm:gap-1.5 min-w-0 flex-1 overflow-hidden">
+                        <div className="flex items-center gap-1 sm:gap-1.5 min-w-0 flex-1">
                           {conversation.isPinned && (
                             <Pin className="h-3 w-3 text-primary flex-shrink-0" />
                           )}
@@ -2701,16 +2701,16 @@ export default function InboxPage() {
       {/* Contact Info Panel */}
       {contactPanelOpen && selectedConversation && (
         <>
-          {/* Mobile backdrop overlay - click to close */}
+          {/* Backdrop overlay - click to close (always show since panel is overlay) */}
           <div
-            className="fixed inset-0 z-40 bg-black/20 md:hidden"
+            className="fixed inset-0 z-40 bg-black/20"
             onClick={() => setContactPanelOpen(false)}
           />
           <div className={cn(
-            'border-l flex flex-col transition-all duration-200 flex-shrink-0 overflow-hidden',
-            // Mobile: slide-in panel from right, tablet/desktop: sidebar
-            'fixed inset-y-0 right-0 z-50 bg-background w-[85%] max-w-[320px]',
-            'md:static md:z-auto md:w-[300px] lg:w-[320px] md:max-w-[320px]'
+            'border-l flex flex-col transition-all duration-200 overflow-hidden',
+            // ALWAYS overlay - never shrink chat panel (chat is absolute priority)
+            'fixed inset-y-0 right-0 z-50 bg-background',
+            'w-[85%] max-w-[320px] md:w-[320px]'
           )}>
             <div className="h-14 sm:h-16 border-b flex items-center justify-between px-3 sm:px-4">
             <h3 className="font-semibold text-sm sm:text-base">
