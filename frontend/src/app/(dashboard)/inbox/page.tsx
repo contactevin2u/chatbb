@@ -1680,7 +1680,7 @@ export default function InboxPage() {
                       </Button>
                     )}
                   </div>
-                  <div className="flex items-start gap-2.5 sm:gap-3 group">
+                  <div className="flex items-start gap-2.5 sm:gap-3 group min-w-0">
                     <div className="relative flex-shrink-0">
                       <Avatar className="h-10 w-10 sm:h-10 sm:w-10">
                         <AvatarImage
@@ -1723,7 +1723,7 @@ export default function InboxPage() {
                             {getContactName(conversation.contact)}
                           </p>
                         </div>
-                        <span className="text-[10px] sm:text-xs text-muted-foreground flex-shrink-0">
+                        <span className="text-[10px] sm:text-xs text-muted-foreground flex-shrink-0 whitespace-nowrap">
                           {conversation.lastMessageAt
                             ? formatDistanceToNow(new Date(conversation.lastMessageAt), { addSuffix: false })
                             : ''}
