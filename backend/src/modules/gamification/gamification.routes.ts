@@ -21,7 +21,7 @@ gamificationRoutes.use(authMiddleware);
  */
 gamificationRoutes.post('/reward', async (req, res, next) => {
   try {
-    const userId = req.user!.id as string;
+    const userId = req.user!.sub as string;
     const organizationId = req.user!.organizationId as string;
     const { actionType } = req.body as { actionType: RewardActionType };
 
@@ -81,7 +81,7 @@ gamificationRoutes.get('/leaderboard', async (req, res, next) => {
  */
 gamificationRoutes.get('/stats', async (req, res, next) => {
   try {
-    const userId = req.user!.id as string;
+    const userId = req.user!.sub as string;
     const organizationId = req.user!.organizationId as string;
 
     const stats = await gamificationService.getUserStats(userId);
@@ -107,7 +107,7 @@ gamificationRoutes.get('/stats', async (req, res, next) => {
  */
 gamificationRoutes.get('/rank', async (req, res, next) => {
   try {
-    const userId = req.user!.id as string;
+    const userId = req.user!.sub as string;
     const organizationId = req.user!.organizationId as string;
     const period = (req.query.period as LeaderboardPeriod) || 'today';
 
@@ -130,7 +130,7 @@ gamificationRoutes.get('/rank', async (req, res, next) => {
  */
 gamificationRoutes.get('/history', async (req, res, next) => {
   try {
-    const userId = req.user!.id as string;
+    const userId = req.user!.sub as string;
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
 
     const events = await gamificationService.getRecentRewards(userId, limit);
