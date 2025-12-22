@@ -1517,12 +1517,10 @@ export default function InboxPage() {
       {/* Conversation List Panel */}
       <div
         className={cn(
-          'border-r flex flex-col transition-all duration-200 ease-in-out flex-shrink-0 overflow-hidden z-10',
-          // Mobile: full width, hidden when conversation selected
-          'w-full',
-          selectedConversationId && 'hidden md:flex',
-          // Desktop: fixed width, can be collapsed to 0
-          conversationListCollapsed ? 'md:w-0' : 'md:w-[280px] lg:w-[320px]'
+          'border-r flex flex-col transition-all duration-200 ease-in-out flex-shrink-0 overflow-hidden',
+          conversationListCollapsed ? 'w-0' : 'w-full md:w-[280px] lg:w-[320px]',
+          // On mobile: hide list when conversation is selected
+          selectedConversationId && 'hidden md:flex'
         )}
       >
         {/* Search and Filter */}
@@ -1637,12 +1635,12 @@ export default function InboxPage() {
               <p>No conversations found</p>
             </div>
           ) : (
-            <div className="divide-y">
+            <div className="divide-y w-full">
               {conversationsData?.conversations.map((conversation) => (
                 <div
                   key={conversation.id}
                   className={cn(
-                    'group/conv relative p-3 sm:p-4 cursor-pointer hover:bg-muted/50 transition-colors active:bg-muted',
+                    'group/conv relative p-3 sm:p-4 cursor-pointer hover:bg-muted/50 transition-colors active:bg-muted overflow-hidden',
                     selectedConversationId === conversation.id && 'bg-muted'
                   )}
                   onClick={() => handleSelectConversation(conversation.id)}
@@ -1775,7 +1773,7 @@ export default function InboxPage() {
 
       {/* Chat Panel */}
       <div className={cn(
-        'flex-1 flex flex-col min-w-0 overflow-hidden z-20',
+        'flex-1 flex flex-col min-w-0 overflow-hidden',
         // On mobile: hide chat when no conversation selected
         !selectedConversationId && 'hidden md:flex'
       )}>
@@ -2712,7 +2710,7 @@ export default function InboxPage() {
             'border-l flex flex-col transition-all duration-200 flex-shrink-0 overflow-hidden',
             // Mobile: slide-in panel from right, tablet/desktop: sidebar
             'fixed inset-y-0 right-0 z-50 bg-background w-[85%] max-w-[320px]',
-            'md:static md:z-30 md:w-[300px] lg:w-[320px] md:max-w-[320px]'
+            'md:static md:z-auto md:w-[300px] lg:w-[320px] md:max-w-[320px]'
           )}>
             <div className="h-14 sm:h-16 border-b flex items-center justify-between px-3 sm:px-4">
             <h3 className="font-semibold text-sm sm:text-base">
