@@ -1710,8 +1710,8 @@ export default function InboxPage() {
                       />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 flex items-center gap-1 sm:gap-1.5 min-w-0 overflow-hidden">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1 sm:gap-1.5 min-w-0 flex-1">
                           {conversation.isPinned && (
                             <Pin className="h-3 w-3 text-primary flex-shrink-0" />
                           )}
@@ -1719,7 +1719,7 @@ export default function InboxPage() {
                             {getContactName(conversation.contact)}
                           </p>
                         </div>
-                        <span className="text-[10px] sm:text-xs text-muted-foreground whitespace-nowrap flex-shrink-0">
+                        <span className="text-[10px] sm:text-xs text-muted-foreground flex-shrink-0">
                           {conversation.lastMessageAt
                             ? formatDistanceToNow(new Date(conversation.lastMessageAt), { addSuffix: false })
                             : ''}
@@ -1944,7 +1944,7 @@ export default function InboxPage() {
             )}
 
             {/* Messages */}
-            <div className="flex-1 relative overflow-hidden min-h-0">
+            <div className="flex-1 relative overflow-hidden">
               {/* Logo Watermark */}
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
                 <img
@@ -1953,24 +1953,22 @@ export default function InboxPage() {
                   className="w-24 sm:w-32 h-auto opacity-[0.35]"
                 />
               </div>
-              <div className="absolute inset-0 z-10">
-                <ScrollArea className="h-full w-full">
-                <div className="p-2 sm:p-4">
-                  {isLoadingMessages ? (
-                    <div className="space-y-4">
-                      {[1, 2, 3].map((i) => (
-                        <div key={i} className="flex gap-3 animate-pulse">
-                          <div className="h-8 w-8 rounded-full bg-muted" />
-                          <div className="space-y-2">
-                            <div className="h-4 w-48 bg-muted rounded" />
-                            <div className="h-3 w-24 bg-muted rounded" />
-                          </div>
-                        </div>
-                      ))}
+              <ScrollArea className="h-full p-2 sm:p-4 relative z-10">
+              {isLoadingMessages ? (
+                <div className="space-y-4">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="flex gap-3 animate-pulse">
+                      <div className="h-8 w-8 rounded-full bg-muted" />
+                      <div className="space-y-2">
+                        <div className="h-4 w-48 bg-muted rounded" />
+                        <div className="h-3 w-24 bg-muted rounded" />
+                      </div>
                     </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {messagesData?.messages.map((message, index) => {
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {messagesData?.messages.map((message, index) => {
                     const messageDate = new Date(message.createdAt);
                     const prevMessage = index > 0 ? messagesData.messages[index - 1] : null;
                     const showDateSeparator = !prevMessage || !isSameDay(messageDate, new Date(prevMessage.createdAt));
@@ -2376,9 +2374,7 @@ export default function InboxPage() {
                       {Array.from(typingUsers.values()).join(', ')} is typing
                     </div>
                   )}
-                </div>
-                </ScrollArea>
-              </div>
+            </ScrollArea>
             </div>
 
             {/* Scheduled Messages Banner */}
