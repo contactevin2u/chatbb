@@ -1953,7 +1953,8 @@ export default function InboxPage() {
                   className="w-24 sm:w-32 h-auto opacity-[0.35]"
                 />
               </div>
-              <ScrollArea className="h-full p-2 sm:p-4 relative z-10">
+              <ScrollArea className="absolute inset-0 z-10">
+                <div className="p-2 sm:p-4">
               {isLoadingMessages ? (
                 <div className="space-y-4">
                   {[1, 2, 3].map((i) => (
@@ -2374,7 +2375,8 @@ export default function InboxPage() {
                   {Array.from(typingUsers.values()).join(', ')} is typing
                 </div>
               )}
-            </ScrollArea>
+                </div>
+              </ScrollArea>
             </div>
 
             {/* Scheduled Messages Banner */}
@@ -2744,8 +2746,8 @@ export default function InboxPage() {
             </TabsList>
 
             {/* Info Tab */}
-            <TabsContent value="info" className="flex-1 m-0 overflow-hidden">
-              <ScrollArea className="h-full">
+            <TabsContent value="info" className="flex-1 m-0 overflow-hidden relative">
+              <ScrollArea className="absolute inset-0">
                 <div className="p-4 space-y-4">
                   {/* Contact Avatar & Name */}
                   <div className="text-center pb-4 border-b">
@@ -2890,8 +2892,8 @@ export default function InboxPage() {
             </TabsContent>
 
             {/* Tags & Notes Tab */}
-            <TabsContent value="tags" className="flex-1 m-0 overflow-hidden">
-              <ScrollArea className="h-full">
+            <TabsContent value="tags" className="flex-1 m-0 overflow-hidden relative">
+              <ScrollArea className="absolute inset-0">
                 <div className="p-3 sm:p-4 space-y-4">
                   {/* Tags */}
                   <div>
@@ -3031,8 +3033,10 @@ export default function InboxPage() {
             </TabsContent>
 
             {/* OrderOps Tab */}
-            <TabsContent value="orderops" className="flex-1 m-0 overflow-hidden">
-              <OrderOpsTab conversationId={selectedConversation.id} />
+            <TabsContent value="orderops" className="flex-1 m-0 overflow-hidden relative">
+              <div className="absolute inset-0">
+                <OrderOpsTab conversationId={selectedConversation.id} />
+              </div>
             </TabsContent>
           </Tabs>
         </div>

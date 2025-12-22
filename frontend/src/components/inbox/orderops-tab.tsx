@@ -881,7 +881,7 @@ export function OrderOpsTab({ conversationId }: OrderOpsTabProps) {
 
   // Main render with orders
   return (
-    <ScrollArea className="h-full">
+    <ScrollArea className="h-full w-full">
       <div className="p-4 space-y-3">
         {/* Header */}
         <div className="flex items-center justify-between">
