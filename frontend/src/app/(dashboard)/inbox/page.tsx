@@ -1517,10 +1517,12 @@ export default function InboxPage() {
       {/* Conversation List Panel */}
       <div
         className={cn(
-          'border-r flex flex-col transition-all duration-200 ease-in-out flex-shrink-0 overflow-hidden',
-          conversationListCollapsed ? 'w-0' : 'w-full md:w-[280px] lg:w-[320px]',
-          // On mobile: hide list when conversation is selected
-          selectedConversationId && 'hidden md:flex'
+          'border-r flex flex-col transition-all duration-200 ease-in-out flex-shrink-0 overflow-hidden z-10',
+          // Mobile: full width, hidden when conversation selected
+          'w-full',
+          selectedConversationId && 'hidden md:flex',
+          // Desktop: fixed width, can be collapsed to 0
+          conversationListCollapsed ? 'md:w-0' : 'md:w-[280px] lg:w-[320px]'
         )}
       >
         {/* Search and Filter */}
@@ -1773,7 +1775,7 @@ export default function InboxPage() {
 
       {/* Chat Panel */}
       <div className={cn(
-        'flex-1 flex flex-col min-w-0 overflow-hidden',
+        'flex-1 flex flex-col min-w-0 overflow-hidden z-20',
         // On mobile: hide chat when no conversation selected
         !selectedConversationId && 'hidden md:flex'
       )}>
@@ -2700,13 +2702,19 @@ export default function InboxPage() {
 
       {/* Contact Info Panel */}
       {contactPanelOpen && selectedConversation && (
-        <div className={cn(
-          'border-l flex flex-col transition-all duration-200 flex-shrink-0 overflow-hidden',
-          // Mobile: full width overlay, tablet/desktop: sidebar (max 320px)
-          'fixed inset-0 z-50 bg-background md:static md:z-auto',
-          'md:w-[300px] lg:w-[320px] md:max-w-[320px]'
-        )}>
-          <div className="h-14 sm:h-16 border-b flex items-center justify-between px-3 sm:px-4">
+        <>
+          {/* Mobile backdrop overlay - click to close */}
+          <div
+            className="fixed inset-0 z-40 bg-black/20 md:hidden"
+            onClick={() => setContactPanelOpen(false)}
+          />
+          <div className={cn(
+            'border-l flex flex-col transition-all duration-200 flex-shrink-0 overflow-hidden',
+            // Mobile: slide-in panel from right, tablet/desktop: sidebar
+            'fixed inset-y-0 right-0 z-50 bg-background w-[85%] max-w-[320px]',
+            'md:static md:z-30 md:w-[300px] lg:w-[320px] md:max-w-[320px]'
+          )}>
+            <div className="h-14 sm:h-16 border-b flex items-center justify-between px-3 sm:px-4">
             <h3 className="font-semibold text-sm sm:text-base">
               {contactPanelTab === 'orderops'
                 ? 'Orders'
@@ -3039,7 +3047,8 @@ export default function InboxPage() {
               </div>
             </TabsContent>
           </Tabs>
-        </div>
+          </div>
+        </>
       )}
 
       {/* Edit Contact Name Dialog */}
