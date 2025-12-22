@@ -1719,7 +1719,7 @@ export default function InboxPage() {
                             {getContactName(conversation.contact)}
                           </p>
                         </div>
-                        <span className="text-[10px] sm:text-xs text-muted-foreground whitespace-nowrap">
+                        <span className="text-[10px] sm:text-xs text-muted-foreground whitespace-nowrap flex-shrink-0">
                           {conversation.lastMessageAt
                             ? formatDistanceToNow(new Date(conversation.lastMessageAt), { addSuffix: false })
                             : ''}
@@ -1944,7 +1944,7 @@ export default function InboxPage() {
             )}
 
             {/* Messages */}
-            <div className="flex-1 relative overflow-hidden">
+            <div className="flex-1 relative overflow-hidden min-h-0">
               {/* Logo Watermark */}
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
                 <img
@@ -1953,7 +1953,8 @@ export default function InboxPage() {
                   className="w-24 sm:w-32 h-auto opacity-[0.35]"
                 />
               </div>
-              <ScrollArea className="h-full relative z-10">
+              <div className="absolute inset-0 z-10">
+                <ScrollArea className="h-full w-full">
                 <div className="p-2 sm:p-4">
                   {isLoadingMessages ? (
                     <div className="space-y-4">
@@ -2376,7 +2377,8 @@ export default function InboxPage() {
                     </div>
                   )}
                 </div>
-              </ScrollArea>
+                </ScrollArea>
+              </div>
             </div>
 
             {/* Scheduled Messages Banner */}
