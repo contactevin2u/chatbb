@@ -1953,23 +1953,23 @@ export default function InboxPage() {
                   className="w-24 sm:w-32 h-auto opacity-[0.35]"
                 />
               </div>
-              <ScrollArea className="absolute inset-0 z-10">
+              <ScrollArea className="h-full relative z-10">
                 <div className="p-2 sm:p-4">
-              {isLoadingMessages ? (
-                <div className="space-y-4">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="flex gap-3 animate-pulse">
-                      <div className="h-8 w-8 rounded-full bg-muted" />
-                      <div className="space-y-2">
-                        <div className="h-4 w-48 bg-muted rounded" />
-                        <div className="h-3 w-24 bg-muted rounded" />
-                      </div>
+                  {isLoadingMessages ? (
+                    <div className="space-y-4">
+                      {[1, 2, 3].map((i) => (
+                        <div key={i} className="flex gap-3 animate-pulse">
+                          <div className="h-8 w-8 rounded-full bg-muted" />
+                          <div className="space-y-2">
+                            <div className="h-4 w-48 bg-muted rounded" />
+                            <div className="h-3 w-24 bg-muted rounded" />
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {messagesData?.messages.map((message, index) => {
+                  ) : (
+                    <div className="space-y-2">
+                      {messagesData?.messages.map((message, index) => {
                     const messageDate = new Date(message.createdAt);
                     const prevMessage = index > 0 ? messagesData.messages[index - 1] : null;
                     const showDateSeparator = !prevMessage || !isSameDay(messageDate, new Date(prevMessage.createdAt));
@@ -2359,22 +2359,22 @@ export default function InboxPage() {
                         </div>
                       </div>
                     );
-                  })}
-                  <div ref={messagesEndRef} />
-                </div>
-              )}
+                      })}
+                      <div ref={messagesEndRef} />
+                    </div>
+                  )}
 
-              {/* Typing indicator */}
-              {typingUsers.size > 0 && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground mt-4">
-                  <div className="flex gap-1">
-                    <span className="animate-bounce">.</span>
-                    <span className="animate-bounce delay-100">.</span>
-                    <span className="animate-bounce delay-200">.</span>
-                  </div>
-                  {Array.from(typingUsers.values()).join(', ')} is typing
-                </div>
-              )}
+                  {/* Typing indicator */}
+                  {typingUsers.size > 0 && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground mt-4">
+                      <div className="flex gap-1">
+                        <span className="animate-bounce">.</span>
+                        <span className="animate-bounce delay-100">.</span>
+                        <span className="animate-bounce delay-200">.</span>
+                      </div>
+                      {Array.from(typingUsers.values()).join(', ')} is typing
+                    </div>
+                  )}
                 </div>
               </ScrollArea>
             </div>
