@@ -1511,12 +1511,12 @@ export default function InboxPage() {
   }, []);
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex h-full w-full overflow-hidden">
       {/* Conversation List Panel */}
       <div
         className={cn(
-          'border-r flex flex-col transition-all duration-200 ease-in-out flex-shrink-0',
-          conversationListCollapsed ? 'w-0 overflow-hidden' : 'w-full md:w-72 lg:w-80',
+          'border-r flex flex-col transition-all duration-200 ease-in-out flex-shrink-0 overflow-hidden',
+          conversationListCollapsed ? 'w-0' : 'w-full md:w-[280px] lg:w-[320px]',
           // On mobile: hide list when conversation is selected
           selectedConversationId && 'hidden md:flex'
         )}
@@ -1771,7 +1771,7 @@ export default function InboxPage() {
 
       {/* Chat Panel */}
       <div className={cn(
-        'flex-1 flex flex-col min-w-0',
+        'flex-1 flex flex-col min-w-0 overflow-hidden',
         // On mobile: hide chat when no conversation selected
         !selectedConversationId && 'hidden md:flex'
       )}>
@@ -2699,10 +2699,10 @@ export default function InboxPage() {
       {/* Contact Info Panel */}
       {contactPanelOpen && selectedConversation && (
         <div className={cn(
-          'border-l flex flex-col transition-all duration-200 flex-shrink-0',
-          // Mobile: full width overlay, tablet/desktop: sidebar (consistent width)
+          'border-l flex flex-col transition-all duration-200 flex-shrink-0 overflow-hidden',
+          // Mobile: full width overlay, tablet/desktop: sidebar (max 320px)
           'fixed inset-0 z-50 bg-background md:static md:z-auto',
-          'md:w-80 lg:w-96'
+          'md:w-[300px] lg:w-[320px] md:max-w-[320px]'
         )}>
           <div className="h-14 sm:h-16 border-b flex items-center justify-between px-3 sm:px-4">
             <h3 className="font-semibold text-sm sm:text-base">
@@ -2745,7 +2745,7 @@ export default function InboxPage() {
 
             {/* Info Tab */}
             <TabsContent value="info" className="flex-1 m-0 overflow-hidden">
-              <ScrollArea className="h-[calc(100vh-180px)] md:h-[calc(100vh-280px)]">
+              <ScrollArea className="h-full">
                 <div className="p-4 space-y-4">
                   {/* Contact Avatar & Name */}
                   <div className="text-center pb-4 border-b">
@@ -2890,8 +2890,8 @@ export default function InboxPage() {
             </TabsContent>
 
             {/* Tags & Notes Tab */}
-            <TabsContent value="tags" className="flex-1 m-0">
-              <ScrollArea className="h-[calc(100vh-180px)] md:h-[calc(100vh-280px)]">
+            <TabsContent value="tags" className="flex-1 m-0 overflow-hidden">
+              <ScrollArea className="h-full">
                 <div className="p-3 sm:p-4 space-y-4">
                   {/* Tags */}
                   <div>
@@ -3031,7 +3031,7 @@ export default function InboxPage() {
             </TabsContent>
 
             {/* OrderOps Tab */}
-            <TabsContent value="orderops" className="flex-1 m-0">
+            <TabsContent value="orderops" className="flex-1 m-0 overflow-hidden">
               <OrderOpsTab conversationId={selectedConversation.id} />
             </TabsContent>
           </Tabs>
