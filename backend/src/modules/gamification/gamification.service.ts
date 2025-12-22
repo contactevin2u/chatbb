@@ -157,7 +157,7 @@ class GamificationService {
         ${userId}::uuid,
         ${organizationId}::uuid,
         ${actionType},
-        ${points},
+        ${points}::integer,
         ${message || null},
         ${isLuckyStar}
       )

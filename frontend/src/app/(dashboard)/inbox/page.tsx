@@ -366,6 +366,8 @@ export default function InboxPage() {
       // Trigger on-demand history fetch
       fetchHistory(selectedConversationId).then((response) => {
         console.log('[HistoryFetch] Response:', response);
+        // Invalidate messages query to refresh after history fetch
+        queryClient.invalidateQueries({ queryKey: ['messages', selectedConversationId] });
       }).catch((error) => {
         console.error('Failed to fetch history:', error);
       });
@@ -1711,7 +1713,7 @@ export default function InboxPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1 sm:gap-1.5 min-w-0 flex-1">
+                        <div className="flex items-center gap-1 sm:gap-1.5 min-w-0 flex-1 overflow-hidden">
                           {conversation.isPinned && (
                             <Pin className="h-3 w-3 text-primary flex-shrink-0" />
                           )}
@@ -2009,7 +2011,7 @@ export default function InboxPage() {
                             </Avatar>
                           )}
                           <div
-                            className="group relative max-w-[85%] sm:max-w-[75%] md:max-w-[70%]"
+                            className="group relative max-w-[85%] sm:max-w-[75%] md:max-w-[70%] overflow-hidden"
                             onClick={() => {
                               // Toggle message menu on tap for mobile
                               if (window.matchMedia('(max-width: 768px)').matches) {
