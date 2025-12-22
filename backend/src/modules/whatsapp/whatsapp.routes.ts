@@ -185,11 +185,11 @@ router.get(
 /**
  * @route   POST /api/v1/channels/whatsapp/:channelId/incognito
  * @desc    Toggle incognito mode (stealth mode - no online status, typing, read receipts)
- * @access  Private (channels:edit)
+ * @access  Private (conversations:reply) - available to all agents
  */
 router.post(
   '/:channelId/incognito',
-  requirePermission('channels:edit'),
+  requirePermission('conversations:reply'),
   whatsappController.setIncognitoMode.bind(whatsappController)
 );
 
