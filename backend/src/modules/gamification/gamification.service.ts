@@ -186,23 +186,75 @@ class GamificationService {
         ? 'leaderboard_today'
         : period === 'week'
         ? 'leaderboard_week'
+        : period === 'month'
+        ? 'leaderboard_month'
         : 'leaderboard_all_time';
+
+    try {
+      const results = await prisma.$queryRawUnsafe<LeaderboardEntry[]>(
+        `
+        SELECT
+          user_id as "userId",
+          first_name as "firstName",
+          last_name as "lastName",
+          avatar_url as "avatarUrl",
+          points,
+          messages_sent as "messagesSent",
+          conversations_closed as "conversationsClosed",
+          streak,
+          rank::integer as rank
+        FROM ${viewName}
+        WHERE organization_id = $1::uuid
+        ORDER BY rank ASC
+        LIMIT $2
+        `,
+        organizationId,
+        limit
+      );
+
+      return results;
+    } catch (error) {
+      console.error('Leaderboard query error:', error);
+      // Fallback: query directly from agent_game_stats if view doesn't exist
+      return this.getLeaderboardFallback(organizationId, period, limit);
+    }
+  }
+
+  /**
+   * Fallback leaderboard query if views don't exist
+   */
+  private async getLeaderboardFallback(
+    organizationId: string,
+    period: LeaderboardPeriod,
+    limit: number
+  ): Promise<LeaderboardEntry[]> {
+    const pointsColumn =
+      period === 'today'
+        ? 'today_points'
+        : period === 'week'
+        ? 'week_points'
+        : period === 'month'
+        ? 'month_points'
+        : 'total_points';
 
     const results = await prisma.$queryRawUnsafe<LeaderboardEntry[]>(
       `
       SELECT
-        user_id as "userId",
-        first_name as "firstName",
-        last_name as "lastName",
-        avatar_url as "avatarUrl",
-        points,
-        messages_sent as "messagesSent",
-        conversations_closed as "conversationsClosed",
-        streak,
-        rank::integer as rank
-      FROM ${viewName}
-      WHERE organization_id = $1::uuid
-      ORDER BY rank ASC
+        u.id as "userId",
+        u.first_name as "firstName",
+        u.last_name as "lastName",
+        u.avatar_url as "avatarUrl",
+        COALESCE(ags.${pointsColumn}, 0) as points,
+        COALESCE(ags.messages_sent, 0) as "messagesSent",
+        COALESCE(ags.conversations_closed, 0) as "conversationsClosed",
+        COALESCE(ags.current_streak, 0) as streak,
+        ROW_NUMBER() OVER (ORDER BY COALESCE(ags.${pointsColumn}, 0) DESC)::integer as rank
+      FROM users u
+      LEFT JOIN agent_game_stats ags ON ags.user_id = u.id
+      WHERE u.organization_id = $1::uuid
+        AND u.status = 'ACTIVE'
+        AND u.role IN ('AGENT', 'SUPERVISOR', 'ADMIN', 'OWNER')
+      ORDER BY points DESC
       LIMIT $2
       `,
       organizationId,
@@ -273,13 +325,59 @@ class GamificationService {
         ? 'leaderboard_today'
         : period === 'week'
         ? 'leaderboard_week'
+        : period === 'month'
+        ? 'leaderboard_month'
         : 'leaderboard_all_time';
+
+    try {
+      const result = await prisma.$queryRawUnsafe<Array<{ rank: number }>>(
+        `
+        SELECT rank::integer as rank
+        FROM ${viewName}
+        WHERE organization_id = $1::uuid AND user_id = $2::uuid
+        `,
+        organizationId,
+        userId
+      );
+
+      return result[0]?.rank || null;
+    } catch (error) {
+      console.error('getUserRank error:', error);
+      // Fallback query
+      return this.getUserRankFallback(userId, organizationId, period);
+    }
+  }
+
+  /**
+   * Fallback for getUserRank if views don't exist
+   */
+  private async getUserRankFallback(
+    userId: string,
+    organizationId: string,
+    period: LeaderboardPeriod
+  ): Promise<number | null> {
+    const pointsColumn =
+      period === 'today'
+        ? 'today_points'
+        : period === 'week'
+        ? 'week_points'
+        : period === 'month'
+        ? 'month_points'
+        : 'total_points';
 
     const result = await prisma.$queryRawUnsafe<Array<{ rank: number }>>(
       `
-      SELECT rank::integer as rank
-      FROM ${viewName}
-      WHERE organization_id = $1::uuid AND user_id = $2::uuid
+      SELECT rank::integer FROM (
+        SELECT
+          u.id,
+          ROW_NUMBER() OVER (ORDER BY COALESCE(ags.${pointsColumn}, 0) DESC) as rank
+        FROM users u
+        LEFT JOIN agent_game_stats ags ON ags.user_id = u.id
+        WHERE u.organization_id = $1::uuid
+          AND u.status = 'ACTIVE'
+          AND u.role IN ('AGENT', 'SUPERVISOR', 'ADMIN', 'OWNER')
+      ) ranked
+      WHERE id = $2::uuid
       `,
       organizationId,
       userId

@@ -259,6 +259,22 @@ FROM users u
 LEFT JOIN agent_game_stats ags ON ags.user_id = u.id
 WHERE u.status = 'ACTIVE' AND u.role IN ('AGENT', 'SUPERVISOR', 'ADMIN', 'OWNER');
 
+CREATE OR REPLACE VIEW leaderboard_month AS
+SELECT
+  u.id as user_id,
+  u.first_name,
+  u.last_name,
+  u.avatar_url,
+  u.organization_id,
+  COALESCE(ags.month_points, 0) as points,
+  COALESCE(ags.messages_sent, 0) as messages_sent,
+  COALESCE(ags.conversations_closed, 0) as conversations_closed,
+  COALESCE(ags.current_streak, 0) as streak,
+  ROW_NUMBER() OVER (PARTITION BY u.organization_id ORDER BY COALESCE(ags.month_points, 0) DESC) as rank
+FROM users u
+LEFT JOIN agent_game_stats ags ON ags.user_id = u.id
+WHERE u.status = 'ACTIVE' AND u.role IN ('AGENT', 'SUPERVISOR', 'ADMIN', 'OWNER');
+
 CREATE OR REPLACE VIEW leaderboard_all_time AS
 SELECT
   u.id as user_id,
