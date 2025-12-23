@@ -1645,7 +1645,16 @@ export default function InboxPage() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 sm:gap-2">
-                    <p className="font-medium text-sm sm:text-base truncate">{getContactName(selectedConversation.contact)}</p>
+                    <button
+                      className="font-medium text-sm sm:text-base truncate hover:underline cursor-pointer text-left"
+                      onClick={() => {
+                        setEditContactName(selectedConversation.contact.displayName || '');
+                        setEditContactOpen(true);
+                      }}
+                      title="Click to edit contact name"
+                    >
+                      {getContactName(selectedConversation.contact)}
+                    </button>
                     {isGroupContact(selectedConversation.contact) && (
                       <span className="text-[10px] sm:text-xs bg-green-500/10 text-green-600 px-1 sm:px-1.5 py-0.5 rounded flex-shrink-0">Group</span>
                     )}
