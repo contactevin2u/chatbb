@@ -1231,10 +1231,52 @@ export default function InboxPage() {
     const slashStart = messageText.lastIndexOf('/');
 
     if (item.type === 'quickReply') {
-      // Quick Reply: fill chat box with text (user can edit before sending)
       const quickReply = item.data as QuickReply;
-      const newText = messageText.substring(0, slashStart) + quickReply.content.text;
-      setMessageText(newText);
+
+      // If quick reply has media, send it directly (can't edit media in text box)
+      if (quickReply.content.media) {
+        if (!selectedConversationId) {
+          toast.error('No conversation selected');
+          setSlashCommandOpen(false);
+          setSlashSearchTerm('');
+          return;
+        }
+
+        // Get quote ID if replying to a message
+        const quoteId = replyToMessage?.externalId || undefined;
+
+        try {
+          // Send quick reply with media directly
+          await sendMessage({
+            conversationId: selectedConversationId,
+            text: quickReply.content.text || undefined,
+            media: {
+              type: quickReply.content.media.type,
+              url: quickReply.content.media.url,
+              mimetype: quickReply.content.media.mimetype,
+              filename: quickReply.content.media.filename,
+              caption: quickReply.content.text || undefined,
+            },
+            quotedMessageId: quoteId,
+          });
+
+          // Clear input and reply state
+          setMessageText('');
+          setReplyToMessage(null);
+          toast.success('Quick reply sent');
+
+          // Refresh messages
+          queryClient.invalidateQueries({ queryKey: ['messages', selectedConversationId] });
+          queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        } catch (error: any) {
+          console.error('Failed to send quick reply:', error);
+          toast.error(error.message || 'Failed to send quick reply');
+        }
+      } else {
+        // Text-only quick reply: fill chat box with text (user can edit before sending)
+        const newText = messageText.substring(0, slashStart) + quickReply.content.text;
+        setMessageText(newText);
+      }
     } else {
       // Sequence: start execution (worker handles sending all steps)
       const sequence = item.data;
@@ -1265,7 +1307,7 @@ export default function InboxPage() {
 
     // Focus the input
     messageInputRef.current?.focus();
-  }, [messageText, selectedConversationId]);
+  }, [messageText, selectedConversationId, replyToMessage, queryClient]);
 
   // Handle message input change with slash command detection
   const handleMessageInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -1814,6 +1856,34 @@ export default function InboxPage() {
               activeMessageMenu={activeMessageMenu}
               setActiveMessageMenu={setActiveMessageMenu}
             />
+            {/* Notes Banner */}
+            {conversationNotes && conversationNotes.length > 0 && (
+              <div className="px-4 py-2 border-t bg-amber-50/50 dark:bg-amber-900/10">
+                <div className="flex items-center gap-2 mb-2">
+                  <StickyNote className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  <span className="text-sm font-medium text-amber-600 dark:text-amber-400">
+                    Notes ({conversationNotes.length})
+                  </span>
+                </div>
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {conversationNotes
+                    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                    .slice(0, 5)
+                    .map((note) => (
+                      <div
+                        key={note.id}
+                        className="flex-shrink-0 bg-white dark:bg-gray-800 rounded-lg px-3 py-2 text-sm border border-amber-200 dark:border-amber-800 shadow-sm max-w-[250px]"
+                      >
+                        <p className="text-xs text-foreground line-clamp-2">{note.content}</p>
+                        <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">
+                          {note.user?.firstName} &middot; {formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}
+                        </p>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
             {/* Scheduled Messages Banner */}
             {scheduledMessages.filter(m => m.status === 'PENDING').length > 0 && (
               <div className="px-4 py-2 border-t bg-blue-50/50 dark:bg-blue-900/10">

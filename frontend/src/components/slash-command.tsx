@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { MessageSquare, FileText, Image, Video, Music, Zap } from 'lucide-react';
+import { MessageSquare, FileText, Image, Video, Music, Zap, Clock, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { searchQuickReplies, QuickReply, trackQuickReplyUsage } from '@/lib/api/quick-replies';
-import { searchSequences, MessageSequence } from '@/lib/api/sequences';
+import { searchSequences, MessageSequence, SequenceStep } from '@/lib/api/sequences';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 // Unified item type for the slash menu
 export type SlashCommandItem =
@@ -172,64 +173,207 @@ export function SlashCommand({
     return (item.data as QuickReply).category;
   };
 
+  const selectedItem = items[selectedIndex];
+
+  const getStepIcon = (step: SequenceStep) => {
+    switch (step.type) {
+      case 'IMAGE':
+        return <Image className="h-3.5 w-3.5 text-blue-500" />;
+      case 'VIDEO':
+        return <Video className="h-3.5 w-3.5 text-purple-500" />;
+      case 'AUDIO':
+        return <Music className="h-3.5 w-3.5 text-green-500" />;
+      case 'DOCUMENT':
+        return <FileText className="h-3.5 w-3.5 text-orange-500" />;
+      case 'DELAY':
+        return <Clock className="h-3.5 w-3.5 text-gray-500" />;
+      default:
+        return <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />;
+    }
+  };
+
+  const formatDelay = (step: SequenceStep) => {
+    const mins = step.content.delayMinutes || 0;
+    const secs = step.content.delaySeconds || 0;
+    if (mins > 0 && secs > 0) return `Wait ${mins}m ${secs}s`;
+    if (mins > 0) return `Wait ${mins} minute${mins !== 1 ? 's' : ''}`;
+    if (secs > 0) return `Wait ${secs} second${secs !== 1 ? 's' : ''}`;
+    return 'Wait';
+  };
+
   if (!isOpen) return null;
 
   return (
     <div
       ref={containerRef}
-      className="absolute z-50 w-80 max-h-64 overflow-y-auto rounded-lg border bg-popover shadow-lg"
+      className="absolute z-50 flex rounded-lg border bg-popover shadow-lg"
       style={{
         bottom: `calc(100% + 8px)`,
         left: 0,
+        width: selectedItem ? '600px' : '320px',
+        maxWidth: 'calc(100vw - 32px)',
       }}
     >
-      {isLoading ? (
-        <div className="p-3 text-sm text-muted-foreground text-center">Loading...</div>
-      ) : !items.length ? (
-        <div className="p-3 text-sm text-muted-foreground text-center">
-          {searchTerm ? `No results matching "/${searchTerm}"` : 'Type to search'}
-        </div>
-      ) : (
-        <div className="py-1">
-          <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground">
-            Quick Replies & Sequences
+      {/* Left panel - List */}
+      <div className={cn("flex flex-col", selectedItem ? "w-[280px] border-r" : "w-full")}>
+        {isLoading ? (
+          <div className="p-3 text-sm text-muted-foreground text-center">Loading...</div>
+        ) : !items.length ? (
+          <div className="p-3 text-sm text-muted-foreground text-center">
+            {searchTerm ? `No results matching "/${searchTerm}"` : 'Type to search'}
           </div>
-          {items.map((item, index) => (
-            <button
-              key={`${item.type}-${item.data.id}`}
-              className={cn(
-                'w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-accent transition-colors',
-                index === selectedIndex && 'bg-accent'
-              )}
-              onClick={() => handleSelect(item)}
-              onMouseEnter={() => setSelectedIndex(index)}
-            >
-              <div className="flex-shrink-0 mt-0.5">{getItemIcon(item)}</div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium truncate">{getItemName(item)}</span>
-                  <span className="text-xs text-muted-foreground">/{getItemShortcut(item)}</span>
-                </div>
-                <p className="text-xs text-muted-foreground truncate mt-0.5">
-                  {getItemPreview(item)}
-                </p>
+        ) : (
+          <ScrollArea className="max-h-[280px]">
+            <div className="py-1">
+              <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+                Quick Replies & Sequences
               </div>
-              {getItemCategory(item) && (
-                <span className={cn(
-                  "flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded",
-                  item.type === 'sequence' ? 'bg-yellow-100 text-yellow-800' : 'bg-muted'
-                )}>
-                  {getItemCategory(item)}
-                </span>
+              {items.map((item, index) => (
+                <button
+                  key={`${item.type}-${item.data.id}`}
+                  className={cn(
+                    'w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-accent transition-colors',
+                    index === selectedIndex && 'bg-accent'
+                  )}
+                  onClick={() => handleSelect(item)}
+                  onMouseEnter={() => setSelectedIndex(index)}
+                >
+                  <div className="flex-shrink-0">{getItemIcon(item)}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-medium truncate">{getItemName(item)}</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      /{getItemShortcut(item)}
+                    </p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                </button>
+              ))}
+            </div>
+          </ScrollArea>
+        )}
+        <div className="px-3 py-2 border-t bg-muted/50 text-[10px] text-muted-foreground mt-auto">
+          <span className="font-medium">Tab</span>/<span className="font-medium">Enter</span> to send &middot; <span className="font-medium">Esc</span> to dismiss
+        </div>
+      </div>
+
+      {/* Right panel - Preview */}
+      {selectedItem && (
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="px-3 py-2 border-b bg-muted/30">
+            <div className="flex items-center gap-2">
+              {getItemIcon(selectedItem)}
+              <span className="font-medium text-sm truncate">{getItemName(selectedItem)}</span>
+              <span className={cn(
+                "text-[10px] px-1.5 py-0.5 rounded ml-auto",
+                selectedItem.type === 'sequence' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' : 'bg-muted text-muted-foreground'
+              )}>
+                {getItemCategory(selectedItem)}
+              </span>
+            </div>
+          </div>
+          <ScrollArea className="flex-1 max-h-[240px]">
+            <div className="p-3">
+              {selectedItem.type === 'quickReply' ? (
+                /* Quick Reply Preview */
+                <div className="space-y-3">
+                  {(selectedItem.data as QuickReply).content.media && (
+                    <div className="rounded-lg overflow-hidden bg-muted/50 border">
+                      {(selectedItem.data as QuickReply).content.media?.type === 'image' && (
+                        <img
+                          src={(selectedItem.data as QuickReply).content.media?.url}
+                          alt="Preview"
+                          className="w-full h-32 object-cover"
+                        />
+                      )}
+                      {(selectedItem.data as QuickReply).content.media?.type === 'video' && (
+                        <video
+                          src={(selectedItem.data as QuickReply).content.media?.url}
+                          className="w-full h-32 object-cover"
+                          controls
+                          preload="metadata"
+                        />
+                      )}
+                      {(selectedItem.data as QuickReply).content.media?.type === 'audio' && (
+                        <div className="p-3">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Music className="h-4 w-4 text-green-500" />
+                            <span className="text-sm text-muted-foreground">
+                              {(selectedItem.data as QuickReply).content.media?.filename || 'Audio file'}
+                            </span>
+                          </div>
+                          <audio
+                            src={(selectedItem.data as QuickReply).content.media?.url}
+                            className="w-full h-8"
+                            controls
+                            preload="metadata"
+                          />
+                        </div>
+                      )}
+                      {(selectedItem.data as QuickReply).content.media?.type === 'document' && (
+                        <div className="flex items-center gap-2 p-3">
+                          <FileText className="h-4 w-4 text-orange-500" />
+                          <span className="text-sm text-muted-foreground">
+                            {(selectedItem.data as QuickReply).content.media?.filename || 'Document'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {(selectedItem.data as QuickReply).content.text && (
+                    <div className="text-sm whitespace-pre-wrap break-words">
+                      {(selectedItem.data as QuickReply).content.text}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Sequence Preview */
+                <div className="space-y-2">
+                  {(selectedItem.data as MessageSequence).description && (
+                    <p className="text-xs text-muted-foreground mb-3">
+                      {(selectedItem.data as MessageSequence).description}
+                    </p>
+                  )}
+                  {(selectedItem.data as MessageSequence).steps
+                    ?.sort((a, b) => a.order - b.order)
+                    .map((step, idx) => (
+                      <div
+                        key={step.id}
+                        className="flex items-start gap-2 p-2 rounded-lg bg-muted/50 border"
+                      >
+                        <div className="flex items-center justify-center h-5 w-5 rounded-full bg-background text-[10px] font-medium flex-shrink-0">
+                          {idx + 1}
+                        </div>
+                        <div className="flex-shrink-0 mt-0.5">
+                          {getStepIcon(step)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          {step.type === 'DELAY' ? (
+                            <span className="text-xs text-muted-foreground italic">
+                              {formatDelay(step)}
+                            </span>
+                          ) : (
+                            <>
+                              {step.content.text && (
+                                <p className="text-xs line-clamp-2">{step.content.text}</p>
+                              )}
+                              {step.content.mediaUrl && !step.content.text && (
+                                <p className="text-xs text-muted-foreground">
+                                  {step.content.mediaFilename || `${step.type.toLowerCase()} file`}
+                                </p>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                </div>
               )}
-            </button>
-          ))}
+            </div>
+          </ScrollArea>
         </div>
       )}
-      <div className="px-3 py-2 border-t bg-muted/50 text-[10px] text-muted-foreground">
-        <span className="font-medium">Tab</span> or <span className="font-medium">Enter</span> to
-        select &middot; <span className="font-medium">Esc</span> to dismiss
-      </div>
     </div>
   );
 }

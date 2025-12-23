@@ -597,13 +597,62 @@ async function handleSendCommand(channelId: string, data: {
       const isFromMe = originalMessage?.direction === 'OUTBOUND';
 
       // Construct message object with actual content for proper quote preview
+      // For media messages, we need to include the proper message structure
       let messageContent: any = { conversation: '' };
       if (originalMessage?.content) {
         const content = originalMessage.content as any;
-        if (content.text) {
+        const msgType = originalMessage.type;
+
+        if (msgType === 'TEXT') {
+          messageContent = { conversation: content.text || '' };
+        } else if (msgType === 'IMAGE' && content.mediaUrl) {
+          // For image messages, construct imageMessage structure
+          messageContent = {
+            imageMessage: {
+              url: content.mediaUrl,
+              caption: content.caption || '',
+              mimetype: content.mimeType || 'image/jpeg',
+            },
+          };
+        } else if (msgType === 'VIDEO' && content.mediaUrl) {
+          // For video messages, construct videoMessage structure
+          messageContent = {
+            videoMessage: {
+              url: content.mediaUrl,
+              caption: content.caption || '',
+              mimetype: content.mimeType || 'video/mp4',
+              gifPlayback: content.isGif || false,
+            },
+          };
+        } else if (msgType === 'AUDIO' && content.mediaUrl) {
+          messageContent = {
+            audioMessage: {
+              url: content.mediaUrl,
+              mimetype: content.mimeType || 'audio/ogg; codecs=opus',
+              ptt: content.ptt || false,
+            },
+          };
+        } else if (msgType === 'DOCUMENT' && content.mediaUrl) {
+          messageContent = {
+            documentMessage: {
+              url: content.mediaUrl,
+              fileName: content.filename || 'document',
+              mimetype: content.mimeType || 'application/octet-stream',
+              caption: content.caption || '',
+            },
+          };
+        } else if (msgType === 'STICKER' && content.mediaUrl) {
+          messageContent = {
+            stickerMessage: {
+              url: content.mediaUrl,
+              mimetype: 'image/webp',
+              isAnimated: content.isAnimated || false,
+            },
+          };
+        } else if (content.text) {
           messageContent = { conversation: content.text };
         } else if (content.caption) {
-          // For media with captions
+          // Fallback for media with captions but no mediaUrl
           messageContent = { conversation: content.caption };
         }
       }
@@ -616,7 +665,7 @@ async function handleSendCommand(channelId: string, data: {
         },
         message: messageContent,
       };
-      logger.debug({ channelId, quotedMessageId: data.quotedMessageId, hasOriginal: !!originalMessage }, 'Replying to message');
+      logger.debug({ channelId, quotedMessageId: data.quotedMessageId, hasOriginal: !!originalMessage, msgType: originalMessage?.type }, 'Replying to message');
     }
 
     // Priority: media > sticker > gif > voiceNote > reaction > text

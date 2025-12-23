@@ -191,11 +191,19 @@ function QuickReplyEditor({
 }) {
   const queryClient = useQueryClient();
   const isEditing = !!quickReply;
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState('');
   const [shortcut, setShortcut] = useState('');
   const [text, setText] = useState('');
   const [category, setCategory] = useState('');
+
+  // Media state
+  const [mediaUrl, setMediaUrl] = useState('');
+  const [mediaType, setMediaType] = useState<'image' | 'video' | 'audio' | 'document' | null>(null);
+  const [mediaMimetype, setMediaMimetype] = useState('');
+  const [mediaFilename, setMediaFilename] = useState('');
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -203,8 +211,55 @@ function QuickReplyEditor({
       setShortcut(quickReply?.shortcut || '');
       setText(quickReply?.content.text || '');
       setCategory(quickReply?.category || '');
+      // Load media if exists
+      if (quickReply?.content.media) {
+        setMediaUrl(quickReply.content.media.url || '');
+        setMediaType(quickReply.content.media.type || null);
+        setMediaMimetype(quickReply.content.media.mimetype || '');
+        setMediaFilename(quickReply.content.media.filename || '');
+      } else {
+        setMediaUrl('');
+        setMediaType(null);
+        setMediaMimetype('');
+        setMediaFilename('');
+      }
     }
   }, [open, quickReply]);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Determine media type from file
+    let type: 'image' | 'video' | 'audio' | 'document' = 'document';
+    if (file.type.startsWith('image/')) type = 'image';
+    else if (file.type.startsWith('video/')) type = 'video';
+    else if (file.type.startsWith('audio/')) type = 'audio';
+
+    setUploading(true);
+    try {
+      const result = await uploadMedia(file);
+      setMediaUrl(result.url);
+      setMediaType(type);
+      setMediaMimetype(file.type);
+      setMediaFilename(file.name);
+      toast.success('Media uploaded');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to upload media');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleRemoveMedia = () => {
+    setMediaUrl('');
+    setMediaType(null);
+    setMediaMimetype('');
+    setMediaFilename('');
+  };
 
   const createMutation = useMutation({
     mutationFn: createQuickReply,
@@ -241,9 +296,21 @@ function QuickReplyEditor({
       toast.error('Please enter a shortcut');
       return;
     }
-    if (!text.trim()) {
-      toast.error('Please enter the reply text');
+    // Must have either text or media
+    if (!text.trim() && !mediaUrl) {
+      toast.error('Please enter reply text or upload media');
       return;
+    }
+
+    // Build content object
+    const content: any = { text: text.trim() };
+    if (mediaUrl && mediaType) {
+      content.media = {
+        type: mediaType,
+        url: mediaUrl,
+        mimetype: mediaMimetype || undefined,
+        filename: mediaFilename || undefined,
+      };
     }
 
     if (isEditing && quickReply) {
@@ -252,7 +319,7 @@ function QuickReplyEditor({
         data: {
           name: name.trim(),
           shortcut: shortcut.trim(),
-          content: { text: text.trim() },
+          content,
           category: category.trim() || null,
         },
       });
@@ -260,7 +327,7 @@ function QuickReplyEditor({
       createMutation.mutate({
         name: name.trim(),
         shortcut: shortcut.trim(),
-        content: { text: text.trim() },
+        content,
         category: category.trim() || undefined,
       });
     }
@@ -302,16 +369,94 @@ function QuickReplyEditor({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="qr-text">Reply Text</Label>
+            <Label htmlFor="qr-text">Reply Text {mediaUrl ? '(Caption)' : ''}</Label>
             <Textarea
               id="qr-text"
-              placeholder="Enter the reply text..."
+              placeholder={mediaUrl ? "Enter caption for media..." : "Enter the reply text..."}
               value={text}
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setText(e.target.value)}
-              rows={4}
+              rows={3}
             />
             <p className="text-xs text-muted-foreground">
               Supports WhatsApp formatting: *bold*, _italic_, ~strikethrough~
+            </p>
+          </div>
+
+          {/* Media Upload Section */}
+          <div className="space-y-2">
+            <Label>Media Attachment (optional)</Label>
+            {mediaUrl ? (
+              <div className="border rounded-lg p-3 bg-muted/30">
+                <div className="flex items-start gap-3">
+                  {/* Preview */}
+                  <div className="flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden bg-muted">
+                    {mediaType === 'image' && (
+                      <img src={mediaUrl} alt="Preview" className="w-full h-full object-cover" />
+                    )}
+                    {mediaType === 'video' && (
+                      <video src={mediaUrl} className="w-full h-full object-cover" />
+                    )}
+                    {mediaType === 'audio' && (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Mic className="h-8 w-8 text-muted-foreground" />
+                      </div>
+                    )}
+                    {mediaType === 'document' && (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <FileText className="h-8 w-8 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{mediaFilename || 'Uploaded file'}</p>
+                    <p className="text-xs text-muted-foreground capitalize">{mediaType}</p>
+                    {mediaType === 'audio' && (
+                      <audio src={mediaUrl} className="w-full mt-2" controls />
+                    )}
+                  </div>
+                  {/* Remove button */}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    onClick={handleRemoveMedia}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="border border-dashed rounded-lg p-4">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                  id="qr-media-upload"
+                />
+                <label
+                  htmlFor="qr-media-upload"
+                  className={cn(
+                    "flex flex-col items-center gap-2 cursor-pointer",
+                    uploading && "pointer-events-none opacity-50"
+                  )}
+                >
+                  {uploading ? (
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  ) : (
+                    <Upload className="h-8 w-8 text-muted-foreground" />
+                  )}
+                  <span className="text-sm text-muted-foreground">
+                    {uploading ? 'Uploading...' : 'Click to upload image, video, audio, or document'}
+                  </span>
+                </label>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Quick replies with media will send immediately when selected (text becomes caption)
             </p>
           </div>
 
