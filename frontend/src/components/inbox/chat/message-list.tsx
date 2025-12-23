@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useRef, useCallback } from 'react';
+import { memo, useRef, useCallback, useEffect } from 'react';
 import { isSameDay } from 'date-fns';
 import {
   MoreVertical,
