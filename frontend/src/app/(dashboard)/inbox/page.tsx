@@ -314,6 +314,29 @@ function getRawMediaType(content: any): string | null {
   return null;
 }
 
+// Check if a message has any renderable content
+function isMessageRenderable(message: { type: string; content: any }): boolean {
+  const { type, content } = message;
+  if (!content) return false;
+
+  // Check standard format
+  if (content.text) return true;
+  if (content.caption) return true;
+  if (content.mediaUrl) return true;
+
+  // Check raw format
+  const extractedText = getMessageText(content);
+  if (extractedText) return true;
+
+  const rawMediaType = getRawMediaType(content);
+  if (rawMediaType) return true;
+
+  // Known types with specific rendering
+  if (type === 'STICKER') return true;
+
+  return false;
+}
+
 // Download file helper
 function downloadFile(url: string, filename: string) {
   const link = document.createElement('a');
@@ -2123,9 +2146,9 @@ export default function InboxPage() {
                     </div>
                   )}
 
-                  {allMessages.map((message, index) => {
+                  {allMessages.filter(isMessageRenderable).map((message, index, filteredMessages) => {
                     const messageDate = new Date(message.createdAt);
-                    const prevMessage = index > 0 ? allMessages[index - 1] : null;
+                    const prevMessage = index > 0 ? filteredMessages[index - 1] : null;
                     const showDateSeparator = !prevMessage || !isSameDay(messageDate, new Date(prevMessage.createdAt));
 
                     return (
