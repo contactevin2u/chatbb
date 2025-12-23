@@ -49,3 +49,19 @@ uploads/
 
 # Vercel
 .vercel/
+
+# Debug/temp scripts (prevent credential exposure)
+backend/scripts/check-*.js
+backend/scripts/debug-*.js
+backend/scripts/test-*.js
+backend/scripts/query-*.js
+backend/scripts/find-*.js
+backend/scripts/deep-*.js
+backend/check-db.ts
+**/check-db.ts
+
+# Credentials and secrets
+*.pem
+*.key
+credentials.json
+secrets.json
