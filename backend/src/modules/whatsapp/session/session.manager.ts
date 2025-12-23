@@ -1608,14 +1608,16 @@ export class SessionManager extends EventEmitter {
    * Format phone number to JID
    */
   private formatJid(phoneNumber: string): string {
-    // Remove all non-numeric characters
-    const cleaned = phoneNumber.replace(/\D/g, '');
-
-    // Add @s.whatsapp.net suffix if not present
-    if (cleaned.includes('@')) {
-      return cleaned;
+    // If already a valid JID (contains @), return as-is
+    // Must check BEFORE cleaning since cleaning removes @
+    if (phoneNumber.includes('@')) {
+      return phoneNumber;
     }
 
+    // Remove all non-numeric characters for plain phone numbers
+    const cleaned = phoneNumber.replace(/\D/g, '');
+
+    // Add @s.whatsapp.net suffix for individual chats
     return `${cleaned}@s.whatsapp.net`;
   }
 

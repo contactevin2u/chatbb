@@ -221,7 +221,11 @@ export class MessageService {
     }
 
     // OPTIMIZATION: Start sending immediately while creating DB record in parallel
-    const recipient = conversation.contact.identifier;
+    // Build proper JID based on whether this is a group or individual chat
+    const isGroup = conversation.contact.isGroup;
+    const recipient = isGroup
+      ? `${conversation.contact.identifier}@g.us`
+      : `${conversation.contact.identifier}@s.whatsapp.net`;
 
     // Start WhatsApp send (don't await yet)
     const sendPromise = conversation.channel.type === 'WHATSAPP'
@@ -472,8 +476,9 @@ export class MessageService {
 
     // Build message key for the edit
     const recipient = message.conversation.contact.identifier;
+    const isGroup = message.conversation.contact.isGroup;
     const messageKey = {
-      remoteJid: `${recipient}@s.whatsapp.net`,
+      remoteJid: isGroup ? `${recipient}@g.us` : `${recipient}@s.whatsapp.net`,
       id: message.externalId,
       fromMe: true,
     };
@@ -567,10 +572,16 @@ export class MessageService {
     });
 
     try {
+      // Build proper JID based on whether this is a group or individual chat
+      const isGroup = conversation.contact.isGroup;
+      const recipient = isGroup
+        ? `${conversation.contact.identifier}@g.us`
+        : `${conversation.contact.identifier}@s.whatsapp.net`;
+
       // Send poll via WhatsApp
       const result = await whatsappService.sendPoll(
         conversation.channelId,
-        conversation.contact.identifier,
+        recipient,
         { name, options, selectableCount }
       );
 
@@ -658,8 +669,9 @@ export class MessageService {
 
     // Build message key
     const recipient = message.conversation.contact.identifier;
+    const isGroup = message.conversation.contact.isGroup;
     const messageKey = {
-      remoteJid: `${recipient}@s.whatsapp.net`,
+      remoteJid: isGroup ? `${recipient}@g.us` : `${recipient}@s.whatsapp.net`,
       id: message.externalId,
       fromMe: true,
     };
