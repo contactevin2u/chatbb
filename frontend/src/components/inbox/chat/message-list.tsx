@@ -117,18 +117,19 @@ function MessageListComponent({
   }
 
   return (
-    <div className="flex-1 relative overflow-hidden">
+    <div className="flex-1 relative overflow-hidden w-full max-w-full">
       {/* Logo Watermark */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
         <img src="/logo.png" alt="" className="w-24 sm:w-32 h-auto opacity-[0.35]" />
       </div>
 
       <ScrollArea
-        className="h-full p-2 sm:p-4 relative z-10"
+        className="h-full relative z-10 w-full max-w-full"
         ref={messagesContainerRef}
         onScrollCapture={handleScroll}
       >
-        <div className="space-y-2 w-full overflow-x-hidden">
+        <div className="p-2 sm:p-4 w-full max-w-full box-border">
+          <div className="space-y-2 w-full max-w-full overflow-x-hidden">
           {/* Loading indicator for older messages */}
           {isLoadingMore && (
             <div className="flex justify-center py-4">
@@ -363,20 +364,21 @@ function MessageListComponent({
             );
           })}
 
+          {/* Typing indicator */}
+          {typingUsers.size > 0 && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mt-4">
+              <div className="flex gap-1">
+                <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+              <span>{Array.from(typingUsers.values()).join(', ')} typing...</span>
+            </div>
+          )}
+
           <div ref={messagesEndRef} />
         </div>
-
-        {/* Typing indicator */}
-        {typingUsers.size > 0 && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground mt-4">
-            <div className="flex gap-1">
-              <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-            </div>
-            <span>{Array.from(typingUsers.values()).join(', ')} typing...</span>
-          </div>
-        )}
+        </div>
       </ScrollArea>
     </div>
   );
