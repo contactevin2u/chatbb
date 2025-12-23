@@ -324,12 +324,18 @@ function isMessageRenderable(message: { type: string; content: any }): boolean {
   if (content.caption) return true;
   if (content.mediaUrl) return true;
 
-  // Check raw format
+  // Check raw format - extract text
   const extractedText = getMessageText(content);
   if (extractedText) return true;
 
+  // For raw media types (image, video, etc.)
   const rawMediaType = getRawMediaType(content);
-  if (rawMediaType) return true;
+  if (rawMediaType) {
+    // TEXT type can only render text, not raw media placeholders
+    // So TEXT with raw media but no text is NOT renderable
+    if (type === 'TEXT') return false;
+    return true;
+  }
 
   // Known types with specific rendering
   if (type === 'STICKER') return true;
