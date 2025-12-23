@@ -187,6 +187,34 @@ export class MessageController {
   }
 
   /**
+   * Forward a message
+   * POST /api/v1/messages/:id/forward
+   */
+  async forwardMessage(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { organizationId, sub: userId } = req.user!;
+      const { id } = req.params;
+      const { targetConversationId } = req.body;
+
+      if (!targetConversationId) {
+        return res.status(400).json({
+          success: false,
+          error: 'targetConversationId is required',
+        });
+      }
+
+      const result = await messageService.forwardMessage(id, targetConversationId, organizationId, userId);
+
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Delete message for everyone
    * DELETE /api/v1/messages/:id/everyone
    */

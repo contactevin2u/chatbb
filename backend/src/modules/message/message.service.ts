@@ -696,6 +696,162 @@ export class MessageService {
   }
 
   /**
+   * Forward a message to another conversation
+   * Supports forwarding to the same channel or different channels within the same organization
+   */
+  async forwardMessage(
+    messageId: string,
+    targetConversationId: string,
+    organizationId: string,
+    userId: string
+  ) {
+    // Find the original message with its content
+    const originalMessage = await prisma.message.findFirst({
+      where: {
+        id: messageId,
+        conversation: {
+          organizationId,
+        },
+      },
+      include: {
+        conversation: {
+          include: {
+            channel: true,
+            contact: true,
+          },
+        },
+      },
+    });
+
+    if (!originalMessage) {
+      throw new Error('Message not found');
+    }
+
+    if (!originalMessage.externalId) {
+      throw new Error('Cannot forward this message (no external ID)');
+    }
+
+    // Find target conversation
+    const targetConversation = await prisma.conversation.findFirst({
+      where: {
+        id: targetConversationId,
+        organizationId,
+      },
+      include: {
+        channel: true,
+        contact: true,
+      },
+    });
+
+    if (!targetConversation) {
+      throw new Error('Target conversation not found');
+    }
+
+    if (targetConversation.channel.type !== 'WHATSAPP') {
+      throw new Error('Message forwarding is only supported for WhatsApp conversations');
+    }
+
+    // Build the WhatsApp message object for forwarding
+    // Baileys needs the original WAMessage structure
+    const recipient = targetConversation.contact.identifier;
+    const isGroup = targetConversation.contact.isGroup;
+    const originalRemoteJid = originalMessage.conversation.contact.isGroup
+      ? `${originalMessage.conversation.contact.identifier}@g.us`
+      : `${originalMessage.conversation.contact.identifier}@s.whatsapp.net`;
+
+    // Reconstruct WAMessage structure from stored content
+    const waMessage = {
+      key: {
+        remoteJid: originalRemoteJid,
+        id: originalMessage.externalId,
+        fromMe: originalMessage.direction === MessageDirection.OUTBOUND,
+      },
+      message: (originalMessage.content as any)?.message || originalMessage.content,
+    };
+
+    // Create pending message record
+    const pendingMessage = await prisma.message.create({
+      data: {
+        conversationId: targetConversationId,
+        channelId: targetConversation.channelId,
+        direction: MessageDirection.OUTBOUND,
+        type: originalMessage.type,
+        content: {
+          ...originalMessage.content as any,
+          forwarded: true,
+          forwardedFrom: messageId,
+        },
+        status: MessageStatus.PENDING,
+        sentByUserId: userId,
+      },
+    });
+
+    // Emit pending message to UI for immediate feedback
+    socketServer.to(`conversation:${targetConversationId}`).emit('message:pending', {
+      ...pendingMessage,
+      sentByUser: await prisma.user.findUnique({
+        where: { id: userId },
+        select: { firstName: true, lastName: true },
+      }),
+    });
+
+    try {
+      // Forward via WhatsApp
+      const targetJid = isGroup
+        ? `${recipient}@g.us`
+        : `${recipient}@s.whatsapp.net`;
+
+      const result = await whatsappService.forwardMessage(
+        targetConversation.channelId,
+        waMessage,
+        targetJid
+      );
+
+      // Update message with external ID and sent status
+      const sentMessage = await prisma.message.update({
+        where: { id: pendingMessage.id },
+        data: {
+          externalId: result.externalId,
+          status: MessageStatus.SENT,
+          sentAt: new Date(),
+        },
+        include: {
+          sentByUser: {
+            select: { firstName: true, lastName: true },
+          },
+        },
+      });
+
+      // Update conversation last message time
+      await prisma.conversation.update({
+        where: { id: targetConversationId },
+        data: { lastMessageAt: new Date() },
+      });
+
+      // Emit message sent event
+      socketServer.to(`conversation:${targetConversationId}`).emit('message:new', sentMessage);
+
+      return {
+        messageId: sentMessage.id,
+        externalId: result.externalId,
+        status: 'SENT',
+        targetConversationId,
+      };
+    } catch (error) {
+      // Mark message as failed
+      await prisma.message.update({
+        where: { id: pendingMessage.id },
+        data: {
+          status: MessageStatus.FAILED,
+          failedReason: (error as Error).message,
+        },
+      });
+
+      throw error;
+    }
+  }
+
+  /**
    * React to a message
    * Sends reaction via WhatsApp and stores it locally
    */

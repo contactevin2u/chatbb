@@ -472,6 +472,11 @@ async function setupCommandSubscriber() {
           await handleFetchHistoryCommand(channelId, data);
           break;
 
+        case 'forward':
+          // Forward a message to another chat
+          await handleForwardCommand(channelId, data);
+          break;
+
         default:
           logger.warn({ command }, 'Unknown command');
       }
@@ -635,6 +640,26 @@ async function handleSendCommand(channelId: string, data: {
     }
 
     // Publish result back to API
+    await redisClient.publish(`whatsapp:response:${data.requestId}`, JSON.stringify({
+      success: true,
+      messageId: result?.key?.id,
+    }));
+  } catch (error) {
+    await redisClient.publish(`whatsapp:response:${data.requestId}`, JSON.stringify({
+      success: false,
+      error: (error as Error).message,
+    }));
+  }
+}
+
+async function handleForwardCommand(channelId: string, data: {
+  originalMessage: any;
+  to: string;
+  requestId: string;
+}) {
+  try {
+    const result = await sessionManager.forwardMessage(channelId, data.originalMessage, data.to);
+
     await redisClient.publish(`whatsapp:response:${data.requestId}`, JSON.stringify({
       success: true,
       messageId: result?.key?.id,

@@ -735,6 +735,23 @@ export class WhatsAppService {
   }
 
   /**
+   * Forward a message via WhatsApp Worker
+   */
+  async forwardMessage(
+    channelId: string,
+    originalMessage: any,
+    to: string
+  ): Promise<{ externalId: string }> {
+    const response = await this.sendCommand<{ success: boolean; messageId: string }>(
+      'forward',
+      channelId,
+      { originalMessage, to }
+    );
+
+    return { externalId: response.messageId };
+  }
+
+  /**
    * Mark messages as read via WhatsApp Worker
    * Sends read receipts to WhatsApp (blue ticks)
    */

@@ -14,6 +14,7 @@ import {
   Wand2,
   Image as ImageIcon,
   FileText,
+  Forward,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -50,6 +51,7 @@ export interface MessageListProps {
   onReact: (messageId: string, emoji: string) => void;
   onEdit: (message: { id: string; text: string }) => void;
   onDelete: (message: { id: string; forEveryone: boolean }) => void;
+  onForward: (messageId: string) => void;
   onParseOrder: (text: string) => void;
   onMediaPreview: (media: { url: string; type: 'image' | 'video'; filename?: string }) => void;
   typingUsers: Map<string, string>;
@@ -72,6 +74,7 @@ function MessageListComponent({
   onReact,
   onEdit,
   onDelete,
+  onForward,
   onParseOrder,
   onMediaPreview,
   typingUsers,
@@ -234,6 +237,12 @@ function MessageListComponent({
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align={message.direction === 'OUTBOUND' ? 'end' : 'start'}>
+                          {message.externalId && (
+                            <DropdownMenuItem onClick={() => onForward(message.id)}>
+                              <Forward className="h-4 w-4 mr-2" />
+                              Forward
+                            </DropdownMenuItem>
+                          )}
                           {message.type === 'TEXT' && message.content.text && (
                             <DropdownMenuItem onClick={() => onParseOrder(message.content.text || '')}>
                               <Wand2 className="h-4 w-4 mr-2" />

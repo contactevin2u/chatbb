@@ -348,6 +348,23 @@ export async function reactToMessage(messageId: string, emoji: string): Promise<
   return response.data.data;
 }
 
+// Message forwarding
+
+export interface ForwardMessageResponse {
+  messageId: string;
+  externalId: string;
+  status: string;
+  targetConversationId: string;
+}
+
+export async function forwardMessage(messageId: string, targetConversationId: string): Promise<ForwardMessageResponse> {
+  const response = await apiClient.post<{ success: boolean; data: ForwardMessageResponse }>(
+    `/messages/${messageId}/forward`,
+    { targetConversationId }
+  );
+  return response.data.data;
+}
+
 // Media upload
 
 export interface UploadedMedia {

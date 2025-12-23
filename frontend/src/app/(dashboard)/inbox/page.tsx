@@ -57,6 +57,7 @@ import {
   ChevronLeft,
   ChevronUp,
   ChevronDown,
+  Forward,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -144,6 +145,7 @@ import {
   editMessage,
   deleteMessage,
   deleteMessageForEveryone,
+  forwardMessage,
   fetchHistory,
   type Conversation,
   type Message,
@@ -192,6 +194,7 @@ export default function InboxPage() {
   const [messageSearchIndex, setMessageSearchIndex] = useState(0);
   const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
   const [deletingMessage, setDeletingMessage] = useState<{ id: string; forEveryone: boolean } | null>(null);
+  const [forwardingMessageId, setForwardingMessageId] = useState<string | null>(null);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [incognitoMode, setIncognitoMode] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -544,6 +547,21 @@ export default function InboxPage() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', selectedConversationId] });
+    },
+  });
+
+  // Forward message mutation
+  const forwardMessageMutation = useMutation({
+    mutationFn: ({ messageId, targetConversationId }: { messageId: string; targetConversationId: string }) =>
+      forwardMessage(messageId, targetConversationId),
+    onSuccess: (data) => {
+      toast.success('Message forwarded');
+      setForwardingMessageId(null);
+      queryClient.invalidateQueries({ queryKey: ['messages', data.targetConversationId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to forward message');
     },
   });
 
@@ -1787,6 +1805,7 @@ export default function InboxPage() {
               onReact={(messageId, emoji) => reactToMessageMutation.mutate({ messageId, emoji })}
               onEdit={(msg) => setEditingMessage(msg)}
               onDelete={(msg) => setDeletingMessage(msg)}
+              onForward={(messageId) => setForwardingMessageId(messageId)}
               onParseOrder={(text) => parseOrderMutation.mutate(text)}
               onMediaPreview={setMediaPreview}
               typingUsers={typingUsers}
@@ -2617,6 +2636,67 @@ export default function InboxPage() {
               disabled={deleteMessageMutation.isPending || deleteForEveryoneMutation.isPending}
             >
               {(deleteMessageMutation.isPending || deleteForEveryoneMutation.isPending) ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Forward Message Dialog */}
+      <Dialog open={!!forwardingMessageId} onOpenChange={(open) => !open && setForwardingMessageId(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Forward className="h-5 w-5" />
+              Forward Message
+            </DialogTitle>
+            <DialogDescription>
+              Select a conversation to forward this message to.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[300px] overflow-y-auto">
+            {(conversationsData?.conversations || [])
+              .filter((c) => c.id !== selectedConversationId)
+              .map((conversation) => (
+                <div
+                  key={conversation.id}
+                  className="flex items-center gap-3 p-3 hover:bg-muted rounded-lg cursor-pointer transition-colors"
+                  onClick={() => {
+                    if (forwardingMessageId) {
+                      forwardMessageMutation.mutate({
+                        messageId: forwardingMessageId,
+                        targetConversationId: conversation.id,
+                      });
+                    }
+                  }}
+                >
+                  <Avatar className="h-10 w-10">
+                    <AvatarImage src={conversation.contact.avatarUrl || undefined} />
+                    <AvatarFallback>
+                      {getContactInitials(conversation.contact)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">
+                      {getContactName(conversation.contact)}
+                    </p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {conversation.contact.identifier}
+                    </p>
+                  </div>
+                  {conversation.contact.isGroup && (
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </div>
+              ))}
+            {(conversationsData?.conversations || []).filter((c) => c.id !== selectedConversationId).length === 0 && (
+              <p className="text-center text-muted-foreground py-8">
+                No other conversations available
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setForwardingMessageId(null)}>
+              Cancel
             </Button>
           </DialogFooter>
         </DialogContent>

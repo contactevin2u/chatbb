@@ -1275,6 +1275,33 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
+   * Forward a message to another chat
+   * Uses Baileys' forward feature which preserves the original message metadata
+   */
+  async forwardMessage(
+    channelId: string,
+    originalMessage: WAMessage,
+    to: string
+  ): Promise<WAMessage | undefined> {
+    const session = this.sessions.get(channelId);
+    if (!session || session.status !== 'CONNECTED') {
+      throw new Error('Channel not connected');
+    }
+
+    await this.checkRateLimit(channelId);
+
+    const jid = this.formatJid(to);
+
+    const result = await session.socket.sendMessage(jid, {
+      forward: originalMessage,
+    });
+
+    this.logger.info({ channelId, to: jid, originalMessageId: originalMessage.key?.id, newMessageId: result?.key?.id }, 'Message forwarded');
+
+    return result;
+  }
+
+  /**
    * Edit a previously sent message
    */
   async editMessage(

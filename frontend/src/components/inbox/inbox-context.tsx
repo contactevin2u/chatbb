@@ -12,6 +12,7 @@ import {
   editMessage,
   deleteMessage,
   deleteMessageForEveryone,
+  forwardMessage,
   closeConversation,
   reopenConversation,
   pinConversation,
@@ -58,6 +59,7 @@ export interface InboxContextValue {
   reactToMessageAction: (messageId: string, emoji: string) => void;
   editMessageAction: (messageId: string, newText: string) => void;
   deleteMessageAction: (messageId: string, forEveryone: boolean) => void;
+  forwardMessageAction: (messageId: string, targetConversationId: string) => void;
   closeConversationAction: (id: string) => void;
   reopenConversationAction: (id: string) => void;
   pinConversationAction: (id: string) => void;
@@ -233,6 +235,19 @@ export function InboxProvider({ children }: InboxProviderProps) {
     },
   });
 
+  const forwardMessageMutation = useMutation({
+    mutationFn: (data: { messageId: string; targetConversationId: string }) =>
+      forwardMessage(data.messageId, data.targetConversationId),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['messages', data.targetConversationId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      toast.success('Message forwarded');
+    },
+    onError: () => {
+      toast.error('Failed to forward message');
+    },
+  });
+
   const closeConversationMutation = useMutation({
     mutationFn: closeConversation,
     onSuccess: () => {
@@ -291,6 +306,10 @@ export function InboxProvider({ children }: InboxProviderProps) {
     }
   }, [deleteMessageMutation, deleteForEveryoneMutation]);
 
+  const forwardMessageAction = useCallback((messageId: string, targetConversationId: string) => {
+    forwardMessageMutation.mutate({ messageId, targetConversationId });
+  }, [forwardMessageMutation]);
+
   const closeConversationAction = useCallback((id: string) => {
     closeConversationMutation.mutate(id);
   }, [closeConversationMutation]);
@@ -338,6 +357,7 @@ export function InboxProvider({ children }: InboxProviderProps) {
     reactToMessageAction,
     editMessageAction,
     deleteMessageAction,
+    forwardMessageAction,
     closeConversationAction,
     reopenConversationAction,
     pinConversationAction,

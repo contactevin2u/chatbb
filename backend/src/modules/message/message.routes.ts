@@ -47,6 +47,10 @@ const sendPollSchema = z.object({
   selectableCount: z.number().min(1).optional(),
 });
 
+const forwardMessageSchema = z.object({
+  targetConversationId: z.string().uuid(),
+});
+
 // Validation middleware
 const validate = (schema: z.ZodSchema) => {
   return (req: any, res: any, next: any) => {
@@ -145,6 +149,18 @@ router.delete(
   '/:id/everyone',
   requirePermission('conversations:edit'),
   messageController.deleteMessageForEveryone.bind(messageController)
+);
+
+/**
+ * @route   POST /api/v1/messages/:id/forward
+ * @desc    Forward a message to another conversation
+ * @access  Private (conversations:reply)
+ */
+router.post(
+  '/:id/forward',
+  requirePermission('conversations:reply'),
+  validate(forwardMessageSchema),
+  messageController.forwardMessage.bind(messageController)
 );
 
 export const messageRoutes = router;
