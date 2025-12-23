@@ -128,7 +128,7 @@ function MessageListComponent({
         ref={messagesContainerRef}
         onScrollCapture={handleScroll}
       >
-        <div className="space-y-2">
+        <div className="space-y-2 w-full overflow-x-hidden">
           {/* Loading indicator for older messages */}
           {isLoadingMore && (
             <div className="flex justify-center py-4">
@@ -168,7 +168,7 @@ function MessageListComponent({
                 <div
                   id={`message-${message.id}`}
                   className={cn(
-                    'flex gap-1.5 sm:gap-2 items-end transition-all duration-300',
+                    'flex w-full gap-1.5 sm:gap-2 items-end transition-all duration-300',
                     message.direction === 'OUTBOUND' ? 'justify-end' : 'justify-start'
                   )}
                 >
@@ -189,7 +189,7 @@ function MessageListComponent({
                   )}
 
                   <div
-                    className="group relative max-w-[85%] sm:max-w-[75%] md:max-w-[70%] overflow-hidden"
+                    className="group relative max-w-[85%] sm:max-w-[75%] md:max-w-[70%]"
                     onClick={() => {
                       if (window.matchMedia('(max-width: 768px)').matches) {
                         setActiveMessageMenu(activeMessageMenu === message.id ? null : message.id);
