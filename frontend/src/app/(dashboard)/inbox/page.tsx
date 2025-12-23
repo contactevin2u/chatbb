@@ -2206,7 +2206,7 @@ export default function InboxPage() {
                     const showDateSeparator = !prevMessage || !isSameDay(messageDate, new Date(prevMessage.createdAt));
 
                     return (
-                      <div key={message.id}>
+                      <div key={message.id} className="w-full">
                         {showDateSeparator && (
                           <div className="flex items-center justify-center my-4">
                             <div className="flex items-center gap-3 w-full max-w-xs">
