@@ -319,26 +319,44 @@ function isMessageRenderable(message: { type: string; content: any }): boolean {
   const { type, content } = message;
   if (!content) return false;
 
-  // Check standard format
+  // For TEXT type, we need actual text to display
+  if (type === 'TEXT') {
+    const textContent = content.text || getMessageText(content);
+    return !!textContent && textContent.trim().length > 0;
+  }
+
+  // For media types, check if we have content to show
+  if (type === 'IMAGE' || type === 'VIDEO') {
+    // Has media URL or has caption/text
+    if (content.mediaUrl) return true;
+    if (content.caption || content.text) return true;
+    // Or has raw format we can extract text from
+    const extractedText = getMessageText(content);
+    if (extractedText) return true;
+    // Show placeholder even without media URL (historical sync)
+    return true;
+  }
+
+  if (type === 'AUDIO') {
+    return !!content.mediaUrl || true; // Show placeholder for audio
+  }
+
+  if (type === 'DOCUMENT') {
+    return !!content.mediaUrl || !!content.fileName || true; // Show placeholder
+  }
+
+  if (type === 'STICKER') return true;
+
+  // For other types (LOCATION, CONTACT, TEMPLATE, etc.), check if we have any content
   if (content.text) return true;
   if (content.caption) return true;
   if (content.mediaUrl) return true;
 
-  // Check raw format - extract text
   const extractedText = getMessageText(content);
   if (extractedText) return true;
 
-  // For raw media types (image, video, etc.)
   const rawMediaType = getRawMediaType(content);
-  if (rawMediaType) {
-    // TEXT type can only render text, not raw media placeholders
-    // So TEXT with raw media but no text is NOT renderable
-    if (type === 'TEXT') return false;
-    return true;
-  }
-
-  // Known types with specific rendering
-  if (type === 'STICKER') return true;
+  if (rawMediaType) return true;
 
   return false;
 }
@@ -2341,11 +2359,14 @@ export default function InboxPage() {
                                 </div>
                               )}
 
-                              {message.type === 'TEXT' && (
-                                <p className="text-sm whitespace-pre-wrap break-words">
-                                  {formatWhatsAppText(message.content.text || getMessageText(message.content) || '')}
-                                </p>
-                              )}
+                              {message.type === 'TEXT' && (() => {
+                                const text = message.content.text || getMessageText(message.content);
+                                return text ? (
+                                  <p className="text-sm whitespace-pre-wrap break-words">
+                                    {formatWhatsAppText(text)}
+                                  </p>
+                                ) : null;
+                              })()}
                               {message.type === 'IMAGE' && (
                                 <div className="space-y-2">
                                   {message.content.mediaUrl ? (
