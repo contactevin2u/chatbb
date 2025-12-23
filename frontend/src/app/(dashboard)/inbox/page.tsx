@@ -259,6 +259,28 @@ function formatDuration(seconds?: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
+// Check if this is a WhatsApp protocol/system message that should not be displayed
+function isProtocolMessage(content: any): boolean {
+  const msg = content?.message;
+  if (!msg) return false;
+
+  // Protocol messages - encryption key distribution, revoke, etc.
+  if (msg.protocolMessage) return true;
+  if (msg.senderKeyDistributionMessage && !msg.conversation && !msg.extendedTextMessage) return true;
+
+  // Associated child messages (HD image pairs) - these are metadata, not actual messages
+  if (msg.associatedChildMessage && !msg.conversation && !msg.extendedTextMessage) return true;
+
+  // Message context info only (no actual content)
+  if (msg.messageContextInfo && Object.keys(msg).length <= 2 &&
+      !msg.conversation && !msg.extendedTextMessage && !msg.imageMessage &&
+      !msg.videoMessage && !msg.audioMessage && !msg.documentMessage) {
+    return true;
+  }
+
+  return false;
+}
+
 // Extract displayable text from message content (handles raw WhatsApp format)
 function getMessageText(content: any): string | null {
   if (!content) return null;
@@ -279,6 +301,11 @@ function getMessageText(content: any): string | null {
     if (msg.videoMessage?.caption) return msg.videoMessage.caption;
     if (msg.documentMessage?.caption) return msg.documentMessage.caption;
     if (msg.documentMessage?.fileName) return `📄 ${msg.documentMessage.fileName}`;
+
+    // Associated child message with caption (HD image pairs)
+    if (msg.associatedChildMessage?.message?.imageMessage?.caption) {
+      return msg.associatedChildMessage.message.imageMessage.caption;
+    }
 
     // Location
     if (msg.locationMessage) {
@@ -318,6 +345,9 @@ function getRawMediaType(content: any): string | null {
 function isMessageRenderable(message: { type: string; content: any }): boolean {
   const { type, content } = message;
   if (!content) return false;
+
+  // Filter out protocol/system messages that have no user-facing content
+  if (isProtocolMessage(content)) return false;
 
   // For TEXT type, we need actual text to display
   if (type === 'TEXT') {
