@@ -26,3 +26,17 @@ export type {
 
 export { OrderPanel } from './order-panel';
 export { OrderOpsTab } from './orderops-tab';
+
+// Context
+export { InboxProvider, useInbox } from './inbox-context';
+export type { InboxContextValue } from './inbox-context';
+
+// New modular components
+export { MessageList } from './chat';
+export type { MessageListProps } from './chat';
+
+export { MessageInputArea } from './chat';
+export type { MessageInputAreaProps } from './chat';
+
+export { ConversationList } from './conversation-list';
+export type { ConversationListProps } from './conversation-list';
