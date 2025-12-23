@@ -1474,8 +1474,8 @@ export default function InboxPage() {
       {/* Conversation List Panel */}
       <div
         className={cn(
-          'border-r flex flex-col transition-all duration-200 ease-in-out flex-shrink-0 overflow-hidden',
-          conversationListCollapsed ? 'w-0' : 'w-full md:w-[280px] lg:w-[320px]',
+          'border-r flex flex-col transition-all duration-200 ease-in-out flex-shrink-0 overflow-hidden min-w-0',
+          conversationListCollapsed ? 'w-0' : 'w-full md:w-[280px] lg:w-[320px] md:min-w-[280px] lg:min-w-[320px]',
           // On mobile: hide list when conversation is selected
           selectedConversationId && 'hidden md:flex'
         )}

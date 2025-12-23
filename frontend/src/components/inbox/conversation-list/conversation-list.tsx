@@ -71,8 +71,8 @@ function ConversationListComponent({
   }
 
   return (
-    <ScrollArea className="flex-1 w-full overflow-hidden">
-      <div className="divide-y w-full overflow-hidden">
+    <ScrollArea className="flex-1 w-full max-w-full overflow-hidden">
+      <div className="divide-y w-full max-w-full overflow-hidden">
         {conversations.map((conversation) => (
           <div
             key={conversation.id}
