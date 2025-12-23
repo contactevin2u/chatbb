@@ -259,6 +259,61 @@ function formatDuration(seconds?: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
+// Extract displayable text from message content (handles raw WhatsApp format)
+function getMessageText(content: any): string | null {
+  if (!content) return null;
+
+  // Standard normalized format
+  if (content.text) return content.text;
+  if (content.caption) return content.caption;
+
+  // Raw WhatsApp format - try to extract text from various message types
+  const msg = content.message;
+  if (msg) {
+    // Text messages
+    if (msg.conversation) return msg.conversation;
+    if (msg.extendedTextMessage?.text) return msg.extendedTextMessage.text;
+
+    // Media with captions
+    if (msg.imageMessage?.caption) return msg.imageMessage.caption;
+    if (msg.videoMessage?.caption) return msg.videoMessage.caption;
+    if (msg.documentMessage?.caption) return msg.documentMessage.caption;
+    if (msg.documentMessage?.fileName) return `📄 ${msg.documentMessage.fileName}`;
+
+    // Location
+    if (msg.locationMessage) {
+      const lat = msg.locationMessage.degreesLatitude;
+      const lng = msg.locationMessage.degreesLongitude;
+      if (lat && lng) return `📍 Location: ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    }
+
+    // Contact
+    if (msg.contactMessage?.displayName) return `👤 ${msg.contactMessage.displayName}`;
+
+    // Album (multiple images)
+    if (msg.albumMessage) return '🖼️ Album';
+  }
+
+  return null;
+}
+
+// Get media type indicator for raw format messages
+function getRawMediaType(content: any): string | null {
+  const msg = content?.message;
+  if (!msg) return null;
+
+  if (msg.imageMessage) return 'image';
+  if (msg.videoMessage) return 'video';
+  if (msg.audioMessage || msg.pttMessage) return 'audio';
+  if (msg.documentMessage) return 'document';
+  if (msg.stickerMessage) return 'sticker';
+  if (msg.locationMessage) return 'location';
+  if (msg.contactMessage) return 'contact';
+  if (msg.albumMessage) return 'album';
+
+  return null;
+}
+
 // Download file helper
 function downloadFile(url: string, filename: string) {
   const link = document.createElement('a');
@@ -314,7 +369,13 @@ export default function InboxPage() {
     return false;
   });
 
+  // Pagination state for infinite scroll
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
+  const [isLoadingMoreMessages, setIsLoadingMoreMessages] = useState(false);
+  const [allMessages, setAllMessages] = useState<Message[]>([]);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -349,6 +410,69 @@ export default function InboxPage() {
     queryFn: () => selectedConversationId ? getMessages(selectedConversationId) : null,
     enabled: !!selectedConversationId,
   });
+
+  // Update allMessages when data loads - merge with existing older messages
+  useEffect(() => {
+    if (messagesData?.messages) {
+      setAllMessages(prev => {
+        // If we have no previous messages, just use the new data
+        if (prev.length === 0) {
+          return messagesData.messages;
+        }
+
+        // Find the oldest message in the new data
+        const newMessageIds = new Set(messagesData.messages.map((m: Message) => m.id));
+
+        // Keep older messages that aren't in the new data (they were loaded via "load more")
+        const olderMessages = prev.filter((m: Message) => !newMessageIds.has(m.id));
+
+        // If we have messages older than what was just fetched, keep them
+        if (olderMessages.length > 0) {
+          // Combine: older messages + new messages (new messages are the latest)
+          return [...olderMessages, ...messagesData.messages];
+        }
+
+        // Otherwise just use the new data
+        return messagesData.messages;
+      });
+      setHasMoreMessages(messagesData.hasMore ?? false);
+    }
+  }, [messagesData]);
+
+  // Reset pagination when conversation changes
+  useEffect(() => {
+    setAllMessages([]);
+    setHasMoreMessages(true);
+    setIsLoadingMoreMessages(false);
+  }, [selectedConversationId]);
+
+  // Load more messages (infinite scroll)
+  const loadMoreMessages = async () => {
+    if (!selectedConversationId || !hasMoreMessages || isLoadingMoreMessages || allMessages.length === 0) return;
+
+    const oldestMessage = allMessages[0];
+    if (!oldestMessage) return;
+
+    setIsLoadingMoreMessages(true);
+    try {
+      const olderMessages = await getMessages(selectedConversationId, {
+        before: oldestMessage.id,
+        limit: 50,
+      });
+
+      if (olderMessages?.messages && olderMessages.messages.length > 0) {
+        // Prepend older messages (they're already sorted newest first from API)
+        setAllMessages(prev => [...olderMessages.messages, ...prev]);
+        setHasMoreMessages(olderMessages.hasMore ?? false);
+      } else {
+        setHasMoreMessages(false);
+      }
+    } catch (error) {
+      console.error('Error loading more messages:', error);
+    } finally {
+      setIsLoadingMoreMessages(false);
+    }
+  };
 
   // Track if we've attempted to fetch history for current conversation
   const [historyFetchAttempted, setHistoryFetchAttempted] = useState<string | null>(null);
@@ -1323,23 +1447,25 @@ export default function InboxPage() {
     }
   }, [handleTyping, slashCommandOpen]);
 
-  // Scroll to bottom when new messages arrive
+  // Scroll to bottom when new messages arrive (only on initial load or new messages)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messagesData?.messages]);
+    if (allMessages.length > 0 && !isLoadingMoreMessages) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messagesData?.messages]); // Only trigger on initial data, not when loading more
 
   // In-conversation message search - uses existing searchQuery when conversation is selected
   const messageSearchResults = useMemo(() => {
-    if (!selectedConversationId || !searchQuery.trim() || !messagesData?.messages) return [];
+    if (!selectedConversationId || !searchQuery.trim() || allMessages.length === 0) return [];
     const query = searchQuery.toLowerCase();
-    return messagesData.messages
+    return allMessages
       .filter((msg) => {
         const text = msg.content.text?.toLowerCase() || '';
         const caption = msg.content.caption?.toLowerCase() || '';
         return text.includes(query) || caption.includes(query);
       })
       .map((msg) => msg.id);
-  }, [selectedConversationId, searchQuery, messagesData?.messages]);
+  }, [selectedConversationId, searchQuery, allMessages]);
 
   // Navigate to search result
   const scrollToSearchResult = useCallback((index: number) => {
@@ -1955,7 +2081,17 @@ export default function InboxPage() {
                   className="w-24 sm:w-32 h-auto opacity-[0.35]"
                 />
               </div>
-              <ScrollArea className="h-full p-2 sm:p-4 relative z-10">
+              <ScrollArea
+                className="h-full p-2 sm:p-4 relative z-10"
+                ref={messagesContainerRef}
+                onScrollCapture={(e) => {
+                  const target = e.target as HTMLElement;
+                  // Load more when scrolled near top (within 100px)
+                  if (target.scrollTop < 100 && hasMoreMessages && !isLoadingMoreMessages && allMessages.length > 0) {
+                    loadMoreMessages();
+                  }
+                }}
+              >
               {isLoadingMessages ? (
                 <div className="space-y-4">
                   {[1, 2, 3].map((i) => (
@@ -1970,9 +2106,26 @@ export default function InboxPage() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {messagesData?.messages.map((message, index) => {
+                  {/* Loading indicator for older messages */}
+                  {isLoadingMoreMessages && (
+                    <div className="flex justify-center py-4">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                        <span>Loading older messages...</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Beginning of conversation indicator */}
+                  {!hasMoreMessages && allMessages.length > 0 && (
+                    <div className="flex justify-center py-4">
+                      <span className="text-xs text-muted-foreground">Beginning of conversation</span>
+                    </div>
+                  )}
+
+                  {allMessages.map((message, index) => {
                     const messageDate = new Date(message.createdAt);
-                    const prevMessage = index > 0 ? messagesData.messages[index - 1] : null;
+                    const prevMessage = index > 0 ? allMessages[index - 1] : null;
                     const showDateSeparator = !prevMessage || !isSameDay(messageDate, new Date(prevMessage.createdAt));
 
                     return (
@@ -2160,7 +2313,9 @@ export default function InboxPage() {
                               )}
 
                               {message.type === 'TEXT' && (
-                                <p className="text-sm whitespace-pre-wrap break-words">{formatWhatsAppText(message.content.text || '')}</p>
+                                <p className="text-sm whitespace-pre-wrap break-words">
+                                  {formatWhatsAppText(message.content.text || getMessageText(message.content) || '')}
+                                </p>
                               )}
                               {message.type === 'IMAGE' && (
                                 <div className="space-y-2">
@@ -2314,6 +2469,48 @@ export default function InboxPage() {
                                     <span className="text-4xl">🎭</span>
                                   )}
                                 </div>
+                              )}
+
+                              {/* Fallback for raw WhatsApp format or unknown types */}
+                              {!['TEXT', 'IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT', 'STICKER'].includes(message.type) && (
+                                (() => {
+                                  const extractedText = getMessageText(message.content);
+                                  const rawMediaType = getRawMediaType(message.content);
+                                  return (
+                                    <div className="space-y-1">
+                                      {rawMediaType && !message.content.mediaUrl && (
+                                        <div className="flex items-center gap-2 text-sm opacity-70">
+                                          {rawMediaType === 'image' && <ImageIcon className="h-4 w-4" />}
+                                          {rawMediaType === 'video' && <Play className="h-4 w-4" />}
+                                          {rawMediaType === 'audio' && <Mic className="h-4 w-4" />}
+                                          {rawMediaType === 'document' && <FileText className="h-4 w-4" />}
+                                          {rawMediaType === 'location' && <span>📍</span>}
+                                          {rawMediaType === 'contact' && <span>👤</span>}
+                                          {rawMediaType === 'album' && <span>🖼️</span>}
+                                          <span className="capitalize">{rawMediaType}</span>
+                                        </div>
+                                      )}
+                                      {extractedText ? (
+                                        <p className="text-sm whitespace-pre-wrap break-words">{formatWhatsAppText(extractedText)}</p>
+                                      ) : (
+                                        <p className="text-sm opacity-50 italic">[{message.type || 'Unknown'} message]</p>
+                                      )}
+                                    </div>
+                                  );
+                                })()
+                              )}
+
+                              {/* Fallback for known types without expected content (e.g., IMAGE without mediaUrl or text) */}
+                              {['IMAGE', 'VIDEO', 'DOCUMENT'].includes(message.type) &&
+                               !message.content.mediaUrl &&
+                               !message.content.text &&
+                               !message.content.caption && (
+                                (() => {
+                                  const extractedText = getMessageText(message.content);
+                                  return extractedText ? (
+                                    <p className="text-sm whitespace-pre-wrap break-words">{formatWhatsAppText(extractedText)}</p>
+                                  ) : null;
+                                })()
                               )}
 
                               {/* Time and status */}
