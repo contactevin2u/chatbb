@@ -115,10 +115,33 @@ export async function getRewardHistory(limit: number = 20): Promise<RewardEvent[
   return response.data.data;
 }
 
+/**
+ * Claim welcome bonus for first action of the day
+ */
+export async function claimWelcomeBonus(): Promise<RewardResult> {
+  const response = await apiClient.post<{ success: boolean; data: RewardResult }>(
+    '/gamification/welcome'
+  );
+  return response.data.data;
+}
+
+/**
+ * Claim streak bonus for consecutive rewards
+ */
+export async function claimStreakBonus(streakCount: number): Promise<RewardResult> {
+  const response = await apiClient.post<{ success: boolean; data: RewardResult }>(
+    '/gamification/streak',
+    { streakCount }
+  );
+  return response.data.data;
+}
+
 export const gamificationApi = {
   tryReward,
   getLeaderboard,
   getGameStats,
   getUserRank,
   getRewardHistory,
+  claimWelcomeBonus,
+  claimStreakBonus,
 };

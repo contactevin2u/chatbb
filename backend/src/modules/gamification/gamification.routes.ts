@@ -87,10 +87,24 @@ gamificationRoutes.get('/stats', async (req, res, next) => {
     const stats = await gamificationService.getUserStats(userId);
     const rank = await gamificationService.getUserRank(userId, organizationId, 'today');
 
+    // Return default stats if user has no game record yet
+    const defaultStats = {
+      totalPoints: 0,
+      todayPoints: 0,
+      weekPoints: 0,
+      monthPoints: 0,
+      currentStreak: 0,
+      longestStreak: 0,
+      messagesSent: 0,
+      conversationsClosed: 0,
+      conversationsViewed: 0,
+      luckyStarsWon: 0,
+    };
+
     res.json({
       success: true,
       data: {
-        ...stats,
+        ...(stats || defaultStats),
         todayRank: rank,
       },
     });
@@ -138,6 +152,57 @@ gamificationRoutes.get('/history', async (req, res, next) => {
     res.json({
       success: true,
       data: events,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route   POST /api/v1/gamification/welcome
+ * @desc    Claim welcome bonus for first action of the day
+ * @access  Private
+ */
+gamificationRoutes.post('/welcome', async (req, res, next) => {
+  try {
+    const userId = req.user!.sub as string;
+    const organizationId = req.user!.organizationId as string;
+
+    const result = await gamificationService.giveWelcomeBonus(userId, organizationId);
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route   POST /api/v1/gamification/streak
+ * @desc    Claim streak bonus for consecutive rewards
+ * @access  Private
+ * @body    { streakCount: number }
+ */
+gamificationRoutes.post('/streak', async (req, res, next) => {
+  try {
+    const userId = req.user!.sub as string;
+    const organizationId = req.user!.organizationId as string;
+    const { streakCount } = req.body as { streakCount: number };
+
+    if (!streakCount || streakCount < 3) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid streak count. Must be at least 3.',
+      });
+    }
+
+    const result = await gamificationService.giveStreakBonus(userId, organizationId, streakCount);
+
+    res.json({
+      success: true,
+      data: result,
     });
   } catch (error) {
     next(error);

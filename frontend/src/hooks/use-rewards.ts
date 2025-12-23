@@ -11,7 +11,6 @@ import { useGamificationStore } from '@/stores/gamification-store';
 import { showRewardToast, showStreakToast, showWelcomeToast } from '@/components/gamification/reward-toast';
 
 const STREAK_BONUS_THRESHOLD = 3; // 3 rewards in a row = streak bonus
-const STREAK_BONUS_POINTS = 50;
 
 export function useRewards() {
   const {
@@ -35,8 +34,16 @@ export function useRewards() {
       if (!welcomeCheckedRef.current && checkWelcomeBonus()) {
         welcomeCheckedRef.current = true;
         markWelcomeSeen();
-        // Show welcome toast
-        showWelcomeToast(1); // streak from store
+        // Claim welcome bonus from backend
+        try {
+          const welcomeResult = await gamificationApi.claimWelcomeBonus();
+          if (welcomeResult) {
+            handleReward(welcomeResult);
+            showWelcomeToast(welcomeResult.streak);
+          }
+        } catch (err) {
+          console.warn('Welcome bonus claim failed:', err);
+        }
       }
 
       // Try to get a random reward
@@ -57,11 +64,19 @@ export function useRewards() {
           });
         }
 
-        // Check for streak bonus
+        // Check for streak bonus (3 rewards in a row)
         const newStreak = rewardStreak + 1;
         if (newStreak >= STREAK_BONUS_THRESHOLD && newStreak % STREAK_BONUS_THRESHOLD === 0) {
-          // Award streak bonus
-          showStreakToast(newStreak, STREAK_BONUS_POINTS);
+          // Claim streak bonus from backend
+          try {
+            const streakResult = await gamificationApi.claimStreakBonus(newStreak);
+            if (streakResult) {
+              handleReward(streakResult);
+              showStreakToast(newStreak, streakResult.points);
+            }
+          } catch (err) {
+            console.warn('Streak bonus claim failed:', err);
+          }
         }
 
         return result;

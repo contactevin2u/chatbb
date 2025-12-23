@@ -407,6 +407,28 @@ class GamificationService {
       streak: result.streak,
     };
   }
+
+  /**
+   * Give streak bonus for consecutive rewards
+   */
+  async giveStreakBonus(userId: string, organizationId: string, streakCount: number): Promise<RewardResult> {
+    const points = REWARD_CONFIG.streakBonus.points;
+    const message = `🔥 ${streakCount} in a row! On Fire!`;
+
+    const result = await this.addPoints(userId, organizationId, 'streak_bonus', points, message, false);
+
+    return {
+      rewarded: true,
+      points,
+      message: `${message} +${points}`,
+      isLuckyStar: false,
+      isStreakBonus: true,
+      isNewDay: false,
+      totalPoints: result.totalPoints,
+      todayPoints: result.todayPoints,
+      streak: result.streak,
+    };
+  }
 }
 
 export const gamificationService = new GamificationService();
