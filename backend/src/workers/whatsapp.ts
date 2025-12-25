@@ -576,13 +576,20 @@ async function handleSendCommand(channelId: string, data: {
     // Build quoted message object if quotedMessageId is provided
     let quotedMessage: any = undefined;
     if (data.quotedMessageId) {
+      // Check if quotedMessageId is a valid UUID (for searching by id field)
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const isUuid = uuidRegex.test(data.quotedMessageId);
+
       // Fetch the original message from database to get full content for quote preview
+      // Only search by id if it's a valid UUID, otherwise just search by externalId
       const originalMessage = await prisma.message.findFirst({
         where: {
-          OR: [
-            { externalId: data.quotedMessageId },
-            { id: data.quotedMessageId },
-          ],
+          OR: isUuid
+            ? [
+                { externalId: data.quotedMessageId },
+                { id: data.quotedMessageId },
+              ]
+            : [{ externalId: data.quotedMessageId }],
           channelId,
         },
         select: {
