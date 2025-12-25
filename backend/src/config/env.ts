@@ -41,6 +41,9 @@ const envSchema = z.object({
   // Logging
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   LOG_QUERIES: z.string().transform((v) => v === 'true').default('false'),
+
+  // Notification API (optional, for external integrations like Autocount)
+  NOTIFICATION_API_KEY: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

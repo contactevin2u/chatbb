@@ -1,0 +1,448 @@
+================================================================================
+                    CHATBABY NOTIFICATION API DOCUMENTATION
+================================================================================
+
+Version: 1.0
+Last Updated: December 2024
+Author: ChatBaby Development Team
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+
+1. OVERVIEW
+2. AUTHENTICATION
+3. API ENDPOINT
+4. REQUEST FORMAT
+5. RESPONSE FORMAT
+6. EXAMPLES
+7. ERROR CODES
+8. RATE LIMITING
+9. GETTING STARTED (FOR AUTOCOUNT)
+10. TROUBLESHOOTING
+11. CHANGELOG
+
+================================================================================
+1. OVERVIEW
+================================================================================
+
+The ChatBaby Notification API allows external systems (like Autocount, ERPs,
+CRMs, or custom applications) to send WhatsApp messages programmatically
+through ChatBaby's connected WhatsApp channels.
+
+Key Features:
+- Send text messages to individuals or groups
+- Send media messages (images, videos, audio, documents)
+- Simple API key authentication
+- Rate limiting to prevent abuse
+- Full message tracking in ChatBaby
+
+Supported Message Types:
+- Text messages (up to 4096 characters)
+- Images (JPG, PNG, GIF, WEBP)
+- Videos (MP4)
+- Audio files (MP3, OGG, M4A)
+- Documents (PDF, DOC, DOCX, XLS, XLSX, etc.)
+
+================================================================================
+2. AUTHENTICATION
+================================================================================
+
+The API uses API key authentication via the X-API-Key header.
+
+Header Name: X-API-Key
+Header Value: Your API key (provided by ChatBaby administrator)
+
+Example:
+  X-API-Key: cb_live_a1b2c3d4e5f6g7h8i9j0...
+
+IMPORTANT SECURITY NOTES:
+- Keep your API key secret - never expose it in client-side code
+- Use HTTPS for all API calls
+- Store API keys in environment variables, not in code
+- Contact your administrator immediately if your key is compromised
+
+================================================================================
+3. API ENDPOINT
+================================================================================
+
+Production URL:
+  POST https://chatbaby-api.onrender.com/api/v1/notifications/send
+
+Development URL:
+  POST http://localhost:4000/api/v1/notifications/send
+
+Required Headers:
+  Content-Type: application/json
+  X-API-Key: YOUR_API_KEY
+
+================================================================================
+4. REQUEST FORMAT
+================================================================================
+
+The request body must be JSON with the following structure:
+
+REQUIRED FIELDS:
+--------------------------------------------------------------------------------
+| Field      | Type   | Description                                           |
+|------------|--------|-------------------------------------------------------|
+| channel_id | string | UUID of the WhatsApp channel to send from             |
+| to         | string | Recipient: phone number or WhatsApp JID               |
+--------------------------------------------------------------------------------
+
+OPTIONAL FIELDS (at least one required):
+--------------------------------------------------------------------------------
+| Field   | Type   | Description                                             |
+|---------|--------|---------------------------------------------------------|
+| message | string | Text message content (max 4096 characters)              |
+| media   | object | Media attachment object (see below)                     |
+--------------------------------------------------------------------------------
+
+MEDIA OBJECT STRUCTURE:
+--------------------------------------------------------------------------------
+| Field    | Type   | Required | Description                                 |
+|----------|--------|----------|---------------------------------------------|
+| type     | string | Yes      | One of: image, video, audio, document       |
+| url      | string | Yes      | Public URL of the media file                |
+| caption  | string | No       | Caption text for the media (max 4096 chars) |
+| filename | string | No       | Filename for documents (e.g., "report.pdf") |
+--------------------------------------------------------------------------------
+
+RECIPIENT FORMAT:
+- Groups: Use the WhatsApp Group JID (e.g., "120363123456789@g.us")
+- Individuals: Use phone number with country code (e.g., "60123456789")
+  - Do NOT include the "+" symbol
+  - Do NOT include spaces or dashes
+
+================================================================================
+5. RESPONSE FORMAT
+================================================================================
+
+SUCCESS RESPONSE (HTTP 200):
+{
+  "success": true,
+  "message_id": "550e8400-e29b-41d4-a716-446655440000",
+  "external_id": "3EB0ABC123DEF456789"
+}
+
+| Field       | Type   | Description                                          |
+|-------------|--------|------------------------------------------------------|
+| success     | bool   | Always true for successful requests                  |
+| message_id  | string | ChatBaby internal message UUID (for tracking)        |
+| external_id | string | WhatsApp message ID (for delivery tracking)          |
+
+
+ERROR RESPONSE (HTTP 4xx/5xx):
+{
+  "success": false,
+  "error": "Error description here"
+}
+
+| Field   | Type   | Description                                            |
+|---------|--------|--------------------------------------------------------|
+| success | bool   | Always false for failed requests                       |
+| error   | string | Human-readable error message                           |
+
+================================================================================
+6. EXAMPLES
+================================================================================
+
+EXAMPLE 1: Send Text Message to Group
+--------------------------------------------------------------------------------
+
+curl -X POST https://chatbaby-api.onrender.com/api/v1/notifications/send \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: cb_live_your_api_key_here" \
+  -d '{
+    "channel_id": "550e8400-e29b-41d4-a716-446655440000",
+    "to": "120363123456789@g.us",
+    "message": "Hello! Your order #12345 has been shipped."
+  }'
+
+
+EXAMPLE 2: Send Text Message to Individual
+--------------------------------------------------------------------------------
+
+curl -X POST https://chatbaby-api.onrender.com/api/v1/notifications/send \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: cb_live_your_api_key_here" \
+  -d '{
+    "channel_id": "550e8400-e29b-41d4-a716-446655440000",
+    "to": "60123456789",
+    "message": "Dear customer, your payment has been received. Thank you!"
+  }'
+
+
+EXAMPLE 3: Send Image with Caption
+--------------------------------------------------------------------------------
+
+curl -X POST https://chatbaby-api.onrender.com/api/v1/notifications/send \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: cb_live_your_api_key_here" \
+  -d '{
+    "channel_id": "550e8400-e29b-41d4-a716-446655440000",
+    "to": "120363123456789@g.us",
+    "media": {
+      "type": "image",
+      "url": "https://example.com/invoice-preview.png",
+      "caption": "Invoice #INV-2024-001 preview attached"
+    }
+  }'
+
+
+EXAMPLE 4: Send PDF Document
+--------------------------------------------------------------------------------
+
+curl -X POST https://chatbaby-api.onrender.com/api/v1/notifications/send \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: cb_live_your_api_key_here" \
+  -d '{
+    "channel_id": "550e8400-e29b-41d4-a716-446655440000",
+    "to": "60123456789",
+    "media": {
+      "type": "document",
+      "url": "https://example.com/invoices/INV-2024-001.pdf",
+      "filename": "Invoice-2024-001.pdf",
+      "caption": "Please find your invoice attached"
+    }
+  }'
+
+
+EXAMPLE 5: Send Video
+--------------------------------------------------------------------------------
+
+curl -X POST https://chatbaby-api.onrender.com/api/v1/notifications/send \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: cb_live_your_api_key_here" \
+  -d '{
+    "channel_id": "550e8400-e29b-41d4-a716-446655440000",
+    "to": "120363123456789@g.us",
+    "media": {
+      "type": "video",
+      "url": "https://example.com/product-demo.mp4",
+      "caption": "Check out our new product demo!"
+    }
+  }'
+
+
+EXAMPLE 6: Payment Reminder (Autocount Use Case)
+--------------------------------------------------------------------------------
+
+curl -X POST https://chatbaby-api.onrender.com/api/v1/notifications/send \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: cb_live_your_api_key_here" \
+  -d '{
+    "channel_id": "550e8400-e29b-41d4-a716-446655440000",
+    "to": "120363456789012345@g.us",
+    "message": "PAYMENT REMINDER\n\nInvoice: INV-2024-0156\nAmount Due: RM 2,500.00\nDue Date: 25 Dec 2024\n\nPlease arrange payment at your earliest convenience.\n\nThank you!"
+  }'
+
+================================================================================
+7. ERROR CODES
+================================================================================
+
+HTTP 400 - Bad Request
+--------------------------------------------------------------------------------
+Cause: Invalid request body or missing required fields
+Example: {"success": false, "error": "Validation failed", "details": {...}}
+Fix: Check that channel_id is a valid UUID, to is provided, and either
+     message or media is included
+
+HTTP 401 - Unauthorized
+--------------------------------------------------------------------------------
+Cause: Missing or invalid API key
+Example: {"success": false, "error": "Invalid API key"}
+Fix: Ensure X-API-Key header is included with a valid key
+
+HTTP 404 - Not Found
+--------------------------------------------------------------------------------
+Cause: Channel not found or not connected
+Example: {"success": false, "error": "Channel not found"}
+Fix: Verify the channel_id exists and the WhatsApp channel is connected
+
+HTTP 429 - Too Many Requests
+--------------------------------------------------------------------------------
+Cause: Rate limit exceeded
+Example: {"success": false, "error": "Rate limit exceeded. Maximum 60 requests per minute."}
+Fix: Wait and retry, implement exponential backoff
+
+HTTP 500 - Internal Server Error
+--------------------------------------------------------------------------------
+Cause: Server-side error
+Example: {"success": false, "error": "Internal server error"}
+Fix: Retry the request, contact support if persistent
+
+HTTP 503 - Service Unavailable
+--------------------------------------------------------------------------------
+Cause: Notification API not configured
+Example: {"success": false, "error": "Notification API not configured"}
+Fix: Contact administrator to configure NOTIFICATION_API_KEY
+
+================================================================================
+8. RATE LIMITING
+================================================================================
+
+API Rate Limits:
+- 60 requests per minute per IP address
+- Rate limit resets every 60 seconds
+
+WhatsApp Rate Limits (enforced by WhatsApp):
+- 30 messages per minute per channel
+- 200 messages per hour per channel
+
+Best Practices:
+- Implement exponential backoff for retries
+- Queue messages and send at controlled intervals
+- Monitor for 429 responses and pause sending
+- Spread messages over time rather than bursting
+
+Example Backoff Strategy:
+  Attempt 1: Immediate
+  Attempt 2: Wait 1 second
+  Attempt 3: Wait 2 seconds
+  Attempt 4: Wait 4 seconds
+  Attempt 5: Wait 8 seconds
+  (Max 5 retries, then fail)
+
+================================================================================
+9. GETTING STARTED (FOR AUTOCOUNT)
+================================================================================
+
+Step 1: Get Your Credentials
+--------------------------------------------------------------------------------
+Contact your ChatBaby administrator to obtain:
+  1. API Key (NOTIFICATION_API_KEY)
+  2. Channel ID (UUID of your WhatsApp channel)
+  3. Group JID (for group notifications)
+
+Step 2: Find Group JID
+--------------------------------------------------------------------------------
+Group JIDs can be found in ChatBaby:
+  - Go to Contacts
+  - Filter by groups (identifier ends with @g.us)
+  - Copy the identifier
+
+Or run this SQL query:
+  SELECT identifier, name FROM "Contact"
+  WHERE identifier LIKE '%@g.us'
+  ORDER BY "updatedAt" DESC;
+
+Step 3: Test the Connection
+--------------------------------------------------------------------------------
+Send a test message using curl or Postman:
+
+curl -X POST https://chatbaby-api.onrender.com/api/v1/notifications/send \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -d '{
+    "channel_id": "YOUR_CHANNEL_ID",
+    "to": "YOUR_GROUP_JID",
+    "message": "Test message from Autocount integration"
+  }'
+
+Step 4: Configure Autocount
+--------------------------------------------------------------------------------
+In Autocount, configure the out-of-stock notification to call:
+  URL: https://chatbaby-api.onrender.com/api/v1/notifications/send
+  Method: POST
+  Headers:
+    - Content-Type: application/json
+    - X-API-Key: YOUR_API_KEY
+  Body Template:
+    {
+      "channel_id": "YOUR_CHANNEL_ID",
+      "to": "YOUR_GROUP_JID",
+      "message": "OUT OF STOCK ALERT\n\nProduct: {{product_name}}\nSKU: {{sku}}\nCurrent Stock: {{stock_level}}\n\nPlease reorder."
+    }
+
+================================================================================
+10. TROUBLESHOOTING
+================================================================================
+
+PROBLEM: "Invalid API key" error
+--------------------------------------------------------------------------------
+Causes:
+  - Missing X-API-Key header
+  - Incorrect API key value
+  - API key has been revoked
+Solutions:
+  - Verify header name is exactly "X-API-Key" (case-sensitive)
+  - Confirm API key matches what was provided
+  - Contact administrator for new key if needed
+
+PROBLEM: "Channel not found" error
+--------------------------------------------------------------------------------
+Causes:
+  - Invalid channel_id UUID
+  - Channel has been deleted
+  - Channel belongs to different organization
+Solutions:
+  - Verify channel_id is correct UUID format
+  - Check ChatBaby dashboard for active channels
+  - Confirm you're using the right organization's channel
+
+PROBLEM: Messages not being delivered
+--------------------------------------------------------------------------------
+Causes:
+  - WhatsApp channel disconnected
+  - Invalid recipient format
+  - Recipient has blocked the number
+  - Group has been archived
+Solutions:
+  - Check channel status in ChatBaby (should be "CONNECTED")
+  - Verify recipient format (no + sign, correct country code)
+  - For groups, verify the JID ends with @g.us
+  - Try sending to a different recipient to isolate the issue
+
+PROBLEM: "Rate limit exceeded" error
+--------------------------------------------------------------------------------
+Causes:
+  - Sending too many requests too quickly
+  - Previous requests from same IP
+Solutions:
+  - Implement delays between requests (min 1 second)
+  - Use exponential backoff for retries
+  - Queue messages and process at controlled rate
+
+PROBLEM: Media not sending
+--------------------------------------------------------------------------------
+Causes:
+  - Invalid media URL
+  - Media URL not publicly accessible
+  - Unsupported media format
+  - Media file too large
+Solutions:
+  - Ensure URL is publicly accessible (no auth required)
+  - Use HTTPS URLs
+  - Check file format is supported
+  - Keep files under 16MB for images, 64MB for videos
+
+PROBLEM: Notification API not configured
+--------------------------------------------------------------------------------
+Causes:
+  - NOTIFICATION_API_KEY environment variable not set
+Solutions:
+  - Contact system administrator to configure the API key
+  - Verify Render environment variables include NOTIFICATION_API_KEY
+
+================================================================================
+11. CHANGELOG
+================================================================================
+
+Version 1.0 (December 2024)
+--------------------------------------------------------------------------------
+- Initial release
+- Support for text messages
+- Support for media messages (image, video, audio, document)
+- API key authentication via X-API-Key header
+- Rate limiting (60 req/min)
+- Full message tracking in ChatBaby database
+
+================================================================================
+                              END OF DOCUMENTATION
+================================================================================
+
+For questions or support, contact: support@chatbaby.app
+ChatBaby API - Connecting businesses through WhatsApp
+
+================================================================================

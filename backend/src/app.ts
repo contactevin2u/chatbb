@@ -31,6 +31,7 @@ import knowledgeRoutes from './modules/knowledge/knowledge.routes.js';
 import aiRoutes from './modules/ai/ai.routes.js';
 import orderOpsRoutes from './modules/orderops/orderops.routes.js';
 import { gamificationRoutes } from './modules/gamification/gamification.routes';
+import { notificationRoutes } from './modules/notification/notification.routes.js';
 
 export function createApp(): Express {
   const app = express();
@@ -64,7 +65,7 @@ export function createApp(): Express {
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-API-Key'],
     })
   );
 
@@ -121,6 +122,8 @@ export function createApp(): Express {
   app.use(`${apiPrefix}/ai`, aiRoutes);
   app.use(`${apiPrefix}/orderops`, orderOpsRoutes);
   app.use(`${apiPrefix}/gamification`, gamificationRoutes);
+  // External notification webhook (API key auth, no JWT)
+  app.use(`${apiPrefix}/notifications`, notificationRoutes);
 
   // 404 handler
   app.use((_req: Request, res: Response) => {
