@@ -306,15 +306,41 @@ async function processMessage(job: Job) {
     };
 
     // For group messages, store sender info (participant)
+    // Baileys v7: participant may be LID format, use participantAlt for phone if available
     if (isGroup && !isFromMe) {
       const participant = waMessage.key?.participant;
-      if (participant) {
-        const participantIdentifier = await normalizeIdentifier(participant, channelId);
+      const participantAlt = (waMessage.key as any)?.participantAlt;
+
+      // Prefer phone number (participantAlt) over LID (participant) for storage
+      const senderJid = (participantAlt && !participantAlt.includes('@lid'))
+        ? participantAlt
+        : participant;
+
+      if (senderJid) {
+        const participantIdentifier = await normalizeIdentifier(senderJid, channelId);
         messageMetadata.groupSender = {
-          jid: participant,
+          jid: senderJid,
           identifier: participantIdentifier,
           pushName: waMessage.pushName || null,
         };
+
+        // Store LID mapping if we have both LID and phone number
+        if (participant?.includes('@lid') && participantAlt && !participantAlt.includes('@lid')) {
+          const { storeLidMapping } = await import('../shared/utils/identifier.js');
+          const lidPart = participant.split('@')[0];
+          const phonePart = participantAlt.split('@')[0];
+          await storeLidMapping(channelId, lidPart, phonePart);
+        }
+      } else {
+        // Fallback: use pushName as identifier if no participant info
+        logger.warn({ channelId, messageId: waMessage.key?.id }, 'Group message missing participant info');
+        if (waMessage.pushName) {
+          messageMetadata.groupSender = {
+            jid: null,
+            identifier: null,
+            pushName: waMessage.pushName,
+          };
+        }
       }
     }
 
