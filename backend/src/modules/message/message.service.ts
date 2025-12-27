@@ -220,23 +220,28 @@ export class MessageService {
       messageContent.quotedMessageId = quotedMessageId;
     }
 
-    // OPTIMIZATION: Start sending immediately while creating DB record in parallel
     // Build proper JID based on whether this is a group or individual chat
     const isGroup = conversation.contact.isGroup;
     const recipient = isGroup
       ? `${conversation.contact.identifier}@g.us`
       : `${conversation.contact.identifier}@s.whatsapp.net`;
 
-    // Start WhatsApp send (don't await yet)
-    const sendPromise = conversation.channel.type === 'WHATSAPP'
+    // Start WhatsApp send in parallel with DB record creation
+    // Wrap the promise to prevent unhandled rejection crashes (e.g., rate limit errors)
+    // The error is captured and re-thrown when awaited
+    type SendResult = { externalId: string | undefined };
+    type SendOutcome = { success: true; result: SendResult } | { success: false; error: Error };
+
+    const sendPromise: Promise<SendOutcome> = conversation.channel.type === 'WHATSAPP'
       ? whatsappService.sendMessageRaw(
           conversation.channelId,
           recipient,
           text,
           media,
           { quotedMessageId }
-        )
-      : Promise.resolve({ externalId: undefined as string | undefined });
+        ).then((result): SendOutcome => ({ success: true, result }))
+         .catch((err): SendOutcome => ({ success: false, error: err }))
+      : Promise.resolve({ success: true, result: { externalId: undefined } } as SendOutcome);
 
     // Create message record in parallel with sending
     const message = await prisma.message.create({
@@ -263,9 +268,40 @@ export class MessageService {
     });
 
     // Now wait for send to complete
+    const sendOutcome = await sendPromise;
+
+    // If send failed, handle the error
+    if (!sendOutcome.success) {
+      const error = (sendOutcome as { success: false; error: Error }).error;
+      // Mark message as failed
+      const failedMessage = await prisma.message.update({
+        where: { id: message.id },
+        data: {
+          status: MessageStatus.FAILED,
+          failedReason: error.message,
+        },
+        include: {
+          sentByUser: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              avatarUrl: true,
+            },
+          },
+        },
+      });
+
+      // Still emit the failed message
+      socketServer.to(`conversation:${conversationId}`).emit('message:new', {
+        message: failedMessage,
+      });
+
+      throw error;
+    }
+
     try {
-      const result = await sendPromise;
-      const externalId = result.externalId;
+      const externalId = sendOutcome.result.externalId;
 
       // Update message and conversation in parallel
       const [updatedMessage] = await Promise.all([

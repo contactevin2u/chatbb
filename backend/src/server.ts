@@ -7,6 +7,16 @@ import { redis, disconnectRedis } from './core/cache/redis.client.js';
 import { createSocketServer, cleanupSocketServer } from './core/websocket/server.js';
 import { whatsappService } from './modules/whatsapp/whatsapp.service.js';
 
+// Global error handlers to prevent crashes
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error({ reason }, 'Unhandled promise rejection');
+});
+
+process.on('uncaughtException', (error) => {
+  logger.error({ error }, 'Uncaught exception');
+  // Don't exit - let the process continue running
+});
+
 async function main(): Promise<void> {
   try {
     // Connect to database

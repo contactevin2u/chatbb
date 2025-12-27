@@ -73,8 +73,8 @@ const RECONNECT_CONFIG = {
 
 // Rate limiting constants (anti-ban)
 const RATE_LIMIT = {
-  MESSAGES_PER_MINUTE: 30,
-  MESSAGES_PER_HOUR: 200,
+  MESSAGES_PER_MINUTE: 90,
+  MESSAGES_PER_HOUR: 600,
   NEW_CONTACTS_PER_DAY: 50,
 };
 
